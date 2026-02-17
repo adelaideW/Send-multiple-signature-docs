@@ -1,8 +1,9 @@
-
 import React from 'react';
 import { 
   X, 
   ChevronDown, 
+  // Added ChevronRight import to fix 'Cannot find name' error on line 200
+  ChevronRight,
   HelpCircle, 
   Accessibility, 
   MessageSquare, 
@@ -39,7 +40,8 @@ import {
   User,
   LayoutGrid,
   SquareCheck,
-  Zap
+  Zap,
+  AlignJustify
 } from 'lucide-react';
 
 interface TemplateEditorProps {
@@ -49,8 +51,8 @@ interface TemplateEditorProps {
 
 const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome }) => {
   return (
-    <div className="flex flex-col h-screen bg-[#F9FAFB] text-[#1e293b] font-sans overflow-hidden">
-      {/* --- Tier 1: Global Rippling Header --- */}
+    <div className="flex flex-col h-screen bg-white text-[#1e293b] font-sans overflow-hidden">
+      {/* --- Tier 1: Global Header --- */}
       <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 shrink-0 z-[100]">
         <div className="flex items-center space-x-6">
           <div 
@@ -75,22 +77,22 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome }) => 
             <input 
               type="text" 
               placeholder="Search or jump to..." 
-              className="w-full bg-slate-100 border-none rounded-md py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-slate-300 outline-none"
+              className="w-full bg-[#f1f5f9] border-none rounded-md py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-slate-300 outline-none"
             />
           </div>
         </div>
 
         <div className="flex items-center space-x-4">
-          <HelpCircle size={20} className="text-slate-500 cursor-pointer hover:text-slate-800 transition-colors" />
-          <Accessibility size={20} className="text-slate-500 cursor-pointer hover:text-slate-800 transition-colors" />
-          <MessageSquare size={20} className="text-slate-500 cursor-pointer hover:text-slate-800 transition-colors" />
-          <Bell size={20} className="text-slate-500 cursor-pointer hover:text-slate-800 transition-colors" />
-          <Globe size={20} className="text-slate-500 cursor-pointer hover:text-slate-800 transition-colors" />
+          <HelpCircle size={20} className="text-slate-400 cursor-pointer hover:text-slate-800 transition-colors" />
+          <Accessibility size={20} className="text-slate-400 cursor-pointer hover:text-slate-800 transition-colors" />
+          <div className="p-1 border border-slate-200 rounded">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <Bell size={20} className="text-slate-400 cursor-pointer hover:text-slate-800 transition-colors" />
+          <Globe size={20} className="text-slate-400 cursor-pointer hover:text-slate-800 transition-colors" />
           <div className="h-6 w-px bg-slate-200 mx-2"></div>
           <div className="flex items-center space-x-3 cursor-pointer">
-            <div className="text-right hidden sm:block">
-              <span className="text-sm text-slate-700 font-semibold block leading-tight">Acme, Inc.</span>
-            </div>
+            <span className="text-sm text-slate-700 font-semibold hidden sm:block">Acme, Inc.</span>
             <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200">
               <img src="https://picsum.photos/id/177/100/100" alt="Avatar" />
             </div>
@@ -98,106 +100,106 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome }) => 
         </div>
       </header>
 
-      {/* --- Tier 2: Template Header (Simplified Action Bar) --- */}
-      <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-10">
+      {/* --- Tier 2: Template Action Bar --- */}
+      <div className="h-14 bg-white border-b border-slate-100 flex items-center justify-between px-6 shrink-0 z-10">
         <div className="flex items-center space-x-3">
-          <h2 className="text-[15px] font-bold text-slate-900">[Envelope Templates Name]</h2>
+          <h2 className="text-[14px] font-bold text-slate-800">[Envelope Templates Name]</h2>
         </div>
         <div className="flex items-center space-x-2">
-          {/* New Buttons requested from image */}
-          <button className="flex items-center space-x-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-[14px] font-bold text-slate-900 hover:bg-slate-50 transition-colors shadow-sm">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 6h3m-1.5-1.5v3"/>
-              <rect x="10" y="4" width="10" height="4" rx="0.5"/>
-              <path d="M4 18h3"/>
-              <rect x="10" y="16" width="10" height="4" rx="0.5"/>
-            </svg>
-            <span>Recipient fields</span>
+          <button className="flex items-center space-x-2 px-3.5 py-1.5 bg-white border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm">
+             <LayoutGrid size={16} className="text-slate-500" />
+             <span>Recipient fields</span>
           </button>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-[14px] font-bold text-slate-900 hover:bg-slate-50 transition-colors shadow-sm">
-            <Zap size={16} className="fill-slate-900 text-slate-900" />
+          <button className="flex items-center space-x-2 px-3.5 py-1.5 bg-white border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm">
+            <Zap size={16} className="fill-slate-700 text-slate-700" />
             <span>Insert variable</span>
           </button>
-          <button className="px-5 py-2 bg-white border border-slate-200 rounded-xl text-[14px] font-bold text-slate-900 hover:bg-slate-50 transition-colors shadow-sm">
+          <button className="px-4 py-1.5 bg-[#f8fafc] border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm">
             Preview
           </button>
-          <button className="px-5 py-2 bg-white border border-slate-200 rounded-xl text-[14px] font-bold text-slate-900 hover:bg-slate-50 transition-colors shadow-sm">
+          <button className="px-4 py-1.5 bg-[#f8fafc] border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm">
             Import
           </button>
-          
           <button 
             onClick={onExit}
-            className="px-8 py-2 bg-[#7A005D] text-white rounded-xl text-[14px] font-bold hover:opacity-95 transition-all shadow-md ml-2"
+            className="px-6 py-1.5 bg-[#7A005D] text-white rounded-xl text-[13px] font-bold hover:opacity-95 transition-all shadow-md ml-1"
           >
             Save
           </button>
         </div>
       </div>
 
-      {/* --- Editor Workspace --- */}
+      {/* --- Main Workspace --- */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Editor Main Canvas Container */}
-        <div className="flex-1 flex flex-col bg-slate-100/30 relative overflow-hidden">
+        <div className="flex-1 flex flex-col relative overflow-hidden bg-[#F3F4F6]/50">
           
-          {/* Rich Text Toolbar */}
-          <div className="bg-white border-b border-slate-200 px-6 py-1.5 flex flex-wrap items-center gap-2 shrink-0">
-            <div className="flex items-center border-r border-slate-200 pr-2 gap-1">
-              <button className="p-1.5 hover:bg-slate-100 rounded transition-colors" title="Undo"><Undo2 size={16} /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded transition-colors" title="Redo"><Redo2 size={16} /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded transition-colors" title="Print"><Printer size={16} /></button>
+          {/* Toolbar */}
+          <div className="bg-white border-b border-slate-100 px-6 py-1 flex items-center gap-1.5 shrink-0 overflow-x-auto no-scrollbar shadow-sm">
+            <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><Undo2 size={16} /></button>
+            <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><Redo2 size={16} /></button>
+            <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><Printer size={16} /></button>
+            <div className="h-6 w-px bg-slate-200 mx-1"></div>
+            
+            <div className="flex items-center space-x-1 border border-slate-200 rounded px-2 py-0.5 bg-white cursor-pointer hover:bg-slate-50 min-w-[110px] justify-between">
+              <span className="text-[12px] font-medium text-slate-700">Normal text</span>
+              <ChevronDown size={14} className="text-slate-400" />
+            </div>
+            <div className="flex items-center space-x-1 border border-slate-200 rounded px-2 py-0.5 bg-white cursor-pointer hover:bg-slate-50 min-w-[130px] justify-between">
+              <span className="text-[12px] font-medium text-slate-700">Rippling's Default</span>
+              <ChevronDown size={14} className="text-slate-400" />
             </div>
             
-            <div className="flex items-center border-r border-slate-200 pr-2 gap-2">
-              <div className="flex items-center space-x-1 border border-slate-200 rounded-md px-2 py-1 bg-white cursor-pointer hover:bg-slate-50 transition-colors">
-                <span className="text-[13px] font-medium min-w-[100px]">Normal text</span>
-                <ChevronDown size={14} className="text-slate-400" />
-              </div>
-              <div className="flex items-center space-x-1 border border-slate-200 rounded-md px-2 py-1 bg-white cursor-pointer hover:bg-slate-50 transition-colors">
-                <span className="text-[13px] font-medium min-w-[120px]">Rippling's Default</span>
-                <ChevronDown size={14} className="text-slate-400" />
-              </div>
-            </div>
-
-            <div className="flex items-center border-r border-slate-200 pr-2 gap-1">
-              <button className="p-1 hover:bg-slate-100 rounded"><Minus size={14} /></button>
-              <div className="border border-slate-200 rounded px-2 py-0.5 text-xs font-bold w-10 text-center">11</div>
-              <button className="p-1 hover:bg-slate-100 rounded"><Plus size={14} /></button>
-            </div>
-
-            <div className="flex items-center border-r border-slate-200 pr-2 gap-1">
-              <button className="p-1.5 hover:bg-slate-100 rounded font-bold"><Bold size={16} /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded italic"><Italic size={16} /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded underline"><Underline size={16} /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded text-slate-400"><Code size={16} /></button>
-            </div>
-
-            <div className="flex items-center border-r border-slate-200 pr-2 gap-1">
-              <button className="p-1.5 hover:bg-slate-100 rounded"><Baseline size={16} className="text-[#2563eb]" /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded"><Baseline size={16} className="text-slate-800" /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded"><Eraser size={16} /></button>
-            </div>
-
-            <div className="flex items-center border-r border-slate-200 pr-2 gap-1">
-              <button className="p-1.5 hover:bg-slate-100 rounded"><AlignLeft size={16} /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded"><AlignCenter size={16} /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded"><AlignRight size={16} /></button>
-            </div>
-
+            <div className="h-6 w-px bg-slate-200 mx-1"></div>
             <div className="flex items-center gap-1">
-              <button className="p-1.5 hover:bg-slate-100 rounded"><List size={16} /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded"><Indent size={16} className="rotate-180" /></button>
-              <button className="p-1.5 hover:bg-slate-100 rounded"><Indent size={16} /></button>
+              <button className="p-1 text-slate-400 hover:bg-slate-100 rounded"><Minus size={14} /></button>
+              <div className="px-2 py-0.5 border border-slate-200 rounded text-[12px] font-bold text-slate-700 min-w-[32px] text-center">11</div>
+              <button className="p-1 text-slate-400 hover:bg-slate-100 rounded"><Plus size={14} /></button>
+            </div>
+            
+            <div className="h-6 w-px bg-slate-200 mx-1"></div>
+            <div className="flex items-center gap-0.5">
+               <button className="p-1.5 hover:bg-slate-100 rounded font-bold text-slate-700"><Bold size={16} /></button>
+               <button className="p-1.5 hover:bg-slate-100 rounded italic text-slate-700"><Italic size={16} /></button>
+               <button className="p-1.5 hover:bg-slate-100 rounded underline text-slate-700"><Underline size={16} /></button>
+               <button className="p-1.5 hover:bg-slate-100 rounded text-slate-400"><Code size={16} /></button>
+            </div>
+
+            <div className="h-6 w-px bg-slate-200 mx-1"></div>
+            <div className="flex items-center gap-0.5">
+               <button className="p-1.5 hover:bg-slate-100 rounded flex flex-col items-center">
+                  <Baseline size={16} className="text-[#2563eb]" />
+                  <div className="w-3 h-0.5 bg-[#2563eb] mt-[1px]"></div>
+               </button>
+               <button className="p-1.5 hover:bg-slate-100 rounded flex flex-col items-center">
+                  <Baseline size={16} className="text-slate-700" />
+                  <div className="w-3 h-0.5 bg-slate-700 mt-[1px]"></div>
+               </button>
+               <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><Eraser size={16} /></button>
+            </div>
+
+            <div className="h-6 w-px bg-slate-200 mx-1"></div>
+            <div className="flex items-center gap-0.5">
+               <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><AlignLeft size={16} /></button>
+               <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><AlignCenter size={16} /></button>
+               <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><AlignRight size={16} /></button>
+               <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><AlignJustify size={16} /></button>
+            </div>
+
+            <div className="h-6 w-px bg-slate-200 mx-1"></div>
+            <div className="flex items-center gap-0.5">
+               <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><List size={16} /></button>
+               <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500"><ListOrdered size={16} /></button>
+               <button className="p-1.5 hover:bg-slate-100 rounded text-slate-500 flex items-center"><Indent size={16} /><ChevronDown size={10} className="ml-0.5" /></button>
             </div>
           </div>
 
-          {/* Scrollable Document Canvas */}
           <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
-            <div className="max-w-[850px] mx-auto bg-white shadow-2xl min-h-[1100px] p-24 text-[15px] leading-relaxed text-slate-800 border border-slate-100">
-              <h1 className="text-center font-bold mb-12 text-lg uppercase tracking-tight">CCPA Privacy Notice for Employees</h1>
+            <div className="max-w-[850px] mx-auto bg-white shadow-xl min-h-[1100px] p-24 text-[15px] leading-relaxed text-slate-800 border border-slate-100">
+              <h1 className="text-center font-bold mb-12 text-lg uppercase tracking-tight">CCPA PRIVACY NOTICE FOR EMPLOYEES</h1>
               
               <p className="mb-6">
-                <span className="inline-flex items-center bg-[#f1f5f9] border border-slate-200 rounded px-1.5 py-0.5 text-[12px] font-bold mx-1 text-slate-700">
-                  BusinessLegalName <X size={10} className="ml-1 cursor-pointer text-slate-400" />
+                <span className="inline-flex items-center bg-[#f1f5f9] border border-slate-200 rounded px-1.5 py-0.5 text-[12px] font-bold mx-1 text-slate-600">
+                  BusinessLegalName <ChevronRight size={10} className="ml-1 text-slate-400" />
                 </span> 
                 (the “Company,” “we,” “us,” “our”) is providing this Privacy Notice (“Notice”) pursuant to the California Consumer Privacy Act (“CCPA”) to inform you about:
               </p>
@@ -212,82 +214,70 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome }) => 
               </ol>
 
               <p className="mt-8 mb-8 text-slate-700">
-                If you do not reside in California, Company has decided to provide this notice as a courtesy to you. For purposes of this Notice, “Personal Information” means information that identifies, relates to, describes, is reasonably capable of being associated with, or could reasonably be linked, directly or indirectly, to an Employee who resides in California. Please contact . with any questions or if you would like an alternative form of this Notice.
+                If you do not reside in California, Company has decided to provide this notice as a courtesy to you. For purposes of this Notice, “Personal Information” means information that identifies, relates to, describes, is reasonably capable of being associated with...
               </p>
-
-              <p className="font-bold mb-6 text-slate-800">For purposes of this Notice, “Purposes of Use” include, but are not limited to:</p>
-              
-              <ol className="list-decimal space-y-6 ml-8 text-slate-700">
-                <li>
-                  <span className="font-bold text-slate-800">Managing and Engaging Personnel:</span> to manage personnel matters, to set up a personnel file, to administer compensation, bonuses, equity grants, other forms of compensation, and benefits (as applicable, and as permitted by law), to manage vacation, sick leave, and other leaves of absence, to provide training, to evaluate job applicants, to evaluate job performance, to design and engage in career development and other employee engagement programs, to screen employees for risks to the Company, to conduct investigations, and for other general personnel management purposes.
-                </li>
-                <li>
-                   <span className="font-bold text-slate-800">Security and Compliance:</span> to monitor use of Company information systems, to conduct internal audits, to conduct internal investigations, to protect the safety and security of Company's facilities and personnel, to manage reimbursement of business expenses, to ensure compliance with federal, state and local regulations, including occupational health and safety compliance, to obtain appropriate insurance coverages, including worker's compensation, to prevent illicit activity and report suspected criminal conduct to law enforcement and cooperate in investigations.
-                </li>
-              </ol>
             </div>
           </div>
         </div>
 
-        {/* --- Right Sidebar: Recipient Fields --- */}
+        {/* Right Sidebar */}
         <div className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0">
           <div className="p-5 flex items-center justify-between border-b border-slate-100">
-            <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest">Recipient Fields</span>
-            <X size={18} className="text-slate-400 cursor-pointer hover:text-slate-600 transition-colors" />
+            <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest">RECIPIENT FIELDS</span>
+            <X size={18} className="text-slate-300 cursor-pointer hover:text-slate-500 transition-colors" />
           </div>
           
           <div className="p-4 space-y-6">
-            <div className="border border-slate-200 rounded-xl px-4 py-3 flex items-center justify-between bg-white hover:bg-slate-50 cursor-pointer shadow-sm transition-colors group">
+            <div className="border border-slate-200 rounded-xl px-4 py-2.5 flex items-center justify-between bg-white hover:bg-slate-50 cursor-pointer shadow-sm transition-colors group">
               <div className="flex items-center space-x-3">
-                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-[#f3e5f5] group-hover:text-[#7A005D]">
+                <div className="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100">
                    <User size={14} />
                 </div>
-                <span className="text-sm font-bold text-slate-800">Employee</span>
+                <span className="text-[13px] font-bold text-slate-800">Employee</span>
               </div>
               <ChevronDown size={16} className="text-slate-400" />
             </div>
 
             <div className="space-y-3 pt-2">
-               {/* Field Draggable Cards - Styled to match screenshot colors */}
-               <div className="flex items-center justify-between bg-[#FDF2FB] border border-[#F5D0EE] p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-md transition-all group">
+               <div className="flex items-center justify-between bg-[#FDF2FB] border border-[#F5D0EE] p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-sm transition-all">
                   <div className="flex items-center space-x-3">
                     <Type size={18} className="text-[#7A005D]" />
-                    <span className="text-[13px] font-bold text-[#7A005D]">Text</span>
+                    <span className="text-[14px] font-bold text-[#7A005D]">Text</span>
                   </div>
-                  <GripVertical size={16} className="text-[#F5D0EE] group-hover:text-[#7A005D] opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <GripVertical size={16} className="text-[#F5D0EE]" />
                </div>
 
-               <div className="flex items-center justify-between bg-[#FDF2FB] border border-[#F5D0EE] p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-md transition-all group">
+               <div className="flex items-center justify-between bg-[#FDF2FB] border border-[#F5D0EE] p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-sm transition-all">
                   <div className="flex items-center space-x-3">
                     <SquareCheck size={18} className="text-[#7A005D]" />
-                    <span className="text-[13px] font-bold text-[#7A005D]">Checkbox</span>
+                    <span className="text-[14px] font-bold text-[#7A005D]">Checkbox</span>
                   </div>
-                  <GripVertical size={16} className="text-[#F5D0EE] group-hover:text-[#7A005D] opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <GripVertical size={16} className="text-[#F5D0EE]" />
                </div>
 
-               <div className="flex items-center justify-between bg-[#FDF2FB] border border-[#F5D0EE] p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-md transition-all group">
+               <div className="flex items-center justify-between bg-[#FDF2FB] border border-[#F5D0EE] p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-sm transition-all">
                   <div className="flex items-center space-x-3">
                     <PenTool size={18} className="text-[#7A005D]" />
-                    <span className="text-[13px] font-bold text-[#7A005D]">Signature</span>
+                    <span className="text-[14px] font-bold text-[#7A005D]">Signature</span>
                   </div>
-                  <GripVertical size={16} className="text-[#F5D0EE] group-hover:text-[#7A005D] opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <GripVertical size={16} className="text-[#F5D0EE]" />
                </div>
 
-               <div className="flex items-center justify-between bg-[#FDF2FB] border border-[#F5D0EE] p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-md transition-all group">
+               <div className="flex items-center justify-between bg-[#FDF2FB] border border-[#F5D0EE] p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-sm transition-all">
                   <div className="flex items-center space-x-3">
                     <Calendar size={18} className="text-[#7A005D]" />
-                    <span className="text-[13px] font-bold text-[#7A005D]">Date signed</span>
+                    <span className="text-[14px] font-bold text-[#7A005D]">Date signed</span>
                   </div>
-                  <GripVertical size={16} className="text-[#F5D0EE] group-hover:text-[#7A005D] opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <GripVertical size={16} className="text-[#F5D0EE]" />
                </div>
             </div>
           </div>
         </div>
 
-        {/* --- Far Right Utility Strip --- */}
+        {/* Far Right Utility Strip */}
         <div className="w-14 bg-white border-l border-slate-200 flex flex-col items-center py-4 space-y-6 shrink-0 z-20">
-           <button className="p-2 bg-slate-100 rounded-lg text-slate-800 shadow-sm" title="Template Layout"><LayoutGrid size={20} /></button>
-           <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" title="Recipient Management"><User size={20} /></button>
+           <div className="p-2 border border-[#7A005D]/20 bg-[#7A005D]/5 rounded-lg text-[#7A005D] shadow-sm"><Grid size={20} /></div>
+           <div className="p-2 text-slate-300 hover:text-slate-500 rounded-lg cursor-pointer transition-colors"><User size={20} /></div>
         </div>
       </div>
     </div>

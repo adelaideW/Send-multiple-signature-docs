@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Check, X } from 'lucide-react';
 import Sidebar from './components/Sidebar';
@@ -15,9 +14,24 @@ import { MOCK_EMPLOYEE } from './constants';
 
 type ViewType = 'landing' | 'profile' | 'envelope' | 'template_editor' | 'envelope_details' | 'document_review' | 'people_tab';
 
+// Define the state structure for persistent envelope creation
+interface EnvelopeState {
+  selectedTemplates: string[];
+  uploadedFiles: string[];
+  recipients: any[];
+  selectedFolder: string | null;
+}
+
+const INITIAL_ENVELOPE_STATE: EnvelopeState = {
+  selectedTemplates: [],
+  uploadedFiles: [],
+  recipients: [{ id: '1', user: null, action: 'Needs to complete', isSearching: false, searchTerm: '', isActionDropdownOpen: false }],
+  selectedFolder: 'All documents'
+};
+
 const SuccessSnackbar: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {
   useEffect(() => {
-    const timer = setTimeout(onClose, 10000); // 10 seconds auto-dismiss per request
+    const timer = setTimeout(onClose, 10000);
     return () => clearTimeout(timer);
   }, [onClose]);
 
@@ -49,6 +63,9 @@ const App: React.FC = () => {
   const [selectedEnvelopeName, setSelectedEnvelopeName] = useState('');
   const [viewByDocuments, setViewByDocuments] = useState(false);
 
+  // Persistent Envelope Creation State
+  const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
+
   const currentView = viewHistory[viewHistory.length - 1];
 
   const navigateTo = useCallback((view: ViewType) => {
@@ -68,6 +85,8 @@ const App: React.FC = () => {
   const handleEnvelopeContinue = (name: string) => {
     setSentEnvelopeName(name);
     setShowSuccessToast(true);
+    // Reset state after completion
+    setEnvelopeState(INITIAL_ENVELOPE_STATE);
     setViewHistory(prev => {
       const envelopeIndex = prev.indexOf('envelope');
       if (envelopeIndex > 0) {
@@ -184,13 +203,15 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Conditional Rendering for Overlay Views ensures state reset */}
+      {/* Envelope Creator View */}
       {currentView === 'envelope' && (
         <div className="absolute inset-0 z-[100] bg-white">
           <EnvelopeCreator 
             onExit={goBack} 
             onEditDocument={() => navigateTo('template_editor')}
             onContinue={handleEnvelopeContinue}
+            state={envelopeState}
+            onUpdateState={setEnvelopeState}
           />
         </div>
       )}
