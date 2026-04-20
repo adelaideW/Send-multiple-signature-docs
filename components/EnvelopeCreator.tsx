@@ -984,7 +984,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                 </h1>
                 {isUploadMode ? (
                   <div className="space-y-5 text-slate-700">
-                    {uploadedFiles[currentPreviewPage - 1]?.previewParagraphs.map((para, i) => (
+                    {(uploadedFiles[currentPreviewPage - 1]?.previewParagraphs ?? []).map((para, i) => (
                       <p key={i} className="leading-relaxed">{para}</p>
                     ))}
                   </div>
