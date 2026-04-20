@@ -267,6 +267,24 @@ const App: React.FC = () => {
               setTemplateEditorSeed(null);
               goBack();
             }}
+            onUpdateTemplate={(name, body) => {
+              const finalName = name.trim() || 'Untitled template';
+              const orig = templateEditorSeed?.title;
+              setEnvelopeState((prev) => {
+                const without = prev.customTemplates.filter((t) => t.name !== finalName && t.name !== orig);
+                let selected = prev.selectedTemplates;
+                if (orig && orig !== finalName) {
+                  selected = selected.map((s) => (s === orig ? finalName : s));
+                }
+                return {
+                  ...prev,
+                  customTemplates: [...without, { name: finalName, body }],
+                  selectedTemplates: Array.from(new Set([...selected, finalName])),
+                };
+              });
+              setTemplateEditorSeed(null);
+              goBack();
+            }}
           />
         </div>
       )}

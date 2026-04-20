@@ -363,7 +363,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     const name = selectedTemplates[currentPreviewPage - 1] || 'Document';
     const custom = customTemplates.find((c) => c.name === name);
     const chipStyle =
-      'display:inline-flex;align-items:center;margin:0 4px;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;background:#F3E8FF;border:2px solid #D8B4FE;color:#0f172a';
+      'display:inline-flex;align-items:center;margin:0 4px;padding:2px 8px;border-radius:6px;font:inherit;background:#FDF2FB;border:1px solid #F5D0EE;color:inherit';
     const chip = (t: string) =>
       `<span data-chip="recipient-field" data-label="${t.replace(/"/g, '&quot;')}" draggable="true" contenteditable="false" style="${chipStyle}">${t}</span>`;
     if (custom) {
@@ -1534,41 +1534,55 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   </div>
                 )}
                 <div className="bg-white border border-slate-100 shadow-xl min-h-[1100px] p-24 text-[15px] leading-relaxed text-slate-800">
-                  <h1 className="text-2xl font-bold text-center mb-10">
-                    {selectedTemplates.length > 0
-                      ? selectedTemplates[currentPreviewPage - 1]
-                      : uploadedFiles[currentPreviewPage - 1]?.previewTitle}
-                  </h1>
                   {isUploadMode ? (
-                    <div className="space-y-5 text-slate-700">
-                      {(uploadedFiles[currentPreviewPage - 1]?.previewParagraphs ?? []).map((para, i) => (
-                        <p key={i} className="leading-relaxed">{para}</p>
-                      ))}
-                    </div>
+                    <>
+                      <h1 className="text-2xl font-bold text-center mb-10">
+                        {uploadedFiles[currentPreviewPage - 1]?.previewTitle}
+                      </h1>
+                      <div className="space-y-5 text-slate-700">
+                        {(uploadedFiles[currentPreviewPage - 1]?.previewParagraphs ?? []).map((para, i) => (
+                          <p key={i} className="leading-relaxed">{para}</p>
+                        ))}
+                      </div>
+                    </>
                   ) : (() => {
                     const tplName = selectedTemplates[currentPreviewPage - 1];
                     const customEntry = customTemplates.find((c) => c.name === tplName);
+                    const chipPreview =
+                      '[&_span[data-chip]]:inline-flex [&_span[data-chip]]:items-center [&_span[data-chip]]:mx-0.5 [&_span[data-chip]]:px-2 [&_span[data-chip]]:py-0.5 [&_span[data-chip]]:rounded-md [&_span[data-chip]]:font-inherit [&_span[data-chip]]:text-inherit [&_span[data-chip]]:bg-[#FDF2FB] [&_span[data-chip]]:border [&_span[data-chip]]:border-[#F5D0EE]';
+                    const titleLinePreview =
+                      '[&_p[data-title-line]]:text-2xl [&_p[data-title-line]]:font-bold [&_p[data-title-line]]:text-slate-900 [&_p[data-title-line]]:text-center [&_p[data-title-line]]:mb-10 [&_p[data-title-line]]:leading-snug';
                     if (customEntry && customEntry.body.trim().startsWith('<')) {
+                      const hasDocTitle = customEntry.body.includes('data-title-line');
                       return (
-                        <div
-                          className="space-y-4 text-slate-700 [&_span[data-chip]]:inline-flex [&_span[data-chip]]:items-center [&_span[data-chip]]:mx-0.5 [&_span[data-chip]]:px-2 [&_span[data-chip]]:py-0.5 [&_span[data-chip]]:rounded-md [&_span[data-chip]]:text-sm [&_span[data-chip]]:font-semibold [&_span[data-chip]]:bg-[#F3E8FF] [&_span[data-chip]]:border-2 [&_span[data-chip]]:border-[#D8B4FE]"
-                          dangerouslySetInnerHTML={{ __html: customEntry.body }}
-                        />
+                        <>
+                          {!hasDocTitle ? (
+                            <h1 className="text-2xl font-bold text-center mb-10">{tplName}</h1>
+                          ) : null}
+                          <div
+                            className={`space-y-4 text-slate-700 ${titleLinePreview} ${chipPreview}`}
+                            dangerouslySetInnerHTML={{ __html: customEntry.body }}
+                          />
+                        </>
                       );
                     }
                     if (customEntry) {
                       return (
-                        <div className="space-y-4 text-slate-700">
-                          {customEntry.body.split(/\n+/).filter((p) => p.trim()).map((para, i) => (
-                            <p key={i} className="leading-relaxed whitespace-pre-wrap">
-                              {para}
-                            </p>
-                          ))}
-                        </div>
+                        <>
+                          <h1 className="text-2xl font-bold text-center mb-10">{tplName}</h1>
+                          <div className="space-y-4 text-slate-700">
+                            {customEntry.body.split(/\n+/).filter((p) => p.trim()).map((para, i) => (
+                              <p key={i} className="leading-relaxed whitespace-pre-wrap">
+                                {para}
+                              </p>
+                            ))}
+                          </div>
+                        </>
                       );
                     }
                     return (
                       <>
+                        <h1 className="text-2xl font-bold text-center mb-10">{tplName}</h1>
                         <p className="mb-6">Effective <VariableChip label="Start date" />, , <VariableChip label="Contractor Name" /> ("Consultant") and <VariableChip label="Business legal name" /> ("Company") agree as follows:</p>
                         <div className="space-y-6 text-slate-600"><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p></div>
                       </>

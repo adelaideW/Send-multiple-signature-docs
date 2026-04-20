@@ -35,19 +35,33 @@ import {
   AlignJustify,
   GripVertical,
   User,
+  Check,
+  UserPlus,
 } from 'lucide-react';
 
 const RECIPIENT_FIELD_MIME = 'application/x-recipient-field-label';
 const CHIP_ATTR = 'recipient-field';
 
+/** Match recipient-field chips in side panel; text inherits line formatting. */
 const CHIP_CLASS =
-  'inline-flex items-center align-baseline mx-0.5 px-2 py-0.5 rounded-md text-sm font-semibold text-slate-900 bg-[#F3E8FF] border-2 border-[#D8B4FE] cursor-grab active:cursor-grabbing select-none';
+  'inline-flex items-center align-baseline mx-0.5 px-2 py-0.5 rounded-md text-inherit font-inherit leading-inherit bg-[#FDF2FB] border border-[#F5D0EE] cursor-grab active:cursor-grabbing select-none';
+
+const MOCK_EMPLOYEES = [
+  { id: '1', name: 'Angel Hunter', dept: 'Engineering', avatar: 'https://i.pravatar.cc/40?u=angel-hunter' },
+  { id: '2', name: 'Angie Adams', dept: 'Marketing', avatar: 'https://i.pravatar.cc/40?u=angie-adams' },
+  { id: '3', name: 'Anna Taylor', dept: 'Accounting', avatar: 'https://i.pravatar.cc/40?u=anna-taylor' },
+  { id: '4', name: 'Anne Montgomery', dept: 'CEO', avatar: 'https://i.pravatar.cc/40?u=anne-montgomery' },
+  { id: '5', name: 'James Chen', dept: 'Design', avatar: 'https://i.pravatar.cc/40?u=james-chen' },
+  { id: '6', name: 'Maria Santos', dept: 'People Operations', avatar: 'https://i.pravatar.cc/40?u=maria-santos' },
+] as const;
 
 interface TemplateEditorProps {
   onExit: () => void;
   onGoHome?: () => void;
   mode?: 'create' | 'edit';
   onSaveNewTemplate?: (name: string, body: string) => void;
+  /** Persist changes when editing an existing template (preview + reopen). */
+  onUpdateTemplate?: (name: string, body: string) => void;
   initialTitle?: string;
   /** When set in edit mode, rich canvas shows this HTML (aligned with envelope preview). */
   initialBodyHtml?: string | null;
@@ -70,6 +84,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   onGoHome,
   mode = 'edit',
   onSaveNewTemplate,
+  onUpdateTemplate,
   initialTitle,
   initialBodyHtml,
 }) => {
@@ -79,9 +94,68 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const [templateName, setTemplateName] = useState(initialTitle?.trim() || '');
   const [titleEditing, setTitleEditing] = useState(false);
   const [recipientPanelOpen, setRecipientPanelOpen] = useState(true);
+  const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [employeeRole, setEmployeeRole] = useState<'employee' | 'manager'>('employee');
   const editorRef = useRef<HTMLDivElement>(null);
   const chipMoveRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const syncingTitleFromBar = useRef(false);
+  const employeeMenuRef = useRef<HTMLDivElement>(null);
+
+  const focusEditor = () => {
+    editorRef.current?.focus();
+  };
+
+  const exec = (command: string, value?: string) => {
+    focusEditor();
+    document.execCommand(command, false, value);
+  };
+
+  const normalizeTitleParagraphs = (root: HTMLElement) => {
+    let firstP: HTMLParagraphElement | null = null;
+    for (const el of Array.from(root.children)) {
+      if (el.tagName === 'P') {
+        firstP = el as HTMLParagraphElement;
+        break;
+      }
+    }
+    if (!firstP) {
+      const p = document.createElement('p');
+      p.setAttribute('data-title-line', '');
+      p.appendChild(document.createElement('br'));
+      root.prepend(p);
+      firstP = p;
+    }
+    firstP.setAttribute('data-title-line', '');
+    for (const el of Array.from(root.children)) {
+      if (el.tagName !== 'P' || el === firstP) continue;
+      (el as HTMLParagraphElement).removeAttribute('data-title-line');
+    }
+  };
+
+  const readTitleFromEditor = (): string => {
+    const tp = editorRef.current?.querySelector('p[data-title-line]');
+    return tp?.textContent?.trim() ?? '';
+  };
+
+  const writeTitleToEditor = (text: string) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    let tp = ed.querySelector('p[data-title-line]') as HTMLParagraphElement | null;
+    if (!tp) {
+      normalizeTitleParagraphs(ed);
+      tp = ed.querySelector('p[data-title-line]') as HTMLParagraphElement | null;
+    }
+    if (!tp) return;
+    syncingTitleFromBar.current = true;
+    if (!text.trim()) {
+      tp.innerHTML = '<br>';
+    } else {
+      tp.textContent = text;
+    }
+    syncingTitleFromBar.current = false;
+  };
 
   const wireChipDragHandlers = useCallback((root: HTMLElement) => {
     root.querySelectorAll(`span[data-chip="${CHIP_ATTR}"]`).forEach((el) => {
@@ -112,13 +186,37 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
 
   useEffect(() => {
     if (!useRichCanvas || !editorRef.current) return;
+    const ed = editorRef.current;
     if (initialBodyHtml) {
-      editorRef.current.innerHTML = initialBodyHtml;
+      if (initialBodyHtml.includes('data-title-line')) {
+        ed.innerHTML = initialBodyHtml;
+      } else {
+        const safe = (initialTitle ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        ed.innerHTML = `<p data-title-line>${safe || '<br>'}</p>${initialBodyHtml}`;
+      }
     } else if (isCreate) {
-      editorRef.current.innerHTML = '';
+      ed.innerHTML = '<p data-title-line><br></p>';
     }
-    wireChipDragHandlers(editorRef.current);
-  }, [initialBodyHtml, isCreate, useRichCanvas, wireChipDragHandlers]);
+    normalizeTitleParagraphs(ed);
+    const titleText = ed.querySelector('p[data-title-line]')?.textContent?.trim() ?? '';
+    if (titleText) setTemplateName(titleText);
+    else if (initialTitle?.trim()) setTemplateName(initialTitle.trim());
+    wireChipDragHandlers(ed);
+  }, [initialBodyHtml, initialTitle, isCreate, useRichCanvas, wireChipDragHandlers]);
+
+  useEffect(() => {
+    if (!employeeMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (employeeMenuRef.current && !employeeMenuRef.current.contains(e.target as Node)) {
+        setEmployeeMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [employeeMenuOpen]);
 
   const insertChipAtCaret = useCallback((label: string) => {
     const editor = editorRef.current;
@@ -233,13 +331,43 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   };
 
   const syncChipsAfterInput = () => {
-    if (editorRef.current) wireChipDragHandlers(editorRef.current);
+    const ed = editorRef.current;
+    if (!ed) return;
+    normalizeTitleParagraphs(ed);
+    if (!syncingTitleFromBar.current) {
+      setTemplateName(readTitleFromEditor());
+    }
+    wireChipDragHandlers(ed);
   };
 
   const displayTitle = templateName.trim() || '[Envelope Templates Name]';
 
+  const employeeQuery = employeeSearch.trim().toLowerCase();
+  const filteredEmployees = employeeQuery
+    ? MOCK_EMPLOYEES.filter(
+        (e) => e.name.toLowerCase().includes(employeeQuery) || e.dept.toLowerCase().includes(employeeQuery)
+      )
+    : [];
+  const primaryMatchId = filteredEmployees[0]?.id ?? null;
+
   return (
     <div className="flex flex-col h-screen bg-white text-[#1e293b] font-sans overflow-hidden">
+      <style>{`
+        .template-rich-editor > p[data-title-line] {
+          font-size: 24px;
+          font-weight: 700;
+          line-height: 1.3;
+          color: rgb(15 23 42);
+          margin: 0 0 0.75rem 0;
+        }
+        .template-rich-editor > p:not([data-title-line]) {
+          font-size: 15px;
+          font-weight: 400;
+          line-height: 1.625;
+          color: rgb(30 41 59);
+          margin: 0 0 0.75rem 0;
+        }
+      `}</style>
       <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 shrink-0 z-[100]">
         <div className="flex items-center space-x-6">
           <div
@@ -298,8 +426,16 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               type="text"
               value={templateName}
               onChange={(e) => setTemplateName(e.target.value)}
-              onBlur={() => setTitleEditing(false)}
-              onKeyDown={(e) => e.key === 'Enter' && setTitleEditing(false)}
+              onBlur={() => {
+                writeTitleToEditor(templateName);
+                setTitleEditing(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  writeTitleToEditor(templateName);
+                  setTitleEditing(false);
+                }
+              }}
               className="text-[14px] font-bold text-slate-800 w-full border-b-2 border-[#7A005D] outline-none bg-transparent py-0.5"
               placeholder="[Envelope Templates Name]"
             />
@@ -329,11 +465,14 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           <button className="px-4 py-1.5 bg-[#f8fafc] border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm">Preview</button>
           <button className="px-4 py-1.5 bg-[#f8fafc] border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm">Import</button>
           <button
+            type="button"
             onClick={() => {
+              const name = templateName.trim() || readTitleFromEditor().trim() || 'Untitled template';
+              const body = useRichCanvas && editorRef.current ? editorRef.current.innerHTML : '';
               if (isCreate && onSaveNewTemplate) {
-                const name = templateName.trim() || 'Untitled template';
-                const body = useRichCanvas && editorRef.current ? editorRef.current.innerHTML : '';
                 onSaveNewTemplate(name, body);
+              } else if (!isCreate && onUpdateTemplate) {
+                onUpdateTemplate(name, body);
               } else {
                 onExit();
               }
@@ -348,13 +487,28 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col relative overflow-hidden bg-[#F3F4F6]/50">
           <div className="bg-white border-b border-slate-100 px-6 py-1 flex items-center gap-1.5 shrink-0 overflow-x-auto no-scrollbar shadow-sm">
-            <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+            <button
+              type="button"
+              className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => exec('undo')}
+            >
               <Undo2 size={16} />
             </button>
-            <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+            <button
+              type="button"
+              className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => exec('redo')}
+            >
               <Redo2 size={16} />
             </button>
-            <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+            <button
+              type="button"
+              className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => window.print()}
+            >
               <Printer size={16} />
             </button>
             <div className="h-6 w-px bg-slate-200 mx-1" />
@@ -378,16 +532,36 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
             </div>
             <div className="h-6 w-px bg-slate-200 mx-1" />
             <div className="flex items-center gap-0.5">
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded font-bold text-slate-700">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded font-bold text-slate-700"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('bold')}
+              >
                 <Bold size={16} />
               </button>
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded italic text-slate-700">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded italic text-slate-700"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('italic')}
+              >
                 <Italic size={16} />
               </button>
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded underline text-slate-700">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded underline text-slate-700"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('underline')}
+              >
                 <Underline size={16} />
               </button>
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-400">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded text-slate-400"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('formatBlock', 'pre')}
+              >
                 <Code size={16} />
               </button>
             </div>
@@ -401,34 +575,74 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 <Baseline size={16} className="text-slate-700" />
                 <div className="w-3 h-0.5 bg-slate-700 mt-[1px]" />
               </button>
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('removeFormat')}
+              >
                 <Eraser size={16} />
               </button>
             </div>
             <div className="h-6 w-px bg-slate-200 mx-1" />
             <div className="flex items-center gap-0.5">
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('justifyLeft')}
+              >
                 <AlignLeft size={16} />
               </button>
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('justifyCenter')}
+              >
                 <AlignCenter size={16} />
               </button>
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('justifyRight')}
+              >
                 <AlignRight size={16} />
               </button>
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('justifyFull')}
+              >
                 <AlignJustify size={16} />
               </button>
             </div>
             <div className="h-6 w-px bg-slate-200 mx-1" />
             <div className="flex items-center gap-0.5">
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('insertUnorderedList')}
+              >
                 <List size={16} />
               </button>
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded text-slate-500"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('insertOrderedList')}
+              >
                 <ListOrdered size={16} />
               </button>
-              <button type="button" className="p-1.5 hover:bg-slate-100 rounded text-slate-500 flex items-center">
+              <button
+                type="button"
+                className="p-1.5 hover:bg-slate-100 rounded text-slate-500 flex items-center"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => exec('indent')}
+              >
                 <Indent size={16} />
                 <ChevronDown size={10} className="ml-0.5" />
               </button>
@@ -446,8 +660,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleEditorDrop}
                   onKeyDown={handleEditorKeyDown}
-                  className="w-full min-h-[900px] outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400"
-                  data-placeholder="Start typing your template, or drag recipient fields here."
+                  className="template-rich-editor w-full min-h-[900px] outline-none"
                 />
               ) : (
                 <>
@@ -482,14 +695,111 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               </button>
             </div>
             <div className="p-4 space-y-6 overflow-y-auto custom-scrollbar">
-              <div className="border border-slate-200 rounded-xl px-4 py-2.5 flex items-center justify-between bg-white hover:bg-slate-50 cursor-pointer shadow-sm transition-colors group">
-                <div className="flex items-center space-x-3">
-                  <div className="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100">
-                    <User size={14} />
+              <div ref={employeeMenuRef} className="relative z-30">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmployeeMenuOpen((o) => {
+                      const next = !o;
+                      setEmployeeSearch('');
+                      return next;
+                    });
+                  }}
+                  className={`w-full border rounded-xl px-4 py-2.5 flex items-center justify-between bg-white hover:bg-slate-50 cursor-pointer shadow-sm transition-colors text-left ${
+                    employeeMenuOpen ? 'ring-2 ring-blue-400 border-blue-500' : 'border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100 shrink-0">
+                      <User size={14} />
+                    </div>
+                    <span className="text-[13px] font-bold text-slate-800 truncate">Employee</span>
                   </div>
-                  <span className="text-[13px] font-bold text-slate-800">Employee</span>
-                </div>
-                <ChevronDown size={16} className="text-slate-400" />
+                  {employeeMenuOpen ? <ChevronDown size={16} className="text-slate-400 rotate-180 shrink-0" /> : <ChevronDown size={16} className="text-slate-400 shrink-0" />}
+                </button>
+                {employeeMenuOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden">
+                    <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100">
+                      <Search size={16} className="text-slate-400 shrink-0" />
+                      <input
+                        type="text"
+                        value={employeeSearch}
+                        onChange={(e) => setEmployeeSearch(e.target.value)}
+                        placeholder="Search people"
+                        className="flex-1 min-w-0 text-sm outline-none text-slate-900 placeholder:text-slate-400"
+                        autoFocus
+                      />
+                      <ChevronDown size={14} className="text-slate-400 rotate-180 shrink-0" />
+                    </div>
+                    {!employeeQuery ? (
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left"
+                          onClick={() => setEmployeeRole('employee')}
+                        >
+                          <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 shrink-0">
+                            <User size={16} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-slate-900">Employee</div>
+                            <div className="text-xs text-slate-500">Placeholder</div>
+                          </div>
+                          {employeeRole === 'employee' ? <Check size={18} className="text-blue-600 shrink-0" strokeWidth={2.5} /> : null}
+                        </button>
+                        <button
+                          type="button"
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left"
+                          onClick={() => setEmployeeRole('manager')}
+                        >
+                          <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 shrink-0">
+                            <User size={16} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-slate-900">Employee&apos;s manager</div>
+                            <div className="text-xs text-slate-500">Placeholder</div>
+                          </div>
+                          {employeeRole === 'manager' ? <Check size={18} className="text-blue-600 shrink-0" strokeWidth={2.5} /> : null}
+                        </button>
+                        <div className="border-t border-slate-200" />
+                        <button type="button" className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-sm font-medium text-slate-900">
+                          <UserPlus size={18} className="text-slate-600 shrink-0" />
+                          Add external recipient
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="max-h-52 overflow-y-auto py-1">
+                          {filteredEmployees.length === 0 ? (
+                            <div className="px-4 py-6 text-sm text-slate-500 text-center">No matches</div>
+                          ) : (
+                            filteredEmployees.map((emp) => (
+                              <button
+                                key={emp.id}
+                                type="button"
+                                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
+                              >
+                                <img src={emp.avatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-100" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-bold text-slate-900 truncate">{emp.name}</div>
+                                  <div className="text-xs text-slate-500 truncate">{emp.dept}</div>
+                                </div>
+                                {primaryMatchId === emp.id ? <Check size={18} className="text-blue-600 shrink-0" strokeWidth={2.5} /> : null}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                        <div className="border-t border-slate-200" />
+                        <button type="button" className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-sm font-medium text-slate-900">
+                          <UserPlus size={18} className="text-slate-600 shrink-0" />
+                          <span className="truncate">
+                            Add &apos;{employeeSearch.trim() || '…'}&apos; as an external recipient
+                          </span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="space-y-3 pt-2">
                 {(['Text', 'Checkbox', 'Signature', 'Date signed'] as const).map((label, i) => {
