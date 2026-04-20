@@ -21,13 +21,19 @@ interface EnvelopeState {
   uploadedFiles: UploadedFileItem[];
   recipients: any[];
   selectedFolder: string | null;
+  /** When false, all recipients are treated as the same signing step (parallel). */
+  signingOrderEnabled: boolean;
+  /** Ordered signing steps; each inner array is recipient ids who sign together. Only used when signingOrderEnabled. */
+  signingOrderGroups: string[][];
 }
 
 const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   selectedTemplates: [],
   uploadedFiles: [],
   recipients: [{ id: '1', user: null, action: 'Needs to complete', isSearching: false, searchTerm: '', isActionDropdownOpen: false }],
-  selectedFolder: 'All documents'
+  selectedFolder: 'All documents',
+  signingOrderEnabled: false,
+  signingOrderGroups: []
 };
 
 const SuccessSnackbar: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {

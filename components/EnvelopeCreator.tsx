@@ -205,6 +205,32 @@ interface RecipientSlot {
   isActionDropdownOpen: boolean;
 }
 
+const RECIPIENT_DRAG_TYPE = 'application/x-recipient-id';
+
+function removeIdFromGroups(groups: string[][], id: string): string[][] {
+  return groups.map((g) => g.filter((x) => x !== id)).filter((g) => g.length > 0);
+}
+
+function mergeIntoRecipient(groups: string[][], draggedId: string, targetId: string): string[][] {
+  if (draggedId === targetId) return groups;
+  const without = removeIdFromGroups(groups, draggedId);
+  const ti = without.findIndex((gr) => gr.includes(targetId));
+  if (ti < 0) return groups;
+  return without.map((gr, i) => (i === ti ? [...gr, draggedId] : gr));
+}
+
+function insertSoloBeforeRecipient(groups: string[][], draggedId: string, beforeRecipientId: string): string[][] {
+  if (draggedId === beforeRecipientId) return groups;
+  const without = removeIdFromGroups(groups, draggedId);
+  const ti = without.findIndex((gr) => gr.includes(beforeRecipientId));
+  if (ti < 0) return [...without, [draggedId]];
+  return [...without.slice(0, ti), [draggedId], ...without.slice(ti)];
+}
+
+function appendSoloGroup(groups: string[][], draggedId: string): string[][] {
+  return [...removeIdFromGroups(groups, draggedId), [draggedId]];
+}
+
 const VariableChip: React.FC<{ label: string; color?: 'blue' | 'purple' | 'orange' }> = ({ label, color = 'blue' }) => {
   const colors = {
     blue: 'bg-white border-slate-200 text-slate-800',
@@ -267,6 +293,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const uploadedFiles = persistentState?.uploadedFiles || [];
   const recipients = persistentState?.recipients || [{ id: '1', user: null, action: 'Needs to complete', isSearching: false, searchTerm: '', isActionDropdownOpen: false }];
   const selectedFolder = persistentState?.selectedFolder || 'All documents';
+  const signingOrderEnabled = persistentState?.signingOrderEnabled ?? false;
+  const signingOrderGroups: string[][] = persistentState?.signingOrderGroups ?? [];
 
   const updateState = (updates: any) => {
     onUpdateState?.({
@@ -274,6 +302,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       uploadedFiles,
       recipients,
       selectedFolder,
+      signingOrderEnabled,
+      signingOrderGroups,
       ...updates
     });
   };
@@ -286,6 +316,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const [subject, setSubject] = useState('Action required for documents');
   const [body, setBody] = useState('Please review and send the documents\n• {Document names}');
   const [activeCoachmark, setActiveCoachmark] = useState<number | null>(null);
+  const [draggingRecipientId, setDraggingRecipientId] = useState<string | null>(null);
+  const [signingOrderSummaryOpen, setSigningOrderSummaryOpen] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const locationRef = useRef<HTMLDivElement>(null);
@@ -374,15 +406,19 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   };
 
   const handleAddRecipient = () => {
+    const newId = Math.random().toString(36).substr(2, 9);
     const next = [...recipients, { 
-      id: Math.random().toString(36).substr(2, 9), 
+      id: newId, 
       user: null, 
       action: 'Needs to complete', 
       isSearching: false, 
       searchTerm: '',
       isActionDropdownOpen: false
     }];
-    updateState({ recipients: next });
+    const nextGroups = signingOrderEnabled
+      ? [...signingOrderGroups, [newId]]
+      : signingOrderGroups;
+    updateState({ recipients: next, signingOrderGroups: nextGroups });
   };
 
   const updateRecipient = (id: string, updates: Partial<RecipientSlot>) => {
@@ -392,7 +428,34 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
   const removeRecipient = (id: string) => {
     const next = recipients.filter(r => r.id !== id);
-    updateState({ recipients: next });
+    const nextGroups = signingOrderGroups.map((g) => g.filter((x) => x !== id)).filter((g) => g.length > 0);
+    updateState({ recipients: next, signingOrderGroups: nextGroups });
+  };
+
+  const setSigningOrderCheckbox = (enabled: boolean) => {
+    if (enabled) {
+      updateState({
+        signingOrderEnabled: true,
+        signingOrderGroups: recipients.map((r) => [r.id]),
+      });
+    } else {
+      updateState({ signingOrderEnabled: false });
+    }
+  };
+
+  const getOrderedRecipients = (): RecipientSlot[] => {
+    if (!signingOrderEnabled || signingOrderGroups.length === 0) return recipients;
+    return signingOrderGroups
+      .flat()
+      .map((id) => recipients.find((r) => r.id === id))
+      .filter((r): r is RecipientSlot => r != null);
+  };
+
+  const recipientDisplayLabel = (r: RecipientSlot) =>
+    r.user?.name || (r.searchTerm?.trim() ? r.searchTerm : '') || 'Recipient';
+
+  const applyGroups = (nextGroups: string[][]) => {
+    updateState({ signingOrderGroups: nextGroups });
   };
 
   const toggleFolder = (id: string, e: React.MouseEvent) => {
@@ -844,63 +907,234 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             </button>
             {isExpanded('recipients') && (
               <div className="px-5 pb-6 space-y-4">
-                <div className="flex items-center space-x-3 text-slate-500">
-                  <input type="checkbox" className="w-5 h-5 rounded-md border-slate-300 cursor-pointer text-purple-900 focus:ring-purple-200" />
-                  <span className="text-sm font-medium text-slate-500">Enable signing order</span>
+                <div className="flex items-center justify-between gap-4">
+                  <label className="flex items-center space-x-3 text-slate-800 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={signingOrderEnabled}
+                      onChange={(e) => setSigningOrderCheckbox(e.target.checked)}
+                      className="w-5 h-5 rounded-md border-slate-300 cursor-pointer accent-[#7A005D] focus:ring-[#7A005D]/30"
+                    />
+                    <span className="text-sm font-medium">Set signing order</span>
+                  </label>
+                  {signingOrderEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setSigningOrderSummaryOpen(true)}
+                      className="text-sm font-semibold text-blue-600 hover:text-blue-700 hover:underline shrink-0"
+                    >
+                      View order
+                    </button>
+                  )}
                 </div>
-                <div className="space-y-4">
-                  {recipients.map((recipient, index) => (
-                    <div key={recipient.id} className="border border-slate-200 rounded-2xl p-6 bg-white space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-bold text-slate-900">Recipient<span className="text-red-500">*</span></label>
-                        {recipients.length > 1 && <button onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>}
-                      </div>
-                      <div className="flex items-center space-x-3 relative">
-                        <div className="flex-1 relative min-w-0">
-                          {recipient.user ? (
-                            <div className="flex items-center border border-slate-200 rounded-xl px-4 py-2 bg-white h-12 shadow-sm">
-                              <div className="flex items-center space-x-3 min-w-0">
-                                <div className="w-7 h-7 rounded-full border border-slate-100 flex items-center justify-center text-slate-400 bg-slate-50 overflow-hidden shrink-0"><User size={16} /></div>
-                                <span className="text-sm font-medium text-slate-800 truncate">{recipient.user.name}</span>
-                              </div>
-                              <button onClick={() => updateRecipient(recipient.id, { user: null })} className="ml-auto p-1 hover:bg-slate-100 rounded-full shrink-0"><X size={14} className="text-slate-400" /></button>
-                            </div>
-                          ) : (
-                            <div className="relative">
-                              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                              <input type="text" value={recipient.searchTerm} onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value, isSearching: e.target.value.length > 0 })} placeholder="Enter recipient email" className="w-full border border-slate-200 rounded-xl py-3 pl-12 pr-4 text-sm h-12" />
-                              {recipient.isSearching && (
-                                <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
-                                   {MOCK_USERS.filter(u => u.name.toLowerCase().includes(recipient.searchTerm.toLowerCase())).map(user => (
-                                     <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
-                                       <p className="text-sm font-bold text-slate-800">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p>
-                                     </div>
-                                   ))}
+
+                <div className="space-y-1">
+                  {signingOrderEnabled ? (
+                    <>
+                      {signingOrderGroups.map((group, gi) => (
+                        <div
+                          key={gi}
+                          className={group.length > 1 ? 'border-l-4 border-[#7A005D] pl-3 rounded-l-lg' : ''}
+                        >
+                          {group.map((rid) => {
+                            const recipient = recipients.find((r) => r.id === rid);
+                            if (!recipient) return null;
+                            const stepNum = gi + 1;
+                            const parallel = group.length > 1;
+                            return (
+                              <React.Fragment key={rid}>
+                                <div
+                                  className={`h-2 rounded-md transition-colors ${draggingRecipientId ? 'bg-slate-100/80' : ''}`}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'move';
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const dragId = e.dataTransfer.getData(RECIPIENT_DRAG_TYPE);
+                                    if (!dragId) return;
+                                    applyGroups(insertSoloBeforeRecipient(signingOrderGroups, dragId, rid));
+                                    setDraggingRecipientId(null);
+                                  }}
+                                />
+                                <div
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'move';
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const dragId = e.dataTransfer.getData(RECIPIENT_DRAG_TYPE);
+                                    if (!dragId || dragId === rid) return;
+                                    applyGroups(mergeIntoRecipient(signingOrderGroups, dragId, rid));
+                                    setDraggingRecipientId(null);
+                                  }}
+                                  className={`border border-slate-200 rounded-2xl p-6 bg-white space-y-3 mb-3 transition-opacity ${draggingRecipientId === rid ? 'opacity-60' : ''}`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-sm font-bold text-slate-900">Recipient<span className="text-red-500">*</span></label>
+                                    {recipients.length > 1 && (
+                                      <button type="button" onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>
+                                    )}
+                                  </div>
+                                  <div className="flex items-start space-x-3 relative">
+                                    <div
+                                      draggable
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.setData(RECIPIENT_DRAG_TYPE, recipient.id);
+                                        e.dataTransfer.effectAllowed = 'move';
+                                        setDraggingRecipientId(recipient.id);
+                                      }}
+                                      onDragEnd={() => setDraggingRecipientId(null)}
+                                      className="shrink-0 p-2 mt-1 cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50"
+                                      title="Drag to reorder or combine signing steps"
+                                    >
+                                      <GripVertical size={20} />
+                                    </div>
+                                    <div className={`shrink-0 w-8 h-8 rounded-full text-white text-sm font-bold flex items-center justify-center shadow-sm mt-1 ${parallel ? 'bg-[#7A005D]' : 'bg-blue-600'}`}>
+                                      {stepNum}
+                                    </div>
+                                    <div className="flex-1 flex items-center space-x-3 relative min-w-0 flex-wrap sm:flex-nowrap">
+                                      <div className="flex-1 relative min-w-[140px]">
+                                        {recipient.user ? (
+                                          <div className="flex items-center border border-slate-200 rounded-xl px-4 py-2 bg-white h-12 shadow-sm">
+                                            <div className="flex items-center space-x-3 min-w-0">
+                                              <div className="w-7 h-7 rounded-full border border-slate-100 flex items-center justify-center text-slate-400 bg-slate-50 overflow-hidden shrink-0"><User size={16} /></div>
+                                              <span className="text-sm font-medium text-slate-800 truncate">{recipient.user.name}</span>
+                                            </div>
+                                            <button type="button" onClick={() => updateRecipient(recipient.id, { user: null })} className="ml-auto p-1 hover:bg-slate-100 rounded-full shrink-0"><X size={14} className="text-slate-400" /></button>
+                                          </div>
+                                        ) : (
+                                          <div className="relative">
+                                            <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                                            <input type="text" value={recipient.searchTerm} onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value, isSearching: e.target.value.length > 0 })} placeholder="Name" className="w-full border border-slate-200 rounded-xl py-3 pl-12 pr-4 text-sm h-12" />
+                                            {recipient.isSearching && (
+                                              <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                                                {MOCK_USERS.filter(u => u.name.toLowerCase().includes(recipient.searchTerm.toLowerCase())).map(user => (
+                                                  <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
+                                                    <p className="text-sm font-bold text-slate-800">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="relative flex-1 min-w-[140px]">
+                                        <button type="button" onClick={() => updateRecipient(recipient.id, { isActionDropdownOpen: !recipient.isActionDropdownOpen })} className="w-full border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between bg-white h-12">
+                                          <span className="text-sm font-medium text-slate-800 truncate">{recipient.action}</span>
+                                          <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${recipient.isActionDropdownOpen ? 'rotate-180' : ''}`} />
+                                        </button>
+                                        {recipient.isActionDropdownOpen && (
+                                          <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl">
+                                            <div onClick={() => updateRecipient(recipient.id, { action: 'Needs to complete', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">Needs to complete</div>
+                                            <div onClick={() => updateRecipient(recipient.id, { action: 'CC recipient', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">CC recipient</div>
+                                          </div>
+                                        )}
+                                      </div>
+                                      <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600 shrink-0 mt-1"><MoreVertical size={20} /></button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </React.Fragment>
+                            );
+                          })}
+                        </div>
+                      ))}
+                      <div
+                        className={`h-2 rounded-md ${draggingRecipientId ? 'bg-slate-100/80' : ''}`}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const dragId = e.dataTransfer.getData(RECIPIENT_DRAG_TYPE);
+                          if (!dragId) return;
+                          applyGroups(appendSoloGroup(signingOrderGroups, dragId));
+                          setDraggingRecipientId(null);
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <div className="space-y-4">
+                      {recipients.map((recipient) => (
+                        <div key={recipient.id} className="border border-slate-200 rounded-2xl p-6 bg-white space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-sm font-bold text-slate-900">Recipient<span className="text-red-500">*</span></label>
+                            {recipients.length > 1 && <button type="button" onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>}
+                          </div>
+                          <div className="flex items-center space-x-3 relative">
+                            <div className="flex-1 relative min-w-0">
+                              {recipient.user ? (
+                                <div className="flex items-center border border-slate-200 rounded-xl px-4 py-2 bg-white h-12 shadow-sm">
+                                  <div className="flex items-center space-x-3 min-w-0">
+                                    <div className="w-7 h-7 rounded-full border border-slate-100 flex items-center justify-center text-slate-400 bg-slate-50 overflow-hidden shrink-0"><User size={16} /></div>
+                                    <span className="text-sm font-medium text-slate-800 truncate">{recipient.user.name}</span>
+                                  </div>
+                                  <button type="button" onClick={() => updateRecipient(recipient.id, { user: null })} className="ml-auto p-1 hover:bg-slate-100 rounded-full shrink-0"><X size={14} className="text-slate-400" /></button>
+                                </div>
+                              ) : (
+                                <div className="relative">
+                                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                  <input type="text" value={recipient.searchTerm} onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value, isSearching: e.target.value.length > 0 })} placeholder="Enter recipient email" className="w-full border border-slate-200 rounded-xl py-3 pl-12 pr-4 text-sm h-12" />
+                                  {recipient.isSearching && (
+                                    <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                                      {MOCK_USERS.filter(u => u.name.toLowerCase().includes(recipient.searchTerm.toLowerCase())).map(user => (
+                                        <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
+                                          <p className="text-sm font-bold text-slate-800">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
-                          )}
-                        </div>
-                        <div className="relative flex-1 min-w-0">
-                          <button onClick={() => updateRecipient(recipient.id, { isActionDropdownOpen: !recipient.isActionDropdownOpen })} className="w-full border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between bg-white h-12">
-                            <span className="text-sm font-medium text-slate-800 truncate">{recipient.action}</span>
-                            <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${recipient.isActionDropdownOpen ? 'rotate-180' : ''}`} />
-                          </button>
-                          {recipient.isActionDropdownOpen && (
-                            <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl">
-                              <div onClick={() => updateRecipient(recipient.id, { action: 'Needs to complete', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">Needs to complete</div>
-                              <div onClick={() => updateRecipient(recipient.id, { action: 'CC recipient', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">CC recipient</div>
+                            <div className="relative flex-1 min-w-0">
+                              <button type="button" onClick={() => updateRecipient(recipient.id, { isActionDropdownOpen: !recipient.isActionDropdownOpen })} className="w-full border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between bg-white h-12">
+                                <span className="text-sm font-medium text-slate-800 truncate">{recipient.action}</span>
+                                <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${recipient.isActionDropdownOpen ? 'rotate-180' : ''}`} />
+                              </button>
+                              {recipient.isActionDropdownOpen && (
+                                <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl">
+                                  <div onClick={() => updateRecipient(recipient.id, { action: 'Needs to complete', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">Needs to complete</div>
+                                  <div onClick={() => updateRecipient(recipient.id, { action: 'CC recipient', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">CC recipient</div>
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600 shrink-0"><MoreVertical size={20} /></button>
+                          </div>
                         </div>
-                        <button className="p-1.5 text-slate-400 hover:text-slate-600 shrink-0"><MoreVertical size={20} /></button>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-                <button onClick={handleAddRecipient} disabled={isAddRecipientDisabled} className={`flex items-center space-x-2 px-4 py-2.5 border rounded-xl text-sm font-bold transition-all ${isAddRecipientDisabled ? 'bg-slate-50 text-slate-300 cursor-not-allowed' : 'bg-white border-slate-200 text-slate-900 hover:bg-slate-50'}`}>
+
+                <button type="button" onClick={handleAddRecipient} disabled={isAddRecipientDisabled} className={`flex items-center space-x-2 px-4 py-2.5 border rounded-xl text-sm font-bold transition-all ${isAddRecipientDisabled ? 'bg-slate-50 text-slate-300 cursor-not-allowed' : 'bg-white border-slate-200 text-slate-900 hover:bg-slate-50'}`}>
                   <CirclePlus size={18} /><span>Add recipient</span>
                 </button>
+
+                {signingOrderSummaryOpen && (
+                  <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/30 p-4" onClick={() => setSigningOrderSummaryOpen(false)} role="presentation">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-100" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="signing-order-title">
+                      <h4 id="signing-order-title" className="font-bold text-lg text-slate-900 mb-4">Signing order</h4>
+                      <ol className="space-y-3 list-decimal list-inside text-sm text-slate-700">
+                        {signingOrderGroups.map((g, i) => (
+                          <li key={i} className="leading-relaxed">
+                            <span className="font-semibold text-slate-900">Step {i + 1}:</span>{' '}
+                            {g.map((id) => {
+                              const r = recipients.find((x) => x.id === id);
+                              return r ? recipientDisplayLabel(r) : 'Recipient';
+                            }).join(', ')}
+                          </li>
+                        ))}
+                      </ol>
+                      <button type="button" className="mt-6 w-full py-2.5 rounded-xl bg-slate-100 font-bold text-slate-800 hover:bg-slate-200" onClick={() => setSigningOrderSummaryOpen(false)}>Close</button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -959,10 +1193,19 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   </button>
                   {isPreviewRecipientsExpanded && (
                     <div className="border-t border-slate-100 flex flex-col">
-                      {recipients.map((r: any, i: number) => (
+                      {getOrderedRecipients().map((r: RecipientSlot, i: number) => (
                         <div key={r.id} className="px-6 py-4 flex items-center space-x-4 border-b border-slate-100 last:border-0 hover:bg-slate-50">
                           <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 border border-purple-100">{r.user ? <img src={`https://i.pravatar.cc/150?u=${r.user.id}`} className="w-full h-full rounded-full" alt="" /> : <User size={20} />}</div>
-                          <div><p className="text-base font-bold text-slate-900 leading-tight">{r.user ? r.user.name : `Recipient ${i + 1}`}</p><p className="text-sm text-slate-500 font-medium">{r.action}</p></div>
+                          <div>
+                            <p className="text-base font-bold text-slate-900 leading-tight">{r.user ? r.user.name : `Recipient ${i + 1}`}</p>
+                            <p className="text-sm text-slate-500 font-medium">
+                              {r.action}
+                              {signingOrderEnabled && signingOrderGroups.length > 0 && (() => {
+                                const gi = signingOrderGroups.findIndex((gr) => gr.includes(r.id));
+                                return gi >= 0 ? ` · Step ${gi + 1}` : '';
+                              })()}
+                            </p>
+                          </div>
                         </div>
                       ))}
                     </div>
