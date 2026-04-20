@@ -49,9 +49,11 @@ interface TemplateEditorProps {
   onGoHome?: () => void;
   /** When `create`, the canvas starts empty so users can add their own content. */
   mode?: 'create' | 'edit';
+  /** Create mode only: persist template name + body, select in envelope, return to previous view. */
+  onSaveNewTemplate?: (name: string, body: string) => void;
 }
 
-const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome, mode = 'edit' }) => {
+const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome, mode = 'edit', onSaveNewTemplate }) => {
   const [templateName, setTemplateName] = useState('');
   const [draftBody, setDraftBody] = useState('');
   const isCreate = mode === 'create';
@@ -136,7 +138,14 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome, mode 
             Import
           </button>
           <button 
-            onClick={onExit}
+            onClick={() => {
+              if (isCreate && onSaveNewTemplate) {
+                const name = templateName.trim() || 'Untitled template';
+                onSaveNewTemplate(name, draftBody);
+              } else {
+                onExit();
+              }
+            }}
             className="px-6 py-1.5 bg-[#7A005D] text-white rounded-xl text-[13px] font-bold hover:opacity-95 transition-all shadow-md ml-1"
           >
             Save

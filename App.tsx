@@ -25,6 +25,8 @@ interface EnvelopeState {
   signingOrderEnabled: boolean;
   /** Ordered signing steps; each inner array is recipient ids who sign together. Only used when signingOrderEnabled. */
   signingOrderGroups: string[][];
+  /** User-created templates from the template editor (name + body for preview). */
+  customTemplates: Array<{ name: string; body: string }>;
 }
 
 const INITIAL_ENVELOPE_STATE: EnvelopeState = {
@@ -33,7 +35,8 @@ const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   recipients: [{ id: '1', user: null, action: 'Needs to complete', isSearching: false, searchTerm: '', isActionDropdownOpen: false }],
   selectedFolder: 'All documents',
   signingOrderEnabled: false,
-  signingOrderGroups: []
+  signingOrderGroups: [],
+  customTemplates: []
 };
 
 const SuccessSnackbar: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {
@@ -237,6 +240,18 @@ const App: React.FC = () => {
             onExit={goBack} 
             onGoHome={() => setViewHistory(['landing'])}
             mode={templateEditorMode}
+            onSaveNewTemplate={(name, body) => {
+              const finalName = name.trim() || 'Untitled template';
+              setEnvelopeState((prev) => ({
+                ...prev,
+                customTemplates: [
+                  ...prev.customTemplates.filter((t) => t.name !== finalName),
+                  { name: finalName, body },
+                ],
+                selectedTemplates: Array.from(new Set([...prev.selectedTemplates, finalName])),
+              }));
+              goBack();
+            }}
           />
         </div>
       )}

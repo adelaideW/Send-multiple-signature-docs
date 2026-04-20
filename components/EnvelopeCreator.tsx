@@ -142,7 +142,7 @@ const DisabledWithTooltip: React.FC<{ message: string; children: React.ReactNode
         aria-hidden
       />
       {visible && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-white border border-slate-200 rounded-lg shadow-lg text-[13px] text-slate-600 max-w-[280px] text-center z-20 pointer-events-none leading-snug">
+        <div className="absolute bottom-full left-0 mb-2 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-lg text-[13px] text-slate-700 max-w-[280px] text-left z-20 pointer-events-none leading-snug">
           {message}
         </div>
       )}
@@ -162,7 +162,32 @@ const MOCK_USERS = [
   { id: 'u2', name: 'Sarah Jenkins', email: 'sarah.j@acme.com' },
   { id: 'u3', name: 'Michael Chen', email: 'm.chen@acme.com' },
   { id: 'u4', name: 'Emily Rodriguez', email: 'emily.r@acme.com' },
+  { id: 'u5', name: 'James Okonkwo', email: 'j.okonkwo@acme.com' },
+  { id: 'u6', name: 'Priya Nair', email: 'priya.nair@acme.com' },
+  { id: 'u7', name: 'Luis Fernández', email: 'luis.f@acme.com' },
+  { id: 'u8', name: 'Hannah Müller', email: 'h.muller@acme.com' },
+  { id: 'u9', name: 'Marcus Webb', email: 'marcus.webb@acme.com' },
+  { id: 'u10', name: 'Aisha Khan', email: 'aisha.khan@acme.com' },
+  { id: 'u11', name: 'Tyler Brooks', email: 'tyler.brooks@acme.com' },
+  { id: 'u12', name: 'Nina Patel', email: 'nina.patel@acme.com' },
+  { id: 'u13', name: 'Oliver Grant', email: 'oliver.grant@acme.com' },
+  { id: 'u14', name: 'Rachel Kim', email: 'rachel.kim@acme.com' },
+  { id: 'u15', name: 'Ben Carter', email: 'ben.carter@acme.com' },
+  { id: 'u16', name: 'Sofia Alvarez', email: 'sofia.alvarez@acme.com' },
+  { id: 'u17', name: 'Daniel O’Brien', email: 'd.obrien@acme.com' },
+  { id: 'u18', name: 'Mei Zhang', email: 'mei.zhang@acme.com' },
 ];
+
+const filterMockUsers = (term: string) => {
+  const q = term.trim().toLowerCase();
+  if (!q) return MOCK_USERS;
+  return MOCK_USERS.filter(
+    (u) =>
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      u.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(q))
+  );
+};
 
 interface FolderNode {
   id: string;
@@ -295,6 +320,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const selectedFolder = persistentState?.selectedFolder || 'All documents';
   const signingOrderEnabled = persistentState?.signingOrderEnabled ?? false;
   const signingOrderGroups: string[][] = persistentState?.signingOrderGroups ?? [];
+  const customTemplates: Array<{ name: string; body: string }> = persistentState?.customTemplates ?? [];
 
   const updateState = (updates: any) => {
     onUpdateState?.({
@@ -304,6 +330,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       selectedFolder,
       signingOrderEnabled,
       signingOrderGroups,
+      customTemplates,
       ...updates
     });
   };
@@ -318,8 +345,23 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const [activeCoachmark, setActiveCoachmark] = useState<number | null>(null);
   const [draggingRecipientId, setDraggingRecipientId] = useState<string | null>(null);
   const [signingOrderSummaryOpen, setSigningOrderSummaryOpen] = useState(false);
+  const [dropTargetZone, setDropTargetZone] = useState<string | null>(null);
+  const [duplicateHoverUserId, setDuplicateHoverUserId] = useState<string | null>(null);
+  const [showRecipientErrors, setShowRecipientErrors] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const allTemplateNames = [
+    ...TEMPLATES,
+    ...customTemplates.map((c) => c.name).filter((n) => !TEMPLATES.includes(n)),
+  ];
+
+  useEffect(() => {
+    if (recipients.length <= 1 && signingOrderEnabled) {
+      updateState({ signingOrderEnabled: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- batch envelope updates from parent state
+  }, [recipients.length, signingOrderEnabled]);
   const locationRef = useRef<HTMLDivElement>(null);
   const recipientSelectorRef = useRef<HTMLDivElement>(null);
   const fieldsContainerRef = useRef<HTMLDivElement>(null);
@@ -385,6 +427,16 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     }
   };
 
+  const removeOneTemplate = (tpl: string) => {
+    const next = selectedTemplates.filter((t) => t !== tpl);
+    updateState({ selectedTemplates: next });
+    if (currentPreviewPage > next.length && next.length > 0) {
+      setCurrentPreviewPage(next.length);
+    } else if (next.length === 0) {
+      setCurrentPreviewPage(1);
+    }
+  };
+
   const clearTemplates = (e: React.MouseEvent) => {
     e.stopPropagation();
     updateState({ selectedTemplates: [] });
@@ -424,6 +476,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const updateRecipient = (id: string, updates: Partial<RecipientSlot>) => {
     const next = recipients.map(r => r.id === id ? { ...r, ...updates } : r);
     updateState({ recipients: next });
+    if (updates.user) setShowRecipientErrors(false);
   };
 
   const removeRecipient = (id: string) => {
@@ -433,6 +486,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   };
 
   const setSigningOrderCheckbox = (enabled: boolean) => {
+    if (enabled && recipients.length <= 1) return;
     if (enabled) {
       updateState({
         signingOrderEnabled: true,
@@ -498,7 +552,17 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     ));
   };
 
+  const hasDocuments = selectedTemplates.length > 0 || uploadedFiles.length > 0;
+  const canContinue = hasDocuments;
+
   const handleContinue = () => {
+    if (!hasDocuments) return;
+    const allRecipientsFilled = recipients.every((r) => r.user !== null);
+    if (!allRecipientsFilled) {
+      setShowRecipientErrors(true);
+      return;
+    }
+    setShowRecipientErrors(false);
     if (currentStep === 'setup' && uploadedFiles.length > 0) {
       setCurrentStep('placement');
       setTimeout(() => setActiveCoachmark(1), 600);
@@ -507,10 +571,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     }
   };
 
-  const hasDocuments = selectedTemplates.length > 0 || uploadedFiles.length > 0;
-  const hasValidRecipients = recipients.some(r => r.user !== null);
-  const canContinue = hasDocuments && hasValidRecipients;
-  const isAddRecipientDisabled = recipients.length > 0 && recipients[0].user === null;
+  const isUserAlreadyRecipient = (userId: string, exceptSlotId: string) =>
+    recipients.some((r) => r.id !== exceptSlotId && r.user?.id === userId);
 
   const isUploadMode = uploadedFiles.length > 0;
 
@@ -785,11 +847,11 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             {isExpanded('documents') && (
               <div className="px-5 pb-6 space-y-6">
                 <div className="space-y-2 relative rounded-lg" ref={dropdownRef}>
-                  <label className="text-sm font-bold text-slate-800">select templates</label>
+                  <label className="text-sm font-bold text-slate-800">Select templates</label>
                   {uploadedFiles.length > 0 ? (
                     <DisabledWithTooltip message="Remove uploaded documents to allow selecting documents">
                       <div className="rounded-lg">
-                        <div className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex flex-wrap items-center gap-2 bg-slate-50 opacity-50">
+                        <div className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex items-center gap-2 bg-slate-50 opacity-50">
                           {selectedTemplates.length > 0 ? (
                             <div className="flex flex-wrap gap-1.5 flex-1 max-h-[96px] overflow-hidden">
                               {selectedTemplates.map(t => (
@@ -807,33 +869,56 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     <>
                       <div
                         onClick={() => uploadedFiles.length === 0 && setIsTemplateMenuOpen(!isTemplateMenuOpen)}
-                        className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex flex-wrap items-center gap-2 cursor-pointer bg-white"
+                        className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex items-center gap-2 cursor-pointer bg-white"
                       >
-                        {selectedTemplates.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={clearTemplates}
-                            className="shrink-0 p-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
-                            aria-label="Clear all selected templates"
-                          >
-                            <X size={16} />
-                          </button>
-                        )}
-                        {selectedTemplates.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5 flex-1 max-h-[96px] overflow-hidden min-w-0">
-                            {selectedTemplates.map(t => (
-                              <span key={t} className="bg-slate-100 text-slate-700 text-[11px] px-2 py-0.5 rounded flex items-center max-w-full truncate">{t}</span>
-                            ))}
+                        <div className="flex flex-wrap gap-1.5 flex-1 min-w-0 max-h-[96px] overflow-y-auto">
+                          {selectedTemplates.length > 0 ? (
+                            selectedTemplates.map((t) => (
+                              <span
+                                key={t}
+                                className="inline-flex items-center gap-1 max-w-full bg-slate-100 text-slate-800 text-[11px] pl-2 pr-1 py-0.5 rounded border border-slate-200/80"
+                              >
+                                <span className="truncate max-w-[200px]">{t}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeOneTemplate(t);
+                                  }}
+                                  className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                                  aria-label={`Remove ${t}`}
+                                >
+                                  <X size={12} strokeWidth={2.5} />
+                                </button>
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-400 text-sm py-1">Search</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0 self-stretch">
+                          {selectedTemplates.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearTemplates(e);
+                              }}
+                              className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+                              aria-label="Clear all selected templates"
+                            >
+                              <X size={14} strokeWidth={3} />
+                            </button>
+                          )}
+                          <div className="flex h-8 w-8 items-center justify-center text-slate-400">
+                            <ChevronDown size={14} />
                           </div>
-                        ) : (
-                          <span className="text-slate-400 text-sm flex-1">Search</span>
-                        )}
-                        <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                        </div>
                       </div>
                       {isTemplateMenuOpen && (
                         <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-[320px] overflow-hidden">
                           <div className="py-2 overflow-y-auto custom-scrollbar min-h-0 flex-1">
-                            {TEMPLATES.map((tpl) => (
+                            {allTemplateNames.map((tpl) => (
                               <div key={tpl} onClick={(e) => { e.stopPropagation(); toggleTemplate(tpl); }} className="flex items-center justify-between px-5 py-2.5 hover:bg-slate-50 cursor-pointer">
                                 <span className="text-sm text-slate-800 font-medium truncate pr-4">{tpl}</span>
                                 {selectedTemplates.includes(tpl) && <Check size={16} className="text-blue-600 ml-auto shrink-0" />}
@@ -908,12 +993,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             {isExpanded('recipients') && (
               <div className="px-5 pb-6 space-y-4">
                 <div className="flex items-center justify-between gap-4">
-                  <label className="flex items-center space-x-3 text-slate-800 cursor-pointer select-none">
+                  <label className={`flex items-center space-x-3 select-none ${recipients.length <= 1 ? 'cursor-not-allowed opacity-50 text-slate-500' : 'cursor-pointer text-slate-800'}`}>
                     <input
                       type="checkbox"
+                      disabled={recipients.length <= 1}
                       checked={signingOrderEnabled}
                       onChange={(e) => setSigningOrderCheckbox(e.target.checked)}
-                      className="w-5 h-5 rounded-md border-slate-300 cursor-pointer accent-[#7A005D] focus:ring-[#7A005D]/30"
+                      className="w-5 h-5 rounded-md border-slate-300 cursor-pointer accent-[#7A005D] focus:ring-[#7A005D]/30 disabled:cursor-not-allowed"
                     />
                     <span className="text-sm font-medium">Set signing order</span>
                   </label>
@@ -940,14 +1026,20 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             const recipient = recipients.find((r) => r.id === rid);
                             if (!recipient) return null;
                             const stepNum = gi + 1;
-                            const parallel = group.length > 1;
                             return (
                               <React.Fragment key={rid}>
                                 <div
-                                  className={`h-2 rounded-md transition-colors ${draggingRecipientId ? 'bg-slate-100/80' : ''}`}
+                                  className={`h-3 rounded-md transition-all ${dropTargetZone === `before:${rid}` ? 'ring-2 ring-[#7A005D]/50 bg-[#7A005D]/15' : draggingRecipientId ? 'bg-slate-50' : ''}`}
                                   onDragOver={(e) => {
                                     e.preventDefault();
                                     e.dataTransfer.dropEffect = 'move';
+                                  }}
+                                  onDragEnter={(e) => {
+                                    e.preventDefault();
+                                    if (draggingRecipientId) setDropTargetZone(`before:${rid}`);
+                                  }}
+                                  onDragLeave={(e) => {
+                                    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTargetZone(null);
                                   }}
                                   onDrop={(e) => {
                                     e.preventDefault();
@@ -956,12 +1048,20 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                     if (!dragId) return;
                                     applyGroups(insertSoloBeforeRecipient(signingOrderGroups, dragId, rid));
                                     setDraggingRecipientId(null);
+                                    setDropTargetZone(null);
                                   }}
                                 />
                                 <div
                                   onDragOver={(e) => {
                                     e.preventDefault();
                                     e.dataTransfer.dropEffect = 'move';
+                                  }}
+                                  onDragEnter={(e) => {
+                                    e.preventDefault();
+                                    if (draggingRecipientId && draggingRecipientId !== rid) setDropTargetZone(`merge:${rid}`);
+                                  }}
+                                  onDragLeave={(e) => {
+                                    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTargetZone(null);
                                   }}
                                   onDrop={(e) => {
                                     e.preventDefault();
@@ -970,8 +1070,9 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                     if (!dragId || dragId === rid) return;
                                     applyGroups(mergeIntoRecipient(signingOrderGroups, dragId, rid));
                                     setDraggingRecipientId(null);
+                                    setDropTargetZone(null);
                                   }}
-                                  className={`border border-slate-200 rounded-2xl p-6 bg-white space-y-3 mb-3 transition-opacity ${draggingRecipientId === rid ? 'opacity-60' : ''}`}
+                                  className={`border rounded-2xl p-6 bg-white space-y-3 mb-3 transition-all ${dropTargetZone === `merge:${rid}` ? 'ring-2 ring-[#7A005D]/55 border-[#7A005D]/40 bg-[#7A005D]/5' : 'border-slate-200'} ${draggingRecipientId === rid ? 'opacity-65 shadow-md' : ''}`}
                                 >
                                   <div className="flex items-center justify-between">
                                     <label className="text-sm font-bold text-slate-900">Recipient<span className="text-red-500">*</span></label>
@@ -986,14 +1087,18 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                         e.dataTransfer.setData(RECIPIENT_DRAG_TYPE, recipient.id);
                                         e.dataTransfer.effectAllowed = 'move';
                                         setDraggingRecipientId(recipient.id);
+                                        setDropTargetZone(null);
                                       }}
-                                      onDragEnd={() => setDraggingRecipientId(null)}
+                                      onDragEnd={() => {
+                                        setDraggingRecipientId(null);
+                                        setDropTargetZone(null);
+                                      }}
                                       className="shrink-0 p-2 mt-1 cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50"
                                       title="Drag to reorder or combine signing steps"
                                     >
                                       <GripVertical size={20} />
                                     </div>
-                                    <div className={`shrink-0 w-8 h-8 rounded-full text-white text-sm font-bold flex items-center justify-center shadow-sm mt-1 ${parallel ? 'bg-[#7A005D]' : 'bg-blue-600'}`}>
+                                    <div className="shrink-0 w-8 h-8 rounded-full bg-[#7A005D] text-white text-sm font-bold flex items-center justify-center shadow-sm mt-1">
                                       {stepNum}
                                     </div>
                                     <div className="flex-1 flex items-center space-x-3 relative min-w-0 flex-wrap sm:flex-nowrap">
@@ -1009,14 +1114,32 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                         ) : (
                                           <div className="relative">
                                             <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                                            <input type="text" value={recipient.searchTerm} onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value, isSearching: e.target.value.length > 0 })} placeholder="Name" className="w-full border border-slate-200 rounded-xl py-3 pl-12 pr-4 text-sm h-12" />
+                                            <input type="text" value={recipient.searchTerm} onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value, isSearching: e.target.value.length > 0 })} placeholder="Name" className={`w-full rounded-xl py-3 pl-12 pr-4 text-sm h-12 border ${showRecipientErrors && !recipient.user ? 'border-red-500 ring-2 ring-red-200' : 'border-slate-200'}`} />
                                             {recipient.isSearching && (
                                               <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
-                                                {MOCK_USERS.filter(u => u.name.toLowerCase().includes(recipient.searchTerm.toLowerCase())).map(user => (
-                                                  <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
-                                                    <p className="text-sm font-bold text-slate-800">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p>
-                                                  </div>
-                                                ))}
+                                                {filterMockUsers(recipient.searchTerm).map((user) => {
+                                                  const taken = isUserAlreadyRecipient(user.id, recipient.id);
+                                                  return taken ? (
+                                                    <div
+                                                      key={user.id}
+                                                      className="relative px-4 py-2 opacity-50 cursor-not-allowed select-none"
+                                                      onMouseEnter={() => setDuplicateHoverUserId(user.id)}
+                                                      onMouseLeave={() => setDuplicateHoverUserId(null)}
+                                                    >
+                                                      <p className="text-sm font-bold text-slate-800">{user.name}</p>
+                                                      <p className="text-xs text-slate-500">{user.email}</p>
+                                                      {duplicateHoverUserId === user.id && (
+                                                        <div className="absolute bottom-full left-2 mb-1 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-md text-[12px] text-slate-700 max-w-[220px] text-left z-[120] pointer-events-none leading-snug">
+                                                          Recipient already existed
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  ) : (
+                                                    <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
+                                                      <p className="text-sm font-bold text-slate-800">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p>
+                                                    </div>
+                                                  );
+                                                })}
                                               </div>
                                             )}
                                           </div>
@@ -1044,10 +1167,17 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                         </div>
                       ))}
                       <div
-                        className={`h-2 rounded-md ${draggingRecipientId ? 'bg-slate-100/80' : ''}`}
+                        className={`h-3 rounded-md transition-all ${dropTargetZone === 'append' ? 'ring-2 ring-[#7A005D]/50 bg-[#7A005D]/15' : draggingRecipientId ? 'bg-slate-50' : ''}`}
                         onDragOver={(e) => {
                           e.preventDefault();
                           e.dataTransfer.dropEffect = 'move';
+                        }}
+                        onDragEnter={(e) => {
+                          e.preventDefault();
+                          if (draggingRecipientId) setDropTargetZone('append');
+                        }}
+                        onDragLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTargetZone(null);
                         }}
                         onDrop={(e) => {
                           e.preventDefault();
@@ -1055,6 +1185,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                           if (!dragId) return;
                           applyGroups(appendSoloGroup(signingOrderGroups, dragId));
                           setDraggingRecipientId(null);
+                          setDropTargetZone(null);
                         }}
                       />
                     </>
@@ -1079,14 +1210,32 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                               ) : (
                                 <div className="relative">
                                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                  <input type="text" value={recipient.searchTerm} onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value, isSearching: e.target.value.length > 0 })} placeholder="Enter recipient email" className="w-full border border-slate-200 rounded-xl py-3 pl-12 pr-4 text-sm h-12" />
+                                  <input type="text" value={recipient.searchTerm} onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value, isSearching: e.target.value.length > 0 })} placeholder="Search by name or email" className={`w-full rounded-xl py-3 pl-12 pr-4 text-sm h-12 border ${showRecipientErrors && !recipient.user ? 'border-red-500 ring-2 ring-red-200' : 'border-slate-200'}`} />
                                   {recipient.isSearching && (
                                     <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
-                                      {MOCK_USERS.filter(u => u.name.toLowerCase().includes(recipient.searchTerm.toLowerCase())).map(user => (
-                                        <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
-                                          <p className="text-sm font-bold text-slate-800">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p>
-                                        </div>
-                                      ))}
+                                      {filterMockUsers(recipient.searchTerm).map((user) => {
+                                        const taken = isUserAlreadyRecipient(user.id, recipient.id);
+                                        return taken ? (
+                                          <div
+                                            key={user.id}
+                                            className="relative px-4 py-2 opacity-50 cursor-not-allowed select-none"
+                                            onMouseEnter={() => setDuplicateHoverUserId(user.id)}
+                                            onMouseLeave={() => setDuplicateHoverUserId(null)}
+                                          >
+                                            <p className="text-sm font-bold text-slate-800">{user.name}</p>
+                                            <p className="text-xs text-slate-500">{user.email}</p>
+                                            {duplicateHoverUserId === user.id && (
+                                              <div className="absolute bottom-full left-2 mb-1 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-md text-[12px] text-slate-700 max-w-[220px] text-left z-[120] pointer-events-none leading-snug">
+                                                Recipient already existed
+                                              </div>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
+                                            <p className="text-sm font-bold text-slate-800">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>
@@ -1112,7 +1261,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   )}
                 </div>
 
-                <button type="button" onClick={handleAddRecipient} disabled={isAddRecipientDisabled} className={`flex items-center space-x-2 px-4 py-2.5 border rounded-xl text-sm font-bold transition-all ${isAddRecipientDisabled ? 'bg-slate-50 text-slate-300 cursor-not-allowed' : 'bg-white border-slate-200 text-slate-900 hover:bg-slate-50'}`}>
+                <button type="button" onClick={handleAddRecipient} className="flex items-center space-x-2 px-4 py-2.5 border rounded-xl text-sm font-bold transition-all bg-white border-slate-200 text-slate-900 hover:bg-slate-50">
                   <CirclePlus size={18} /><span>Add recipient</span>
                 </button>
 
@@ -1231,12 +1380,27 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                       <p key={i} className="leading-relaxed">{para}</p>
                     ))}
                   </div>
-                ) : (
-                  <>
-                    <p className="mb-6">Effective <VariableChip label="Start date" />, , <VariableChip label="Contractor Name" /> ("Consultant") and <VariableChip label="Business legal name" /> ("Company") agree as follows:</p>
-                    <div className="space-y-6 text-slate-600"><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p></div>
-                  </>
-                )}
+                ) : (() => {
+                  const tplName = selectedTemplates[currentPreviewPage - 1];
+                  const customEntry = customTemplates.find((c) => c.name === tplName);
+                  if (customEntry) {
+                    return (
+                      <div className="space-y-4 text-slate-700">
+                        {customEntry.body.split(/\n+/).filter((p) => p.trim()).map((para, i) => (
+                          <p key={i} className="leading-relaxed whitespace-pre-wrap">
+                            {para}
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <p className="mb-6">Effective <VariableChip label="Start date" />, , <VariableChip label="Contractor Name" /> ("Consultant") and <VariableChip label="Business legal name" /> ("Company") agree as follows:</p>
+                      <div className="space-y-6 text-slate-600"><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p></div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           ) : (
