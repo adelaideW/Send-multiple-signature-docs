@@ -35,7 +35,7 @@ interface EnvelopeState {
 const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   selectedTemplates: [],
   uploadedFiles: [],
-  recipients: [{ id: '1', user: null, action: 'Needs to complete', isSearching: false, searchTerm: '', isActionDropdownOpen: false }],
+  recipients: [{ id: '1', user: null, action: 'Needs to complete', searchTerm: '', isActionDropdownOpen: false }],
   selectedFolder: '',
   signingOrderEnabled: false,
   signingOrderGroups: [],

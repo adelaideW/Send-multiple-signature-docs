@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   ChevronDown, 
   ChevronUp, 
@@ -256,11 +257,22 @@ const FOLDER_STRUCTURE: FolderNode[] = [
 
 const FOLDER_LEAVES = flattenFolderLeaves(FOLDER_STRUCTURE);
 
+/** Focus / highlight ring for text inputs (per design #5AA5E7). */
+const INPUT_FOCUS =
+  'focus:outline-none focus:ring-2 focus:ring-[#5AA5E7]/45 focus:border-[#5AA5E7]';
+
+const RECIPIENT_FIELD_PALETTE = ['#6DB3E8', '#9BB8E8', '#7DC9B8', '#E8A4B8', '#E8C97A', '#88C5D8', '#D8B8E8'];
+
+function recipientFieldAccent(rid: string): string {
+  let h = 0;
+  for (let i = 0; i < rid.length; i++) h = (h * 31 + rid.charCodeAt(i)) | 0;
+  return RECIPIENT_FIELD_PALETTE[Math.abs(h) % RECIPIENT_FIELD_PALETTE.length];
+}
+
 interface RecipientSlot {
   id: string;
   user: { id: string, name: string, email?: string } | null;
   action: 'Needs to complete' | 'CC recipient';
-  isSearching: boolean;
   searchTerm: string;
   isActionDropdownOpen: boolean;
 }
@@ -305,34 +317,60 @@ const VariableChip: React.FC<{ label: string; color?: 'blue' | 'purple' | 'orang
   );
 };
 
-const Coachmark: React.FC<{ 
-  title: string; 
-  content: string; 
-  onNext: () => void; 
+const CoachmarkPortal: React.FC<{
+  anchorRef: React.RefObject<HTMLElement | null>;
+  title: string;
+  content: string;
+  onNext: () => void;
   onClose: () => void;
   step: number;
   isLast?: boolean;
-}> = ({ title, content, onNext, onClose, step, isLast }) => (
-  <div className="absolute z-[200] w-[280px] bg-white rounded-xl shadow-2xl border border-slate-100 p-5 animate-in fade-in zoom-in-95 duration-200">
-    <div className="absolute -left-2 top-6 w-4 h-4 bg-white border-l border-b border-slate-100 rotate-45" />
-    <div className="flex justify-between items-start mb-2">
-      <h4 className="text-[14px] font-bold text-slate-900">{title}</h4>
-      <button onClick={onClose} className="text-slate-300 hover:text-slate-500 transition-colors">
-        <X size={16} />
-      </button>
-    </div>
-    <p className="text-[13px] text-slate-600 leading-relaxed mb-6">{content}</p>
-    <div className="flex justify-between items-center">
-      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">STEP {step} OF 2</span>
-      <button 
-        onClick={onNext}
-        className="px-5 py-1.5 bg-[#7A005D] text-white rounded-lg text-xs font-bold hover:opacity-90 shadow-sm transition-all"
-      >
-        {isLast ? 'Got it' : 'Next'}
-      </button>
-    </div>
-  </div>
-);
+}> = ({ anchorRef, title, content, onNext, onClose, step, isLast }) => {
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  useLayoutEffect(() => {
+    const place = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const top = r.top + r.height / 2;
+      const left = r.right + 12;
+      setPos({ top, left });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [anchorRef]);
+  return createPortal(
+    <div
+      className="fixed z-[100000] w-[min(280px,calc(100vw-24px))] bg-white rounded-xl shadow-2xl border border-slate-100 p-5 pointer-events-auto -translate-y-1/2 animate-in fade-in zoom-in-95 duration-200"
+      style={{ top: pos.top, left: pos.left }}
+      role="dialog"
+    >
+      <div className="flex justify-between items-start mb-2">
+        <h4 className="text-[14px] font-bold text-slate-900 pr-2">{title}</h4>
+        <button type="button" onClick={onClose} className="text-slate-300 hover:text-slate-500 transition-colors shrink-0">
+          <X size={16} />
+        </button>
+      </div>
+      <p className="text-[13px] text-slate-600 leading-relaxed mb-6">{content}</p>
+      <div className="flex justify-between items-center gap-2">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest shrink-0">STEP {step} OF 2</span>
+        <button
+          type="button"
+          onClick={onNext}
+          className="px-5 py-1.5 bg-[#7A005D] text-white rounded-lg text-xs font-bold hover:opacity-90 shadow-sm transition-all shrink-0"
+        >
+          {isLast ? 'Got it' : 'Next'}
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+};
 
 const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({ 
   onExit, 
@@ -352,7 +390,20 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   // Use state from props if available, otherwise local defaults
   const selectedTemplates = persistentState?.selectedTemplates || [];
   const uploadedFiles = persistentState?.uploadedFiles || [];
-  const recipients = persistentState?.recipients || [{ id: '1', user: null, action: 'Needs to complete', isSearching: false, searchTerm: '', isActionDropdownOpen: false }];
+  const recipients: RecipientSlot[] = useMemo(() => {
+    const raw = persistentState?.recipients;
+    const base =
+      raw && raw.length > 0
+        ? raw
+        : [{ id: '1', user: null, action: 'Needs to complete' as const, searchTerm: '', isActionDropdownOpen: false }];
+    return base.map((r: RecipientSlot & { isSearching?: boolean }) => ({
+      id: r.id,
+      user: r.user ?? null,
+      action: r.action,
+      searchTerm: r.searchTerm ?? '',
+      isActionDropdownOpen: r.isActionDropdownOpen ?? false,
+    }));
+  }, [persistentState?.recipients]);
   const selectedFolder = persistentState?.selectedFolder ?? '';
   const signingOrderEnabled = persistentState?.signingOrderEnabled ?? false;
   const signingOrderGroups: string[][] = persistentState?.signingOrderGroups ?? [];
@@ -403,6 +454,14 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const placementPageRef = useRef<HTMLDivElement>(null);
   const placementAutoGateRef = useRef(false);
   const [fieldDragOffset, setFieldDragOffset] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  const [fieldResize, setFieldResize] = useState<{
+    id: string;
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+  } | null>(null);
+  const [recipientPickerOpenId, setRecipientPickerOpenId] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const tagsRef = useRef<HTMLDivElement>(null);
@@ -456,6 +515,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     if (!q) return allTagOptionsList;
     return allTagOptionsList.filter((t) => t.toLowerCase().includes(q));
   }, [allTagOptionsList, tagFilter]);
+
+  const templateFilterHasNoExactMatch =
+    templateFilter.trim().length > 0 &&
+    !allTemplateNames.some((t) => t.toLowerCase() === templateFilter.trim().toLowerCase());
 
   const placementRecipientLabel = useCallback(
     (rid: string) => {
@@ -540,10 +603,16 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       if (tagsRef.current && !tagsRef.current.contains(event.target as Node)) {
         setIsTagsMenuOpen(false);
       }
+      if (
+        recipientPickerOpenId &&
+        !(event.target as Element).closest('[data-recipient-picker]')
+      ) {
+        setRecipientPickerOpenId(null);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [recipientPickerOpenId]);
 
   useEffect(() => {
     if (currentStep !== 'placement' || uploadedFiles.length === 0) {
@@ -585,6 +654,32 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       window.removeEventListener('mouseup', up);
     };
   }, [fieldDragOffset]);
+
+  useEffect(() => {
+    if (!fieldResize) return;
+    const move = (e: MouseEvent) => {
+      const dx = e.clientX - fieldResize.startX;
+      const dy = e.clientY - fieldResize.startY;
+      setPlacementFields((prev) =>
+        prev.map((f) =>
+          f.id !== fieldResize.id
+            ? f
+            : {
+                ...f,
+                w: Math.max(40, fieldResize.startW + dx),
+                h: Math.max(24, fieldResize.startH + dy),
+              }
+        )
+      );
+    };
+    const up = () => setFieldResize(null);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+  }, [fieldResize]);
 
   const totalPages = selectedTemplates.length > 0 ? selectedTemplates.length : (uploadedFiles.length > 0 ? uploadedFiles.length : 0);
 
@@ -643,7 +738,6 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       id: newId, 
       user: null, 
       action: 'Needs to complete', 
-      isSearching: false, 
       searchTerm: '',
       isActionDropdownOpen: false
     }];
@@ -713,6 +807,114 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
   const isUserAlreadyRecipient = (userId: string, exceptSlotId: string) =>
     recipients.some((r) => r.id !== exceptSlotId && r.user?.id === userId);
+
+  const renderRecipientUserPicker = (recipient: RecipientSlot, opts: { placeholder: string; variant: 'signing' | 'parallel' }) => {
+    const open = recipientPickerOpenId === recipient.id;
+    const err = showRecipientErrors && !recipient.user;
+    const triggerErr = err ? 'border-red-500 ring-2 ring-red-200' : 'border-slate-200';
+    const minW = opts.variant === 'parallel' ? 'min-w-0' : 'min-w-[140px]';
+
+    const list = filterMockUsers(recipient.searchTerm).map((user) => {
+      const taken = isUserAlreadyRecipient(user.id, recipient.id);
+      if (taken) {
+        return (
+          <div key={user.id} className="group relative px-4 py-2 opacity-50 cursor-not-allowed select-none" title="recipient existed">
+            <p className="text-sm font-bold text-slate-800">{user.name}</p>
+            <p className="text-xs text-slate-500">{user.email}</p>
+            <div className="absolute left-2 top-full mt-1 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-md text-[12px] text-slate-700 max-w-[220px] text-left z-[500] pointer-events-none leading-snug opacity-0 group-hover:opacity-100 transition-opacity">
+              recipient existed
+            </div>
+          </div>
+        );
+      }
+      return (
+        <div
+          key={user.id}
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            updateRecipient(recipient.id, { user, searchTerm: '' });
+            setRecipientPickerOpenId(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              updateRecipient(recipient.id, { user, searchTerm: '' });
+              setRecipientPickerOpenId(null);
+            }
+          }}
+          className="px-4 py-2 hover:bg-slate-50 cursor-pointer"
+        >
+          <p className="text-sm font-bold text-slate-800">{user.name}</p>
+          <p className="text-xs text-slate-500">{user.email}</p>
+        </div>
+      );
+    });
+
+    return (
+      <div className={`flex-1 relative ${minW}`} data-recipient-picker>
+        {recipient.user ? (
+          <div className="w-full flex items-center border border-slate-200 rounded-xl px-2 py-2 bg-white h-12 shadow-sm gap-1">
+            <button
+              type="button"
+              onClick={() => setRecipientPickerOpenId(open ? null : recipient.id)}
+              className="flex items-center space-x-3 min-w-0 flex-1 text-left rounded-lg px-2 py-1 hover:bg-slate-50/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5AA5E7]/45"
+            >
+              <div className="w-7 h-7 rounded-full border border-slate-100 flex items-center justify-center text-slate-400 bg-slate-50 overflow-hidden shrink-0">
+                <User size={16} />
+              </div>
+              <span className="text-sm font-medium text-slate-800 truncate">{recipient.user.name}</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                updateRecipient(recipient.id, { user: null });
+                setRecipientPickerOpenId(null);
+              }}
+              className="p-1 hover:bg-slate-100 rounded-full shrink-0"
+              aria-label="Clear recipient"
+            >
+              <X size={14} className="text-slate-400" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setRecipientPickerOpenId(open ? null : recipient.id)}
+            className={`w-full flex items-center rounded-xl px-4 py-2 bg-white h-12 border text-left gap-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5AA5E7]/45 ${triggerErr} ${!err ? 'border-slate-200 hover:border-slate-300' : ''}`}
+          >
+            {opts.variant === 'parallel' ? (
+              <Search className="text-slate-400 shrink-0" size={16} aria-hidden />
+            ) : (
+              <User className="text-slate-400 shrink-0" size={16} aria-hidden />
+            )}
+            <span className="text-sm text-slate-400 truncate flex-1 text-left">{opts.placeholder}</span>
+            <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+        {open && (
+          <div className="absolute z-[400] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+            <div className="p-2 border-b border-slate-100 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <input
+                  type="text"
+                  autoFocus
+                  value={recipient.searchTerm}
+                  onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value })}
+                  placeholder={opts.placeholder}
+                  className={`w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg ${INPUT_FOCUS}`}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            </div>
+            <div className="max-h-60 overflow-y-auto custom-scrollbar">{list}</div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const isUploadMode = uploadedFiles.length > 0;
 
@@ -1029,17 +1231,6 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     ))}
                   </div>
                 )}
-                {activeCoachmark === 1 && (
-                  <div className="absolute left-[105%] top-[-8px] z-[210]">
-                    <Coachmark
-                      title="Switch recipients"
-                      content="You can switch recipients to add fields here."
-                      step={1}
-                      onNext={() => setActiveCoachmark(2)}
-                      onClose={() => setActiveCoachmark(null)}
-                    />
-                  </div>
-                )}
               </div>
 
               <div ref={fieldsContainerRef} className="space-y-3 relative">
@@ -1067,18 +1258,6 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     <GripVertical size={16} className="text-slate-300 group-hover:text-slate-400" />
                   </div>
                 ))}
-                {activeCoachmark === 2 && (
-                  <div className="absolute left-[105%] top-0 z-[210]">
-                    <Coachmark
-                      title="Drag and drop fields"
-                      content="Drag fields onto the document. They sit above the static PDF text."
-                      step={2}
-                      onNext={() => setActiveCoachmark(null)}
-                      onClose={() => setActiveCoachmark(null)}
-                      isLast
-                    />
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -1148,40 +1327,64 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
                 <div className="absolute inset-0 pointer-events-none p-24">
                   <div className="relative w-full h-full pointer-events-auto">
-                    {placementFields.map((f) => (
-                      <div
-                        key={f.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPlacementFieldId(f.id);
-                        }}
-                        onMouseDown={(e) => onPlacementFieldMouseDown(e, f.id)}
-                        className={`absolute rounded-md border-2 bg-white/95 flex flex-col justify-center items-stretch px-1.5 py-1 shadow-sm cursor-move ${
-                          selectedPlacementFieldId === f.id ? 'border-[#7A005D] ring-2 ring-[#7A005D]/25' : 'border-slate-300'
-                        }`}
-                        style={{ left: f.x, top: f.y, width: f.w, height: f.h }}
-                      >
-                        <button
-                          type="button"
-                          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center text-xs leading-none shadow"
+                    {placementFields.map((f) => {
+                      const accent = recipientFieldAccent(f.recipientSlotId);
+                      const selected = selectedPlacementFieldId === f.id;
+                      return (
+                        <div
+                          key={f.id}
+                          role="button"
+                          tabIndex={0}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPlacementFields((prev) => prev.filter((x) => x.id !== f.id));
-                            if (selectedPlacementFieldId === f.id) setSelectedPlacementFieldId(null);
+                            setSelectedPlacementFieldId(f.id);
                           }}
-                          aria-label="Remove field"
+                          onMouseDown={(e) => onPlacementFieldMouseDown(e, f.id)}
+                          className="absolute rounded-md border-2 bg-white/95 flex flex-col justify-center items-stretch px-1.5 py-1 shadow-sm cursor-move"
+                          style={{
+                            left: f.x,
+                            top: f.y,
+                            width: f.w,
+                            height: f.h,
+                            borderColor: accent,
+                            boxShadow: selected ? `0 0 0 2px ${accent}99` : undefined,
+                          }}
                         >
-                          ×
-                        </button>
-                        <span className="text-[10px] font-bold text-slate-700 text-center leading-tight">{fieldTypeLabel(f.type)}</span>
-                        <span className="text-[9px] text-slate-500 flex items-center gap-1 mt-0.5 justify-center truncate max-w-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                          <span className="truncate">{placementRecipientLabel(f.recipientSlotId)}</span>
-                        </span>
-                      </div>
-                    ))}
+                          <button
+                            type="button"
+                            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center text-xs leading-none shadow z-10"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPlacementFields((prev) => prev.filter((x) => x.id !== f.id));
+                              if (selectedPlacementFieldId === f.id) setSelectedPlacementFieldId(null);
+                            }}
+                            aria-label="Remove field"
+                          >
+                            ×
+                          </button>
+                          <div
+                            role="presentation"
+                            className="absolute bottom-0 right-0 w-2.5 h-2.5 cursor-se-resize rounded-tl border border-slate-300/80 bg-white/95 z-10"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setFieldResize({
+                                id: f.id,
+                                startX: e.clientX,
+                                startY: e.clientY,
+                                startW: f.w,
+                                startH: f.h,
+                              });
+                            }}
+                          />
+                          <span className="text-[10px] font-bold text-slate-700 text-center leading-tight">{fieldTypeLabel(f.type)}</span>
+                          <span className="text-[9px] text-slate-500 flex items-center gap-1 mt-0.5 justify-center truncate max-w-full">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
+                            <span className="truncate">{placementRecipientLabel(f.recipientSlotId)}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -1296,6 +1499,27 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
           <button onClick={() => handleContinue()} className="font-bold px-10 py-3 rounded-xl bg-[#7A005D] text-white hover:opacity-90 shadow-lg transition-all">Send</button>
         </footer>
       </div>
+      {activeCoachmark === 1 && (
+        <CoachmarkPortal
+          anchorRef={recipientSelectorRef}
+          title="Switch recipients"
+          content="You can switch recipients to add fields here."
+          step={1}
+          onNext={() => setActiveCoachmark(2)}
+          onClose={() => setActiveCoachmark(null)}
+        />
+      )}
+      {activeCoachmark === 2 && (
+        <CoachmarkPortal
+          anchorRef={fieldsContainerRef}
+          title="Drag and drop fields"
+          content="Drag fields onto the document. They sit above the static PDF text."
+          step={2}
+          isLast
+          onNext={() => setActiveCoachmark(null)}
+          onClose={() => setActiveCoachmark(null)}
+        />
+      )}
       </>
     );
   }
@@ -1453,7 +1677,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                 onChange={(e) => setTemplateFilter(e.target.value)}
                                 onClick={(e) => e.stopPropagation()}
                                 placeholder="Search templates..."
-                                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500"
+                                className={`w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg ${INPUT_FOCUS}`}
                               />
                             </div>
                           </div>
@@ -1471,42 +1695,40 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                 {selectedTemplates.includes(tpl) && <Check size={16} className="text-blue-600 ml-auto shrink-0" />}
                               </div>
                             ))}
-                            {templateFilter.trim() &&
-                              !allTemplateNames.some((t) => t.toLowerCase() === templateFilter.trim().toLowerCase()) && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const name = templateFilter.trim();
-                                    setIsTemplateMenuOpen(false);
-                                    setTemplateFilter('');
-                                    if (onCreateTemplateWithName) onCreateTemplateWithName(name);
-                                    else onCreateTemplate?.();
-                                  }}
-                                  className="w-full flex items-center gap-2 px-5 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 border-t border-slate-100"
-                                >
-                                  <div className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center shrink-0">
-                                    <Plus size={14} className="text-slate-600" />
-                                  </div>
-                                  <span>
-                                    Create and select &apos;{templateFilter.trim()}&apos;
-                                  </span>
-                                </button>
-                              )}
                           </div>
                           <div className="border-t border-slate-200 shrink-0 bg-white">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setIsTemplateMenuOpen(false);
-                                setTemplateFilter('');
-                                onCreateTemplate?.();
-                              }}
-                              className="w-full text-left px-5 py-3 text-sm font-semibold text-blue-600 hover:bg-slate-50 transition-colors"
-                            >
-                              Create a template
-                            </button>
+                            {templateFilterHasNoExactMatch ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const name = templateFilter.trim();
+                                  setIsTemplateMenuOpen(false);
+                                  setTemplateFilter('');
+                                  if (onCreateTemplateWithName) onCreateTemplateWithName(name);
+                                  else onCreateTemplate?.();
+                                }}
+                                className="w-full flex items-center gap-2 px-5 py-3 text-left text-sm font-semibold text-[#5AA5E7] hover:bg-slate-50 transition-colors"
+                              >
+                                <div className="w-7 h-7 rounded-full border border-[#5AA5E7]/45 flex items-center justify-center shrink-0">
+                                  <Plus size={14} className="text-[#5AA5E7]" />
+                                </div>
+                                <span>Create and select &apos;{templateFilter.trim()}&apos;</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsTemplateMenuOpen(false);
+                                  setTemplateFilter('');
+                                  onCreateTemplate?.();
+                                }}
+                                className="w-full text-left px-5 py-3 text-sm font-semibold text-[#5AA5E7] hover:bg-slate-50 transition-colors"
+                              >
+                                Create a template
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1668,50 +1890,14 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                     >
                                       <GripVertical size={20} />
                                     </div>
-                                    <div className="shrink-0 w-8 h-8 rounded-full bg-[#7A005D] text-white text-sm font-bold flex items-center justify-center shadow-sm mt-1">
+                                    <div className="shrink-0 w-5 h-5 rounded-full bg-[#7A005D] text-white text-[11px] font-bold flex items-center justify-center shadow-sm mt-1">
                                       {stepNum}
                                     </div>
                                     <div className="flex-1 flex items-center space-x-3 relative min-w-0 flex-wrap sm:flex-nowrap">
-                                      <div className="flex-1 relative min-w-[140px]">
-                                        {recipient.user ? (
-                                          <div className="flex items-center border border-slate-200 rounded-xl px-4 py-2 bg-white h-12 shadow-sm">
-                                            <div className="flex items-center space-x-3 min-w-0">
-                                              <div className="w-7 h-7 rounded-full border border-slate-100 flex items-center justify-center text-slate-400 bg-slate-50 overflow-hidden shrink-0"><User size={16} /></div>
-                                              <span className="text-sm font-medium text-slate-800 truncate">{recipient.user.name}</span>
-                                            </div>
-                                            <button type="button" onClick={() => updateRecipient(recipient.id, { user: null })} className="ml-auto p-1 hover:bg-slate-100 rounded-full shrink-0"><X size={14} className="text-slate-400" /></button>
-                                          </div>
-                                        ) : (
-                                          <div className="relative">
-                                            <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                                            <input type="text" value={recipient.searchTerm} onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value, isSearching: e.target.value.length > 0 })} placeholder="Name" className={`w-full rounded-xl py-3 pl-12 pr-4 text-sm h-12 border ${showRecipientErrors && !recipient.user ? 'border-red-500 ring-2 ring-red-200' : 'border-slate-200'}`} />
-                                            {recipient.isSearching && (
-                                              <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
-                                                {filterMockUsers(recipient.searchTerm).map((user) => {
-                                                  const taken = isUserAlreadyRecipient(user.id, recipient.id);
-                                                  return taken ? (
-                                                    <div
-                                                      key={user.id}
-                                                      className="group relative px-4 py-2 opacity-50 cursor-not-allowed select-none"
-                                                      title="recipient existed"
-                                                    >
-                                                      <p className="text-sm font-bold text-slate-800">{user.name}</p>
-                                                      <p className="text-xs text-slate-500">{user.email}</p>
-                                                      <div className="absolute left-2 top-full mt-1 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-md text-[12px] text-slate-700 max-w-[220px] text-left z-[500] pointer-events-none leading-snug opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        recipient existed
-                                                      </div>
-                                                    </div>
-                                                  ) : (
-                                                    <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
-                                                      <p className="text-sm font-bold text-slate-800">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p>
-                                                    </div>
-                                                  );
-                                                })}
-                                              </div>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
+                                      {renderRecipientUserPicker(recipient, {
+                                        placeholder: 'Search by name or email',
+                                        variant: 'signing',
+                                      })}
                                       <div className="relative flex-1 min-w-[140px]">
                                         <button type="button" onClick={() => updateRecipient(recipient.id, { isActionDropdownOpen: !recipient.isActionDropdownOpen })} className="w-full border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between bg-white h-12">
                                           <span className="text-sm font-medium text-slate-800 truncate">{recipient.action}</span>
@@ -1765,46 +1951,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             {recipients.length > 1 && <button type="button" onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>}
                           </div>
                           <div className="flex items-center space-x-3 relative">
-                            <div className="flex-1 relative min-w-0">
-                              {recipient.user ? (
-                                <div className="flex items-center border border-slate-200 rounded-xl px-4 py-2 bg-white h-12 shadow-sm">
-                                  <div className="flex items-center space-x-3 min-w-0">
-                                    <div className="w-7 h-7 rounded-full border border-slate-100 flex items-center justify-center text-slate-400 bg-slate-50 overflow-hidden shrink-0"><User size={16} /></div>
-                                    <span className="text-sm font-medium text-slate-800 truncate">{recipient.user.name}</span>
-                                  </div>
-                                  <button type="button" onClick={() => updateRecipient(recipient.id, { user: null })} className="ml-auto p-1 hover:bg-slate-100 rounded-full shrink-0"><X size={14} className="text-slate-400" /></button>
-                                </div>
-                              ) : (
-                                <div className="relative">
-                                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                  <input type="text" value={recipient.searchTerm} onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value, isSearching: e.target.value.length > 0 })} placeholder="Search by name or email" className={`w-full rounded-xl py-3 pl-12 pr-4 text-sm h-12 border ${showRecipientErrors && !recipient.user ? 'border-red-500 ring-2 ring-red-200' : 'border-slate-200'}`} />
-                                  {recipient.isSearching && (
-                                    <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
-                                      {filterMockUsers(recipient.searchTerm).map((user) => {
-                                        const taken = isUserAlreadyRecipient(user.id, recipient.id);
-                                        return taken ? (
-                                          <div
-                                            key={user.id}
-                                            className="group relative px-4 py-2 opacity-50 cursor-not-allowed select-none"
-                                            title="recipient existed"
-                                          >
-                                            <p className="text-sm font-bold text-slate-800">{user.name}</p>
-                                            <p className="text-xs text-slate-500">{user.email}</p>
-                                            <div className="absolute left-2 top-full mt-1 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-md text-[12px] text-slate-700 max-w-[220px] text-left z-[500] pointer-events-none leading-snug opacity-0 group-hover:opacity-100 transition-opacity">
-                                              recipient existed
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
-                                            <p className="text-sm font-bold text-slate-800">{user.name}</p><p className="text-xs text-slate-500">{user.email}</p>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
+                            {renderRecipientUserPicker(recipient, {
+                              placeholder: 'Search by name or email',
+                              variant: 'parallel',
+                            })}
                             <div className="relative flex-1 min-w-0">
                               <button type="button" onClick={() => updateRecipient(recipient.id, { isActionDropdownOpen: !recipient.isActionDropdownOpen })} className="w-full border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between bg-white h-12">
                                 <span className="text-sm font-medium text-slate-800 truncate">{recipient.action}</span>
@@ -1972,7 +2122,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             onChange={(e) => setLocationFilter(e.target.value)}
                             onClick={(e) => e.stopPropagation()}
                             placeholder="Search folders..."
-                            className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500"
+                            className={`w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg ${INPUT_FOCUS}`}
                           />
                         </div>
                       </div>
@@ -2027,7 +2177,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             onChange={(e) => setTagFilter(e.target.value)}
                             onClick={(e) => e.stopPropagation()}
                             placeholder="Search tags..."
-                            className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500"
+                            className={`w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg ${INPUT_FOCUS}`}
                           />
                         </div>
                       </div>
