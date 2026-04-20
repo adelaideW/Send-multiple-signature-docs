@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   ChevronDown, 
   ChevronUp, 
@@ -41,7 +41,11 @@ import {
   ListOrdered,
   Type as TypeIcon,
   Baseline,
-  Eraser
+  Eraser,
+  Sparkles,
+  Trash2,
+  Copy,
+  FileInput,
 } from 'lucide-react';
 import type { UploadedFileItem } from '../types';
 
@@ -49,6 +53,8 @@ interface EnvelopeCreatorProps {
   onExit: () => void;
   onEditDocument?: (detail: { title: string; bodyHtml: string }) => void;
   onCreateTemplate?: () => void;
+  /** Opens template editor with suggested name (from "Create and select …"). */
+  onCreateTemplateWithName?: (name: string) => void;
   onContinue?: (envelopeName: string) => void;
   state?: any;
   onUpdateState?: (state: any) => void;
@@ -197,6 +203,31 @@ interface FolderNode {
 
 const TAG_OPTIONS = ['HR', 'Legal', 'Onboarding', 'Contractor', 'Confidential', 'Payroll'];
 
+const PLACEMENT_FIELD_MIME = 'application/x-placement-field-type';
+
+type PlacementFieldType = 'text' | 'signature' | 'date_signed' | 'checkbox';
+
+interface PlacementField {
+  id: string;
+  type: PlacementFieldType;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  recipientSlotId: string;
+  required: boolean;
+}
+
+function flattenFolderLeaves(nodes: FolderNode[], trail: string[] = []): { id: string; name: string; path: string }[] {
+  const rows: { id: string; name: string; path: string }[] = [];
+  for (const n of nodes) {
+    const nextTrail = [...trail, n.name];
+    if (n.children?.length) rows.push(...flattenFolderLeaves(n.children, nextTrail));
+    else rows.push({ id: n.id, name: n.name, path: nextTrail.join(' / ') });
+  }
+  return rows;
+}
+
 const FOLDER_STRUCTURE: FolderNode[] = [
   {
     id: 'root',
@@ -222,6 +253,8 @@ const FOLDER_STRUCTURE: FolderNode[] = [
     ]
   }
 ];
+
+const FOLDER_LEAVES = flattenFolderLeaves(FOLDER_STRUCTURE);
 
 interface RecipientSlot {
   id: string;
@@ -305,6 +338,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   onExit, 
   onEditDocument, 
   onCreateTemplate,
+  onCreateTemplateWithName,
   onContinue,
   state: persistentState,
   onUpdateState
@@ -345,7 +379,6 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
   const [isTagsMenuOpen, setIsTagsMenuOpen] = useState(false);
-  const [expandedFolders, setExpandedFolders] = useState<string[]>(['root', 'f1']); 
   const [isPreviewRecipientsExpanded, setIsPreviewRecipientsExpanded] = useState(false);
   const [currentPreviewPage, setCurrentPreviewPage] = useState(1);
   const [messageMode, setMessageMode] = useState<'edit' | 'preview'>('edit');
@@ -353,8 +386,23 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const [draggingRecipientId, setDraggingRecipientId] = useState<string | null>(null);
   const [signingOrderSummaryOpen, setSigningOrderSummaryOpen] = useState(false);
   const [dropTargetZone, setDropTargetZone] = useState<string | null>(null);
-  const [duplicateHoverUserId, setDuplicateHoverUserId] = useState<string | null>(null);
   const [showRecipientErrors, setShowRecipientErrors] = useState(false);
+  const [templateFilter, setTemplateFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+  const [extraTagOptions, setExtraTagOptions] = useState<string[]>([]);
+  const [createTagModalOpen, setCreateTagModalOpen] = useState(false);
+  const [createTagDraft, setCreateTagDraft] = useState('');
+  const [placementFields, setPlacementFields] = useState<PlacementField[]>([]);
+  const [selectedPlacementFieldId, setSelectedPlacementFieldId] = useState<string | null>(null);
+  const [placementActiveRecipientId, setPlacementActiveRecipientId] = useState('');
+  const [placementRecipientMenuOpen, setPlacementRecipientMenuOpen] = useState(false);
+  const [autoFieldsModalOpen, setAutoFieldsModalOpen] = useState(false);
+  const [showInsertFieldsButton, setShowInsertFieldsButton] = useState(false);
+  const [autoModalRecipientId, setAutoModalRecipientId] = useState('');
+  const placementPageRef = useRef<HTMLDivElement>(null);
+  const placementAutoGateRef = useRef(false);
+  const [fieldDragOffset, setFieldDragOffset] = useState<{ id: string; dx: number; dy: number } | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const tagsRef = useRef<HTMLDivElement>(null);
@@ -385,6 +433,64 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     ...TEMPLATES,
     ...customTemplates.map((c) => c.name).filter((n) => !TEMPLATES.includes(n)),
   ];
+
+  const allTagOptionsList = useMemo(
+    () => [...TAG_OPTIONS, ...extraTagOptions.filter((t) => !TAG_OPTIONS.includes(t))],
+    [extraTagOptions]
+  );
+
+  const filteredTemplatesList = useMemo(() => {
+    const q = templateFilter.trim().toLowerCase();
+    if (!q) return allTemplateNames;
+    return allTemplateNames.filter((t) => t.toLowerCase().includes(q));
+  }, [allTemplateNames, templateFilter]);
+
+  const filteredFolderLeaves = useMemo(() => {
+    const q = locationFilter.trim().toLowerCase();
+    if (!q) return FOLDER_LEAVES;
+    return FOLDER_LEAVES.filter((r) => r.path.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+  }, [locationFilter]);
+
+  const filteredTagOptions = useMemo(() => {
+    const q = tagFilter.trim().toLowerCase();
+    if (!q) return allTagOptionsList;
+    return allTagOptionsList.filter((t) => t.toLowerCase().includes(q));
+  }, [allTagOptionsList, tagFilter]);
+
+  const placementRecipientLabel = useCallback(
+    (rid: string) => {
+      const i = recipients.findIndex((r) => r.id === rid);
+      if (i < 0) return 'Recipient';
+      return recipients[i].user?.name ?? `Recipient ${i + 1}`;
+    },
+    [recipients]
+  );
+
+  const defaultFieldSize = (t: PlacementFieldType) => {
+    switch (t) {
+      case 'text':
+        return { w: 150, h: 40 };
+      case 'signature':
+        return { w: 180, h: 48 };
+      case 'date_signed':
+        return { w: 140, h: 40 };
+      case 'checkbox':
+        return { w: 36, h: 36 };
+    }
+  };
+
+  const fieldTypeLabel = (t: PlacementFieldType) => {
+    switch (t) {
+      case 'text':
+        return 'TEXT';
+      case 'signature':
+        return 'SIGNATURE';
+      case 'date_signed':
+        return 'DATE SIGNED';
+      case 'checkbox':
+        return 'CHECK';
+    }
+  };
 
   useEffect(() => {
     if (recipients.length <= 1 && signingOrderEnabled) {
@@ -438,6 +544,47 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (currentStep !== 'placement' || uploadedFiles.length === 0) {
+      if (currentStep === 'setup') placementAutoGateRef.current = false;
+      return;
+    }
+    if (!placementAutoGateRef.current) {
+      placementAutoGateRef.current = true;
+      setAutoFieldsModalOpen(true);
+      setShowInsertFieldsButton(false);
+    }
+    const first = recipients.find((r) => r.user)?.id ?? recipients[0]?.id ?? '';
+    setPlacementActiveRecipientId(first);
+    setAutoModalRecipientId(first);
+  }, [currentStep, uploadedFiles.length, recipients]);
+
+  useEffect(() => {
+    if (!fieldDragOffset) return;
+    const move = (e: MouseEvent) => {
+      const el = placementPageRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setPlacementFields((prev) =>
+        prev.map((f) => {
+          if (f.id !== fieldDragOffset.id) return f;
+          let x = e.clientX - r.left - fieldDragOffset.dx;
+          let y = e.clientY - r.top - fieldDragOffset.dy;
+          x = Math.max(0, Math.min(x, r.width - f.w));
+          y = Math.max(0, Math.min(y, r.height - f.h));
+          return { ...f, x, y };
+        })
+      );
+    };
+    const up = () => setFieldDragOffset(null);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+  }, [fieldDragOffset]);
 
   const totalPages = selectedTemplates.length > 0 ? selectedTemplates.length : (uploadedFiles.length > 0 ? uploadedFiles.length : 0);
 
@@ -545,46 +692,6 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     updateState({ signingOrderGroups: nextGroups });
   };
 
-  const toggleFolder = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedFolders(prev => 
-      prev.includes(id) ? prev.filter(f => f !== id) : [...prev, id]
-    );
-  };
-
-  const renderFolderTree = (nodes: FolderNode[], depth = 0) => {
-    return nodes.map(node => (
-      <div key={node.id} className="flex flex-col">
-        <div 
-          onClick={() => {
-            updateState({ selectedFolder: node.name });
-            if (!node.children) {
-              setIsLocationMenuOpen(false);
-            }
-          }}
-          className={`flex items-center py-1.5 px-4 hover:bg-slate-50 cursor-pointer group`}
-          style={{ paddingLeft: `${depth * 20 + 16}px` }}
-        >
-          {node.children ? (
-            <div onClick={(e) => toggleFolder(node.id, e)} className="p-1 mr-1 hover:bg-slate-100 rounded">
-              {expandedFolders.includes(node.id) ? <ChevronDown size={14} className="text-slate-600" /> : <ChevronRight size={14} className="text-slate-600" />}
-            </div>
-          ) : (
-            <div className="w-6 mr-1" />
-          )}
-          <span className={`text-[13px] ${selectedFolder === node.name ? 'text-blue-600 font-bold' : 'text-slate-700 font-medium'}`}>
-            {node.name}
-          </span>
-        </div>
-        {node.children && expandedFolders.includes(node.id) && (
-          <div className="flex flex-col">
-            {renderFolderTree(node.children, depth + 1)}
-          </div>
-        )}
-      </div>
-    ));
-  };
-
   const hasDocuments = selectedTemplates.length > 0 || uploadedFiles.length > 0;
   const canContinue = hasDocuments;
 
@@ -609,12 +716,213 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
   const isUploadMode = uploadedFiles.length > 0;
 
+  const addPlacementFieldAt = (type: PlacementFieldType, clientX: number, clientY: number) => {
+    const el = placementPageRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const { w, h } = defaultFieldSize(type);
+    let x = clientX - r.left - w / 2;
+    let y = clientY - r.top - h / 2;
+    x = Math.max(0, Math.min(x, r.width - w));
+    y = Math.max(0, Math.min(y, r.height - h));
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const rid = placementActiveRecipientId || recipients[0]?.id || '';
+    setPlacementFields((prev) => [
+      ...prev,
+      { id, type, x, y, w, h, recipientSlotId: rid, required: true },
+    ]);
+    setSelectedPlacementFieldId(id);
+  };
+
+  const updateSelectedPlacementField = (patch: Partial<PlacementField>) => {
+    if (!selectedPlacementFieldId) return;
+    setPlacementFields((prev) =>
+      prev.map((f) => (f.id === selectedPlacementFieldId ? { ...f, ...patch } : f))
+    );
+  };
+
+  const onPlacementFieldMouseDown = (e: React.MouseEvent, fid: string) => {
+    e.stopPropagation();
+    setSelectedPlacementFieldId(fid);
+    const f = placementFields.find((x) => x.id === fid);
+    const el = placementPageRef.current;
+    if (!f || !el) return;
+    const r = el.getBoundingClientRect();
+    setFieldDragOffset({ id: fid, dx: e.clientX - r.left - f.x, dy: e.clientY - r.top - f.y });
+  };
+
+  const insertAutoFieldsFromModal = () => {
+    const rid = autoModalRecipientId || recipients[0]?.id || '';
+    const presets: { type: PlacementFieldType; x: number; y: number }[] = [
+      { type: 'text', x: 72, y: 260 },
+      { type: 'signature', x: 72, y: 380 },
+      { type: 'date_signed', x: 420, y: 380 },
+    ];
+    const newFields: PlacementField[] = presets.map((p, i) => {
+      const { w, h } = defaultFieldSize(p.type);
+      return {
+        id: `auto-${Date.now()}-${i}`,
+        type: p.type,
+        x: p.x,
+        y: p.y,
+        w,
+        h,
+        recipientSlotId: rid,
+        required: true,
+      };
+    });
+    setPlacementFields((prev) => [...prev, ...newFields]);
+    setAutoFieldsModalOpen(false);
+    setShowInsertFieldsButton(false);
+  };
+
+  const renderCreateTagModal = () =>
+    createTagModalOpen ? (
+      <div
+        className="fixed inset-0 z-[600] flex items-center justify-center bg-black/40 p-4"
+        onClick={() => setCreateTagModalOpen(false)}
+        role="presentation"
+      >
+        <div
+          className="bg-white rounded-2xl shadow-2xl w-full max-w-[520px] border border-slate-100"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-labelledby="create-tag-title"
+        >
+          <div className="flex items-start justify-between p-5 pb-2">
+            <h2 id="create-tag-title" className="text-lg font-bold text-slate-900">
+              Create tag
+            </h2>
+            <button
+              type="button"
+              onClick={() => setCreateTagModalOpen(false)}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded"
+              aria-label="Close"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <p className="px-5 text-sm text-slate-600 leading-relaxed">
+            You can use tags to organize your documents. Create a new tag using the fields below.
+          </p>
+          <div className="p-5 pt-4 space-y-2">
+            <label className="text-sm font-bold text-slate-900">
+              Tags name<span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={createTagDraft}
+              onChange={(e) => setCreateTagDraft(e.target.value)}
+              placeholder="Enter name"
+              className="w-full border border-slate-200 rounded-xl py-3 px-4 text-sm outline-none focus:ring-2 focus:ring-[#7A005D]/30"
+            />
+          </div>
+          <div className="flex justify-end gap-3 px-5 py-4 border-t border-slate-100 bg-slate-50/80 rounded-b-2xl">
+            <button
+              type="button"
+              onClick={() => setCreateTagModalOpen(false)}
+              className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-800 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!createTagDraft.trim()}
+              onClick={() => {
+                const t = createTagDraft.trim();
+                if (!t) return;
+                setExtraTagOptions((prev) => (prev.includes(t) || TAG_OPTIONS.includes(t) ? prev : [...prev, t]));
+                if (!advancedTags.includes(t)) updateState({ advancedTags: [...advancedTags, t] });
+                setCreateTagModalOpen(false);
+                setIsTagsMenuOpen(false);
+                setTagFilter('');
+              }}
+              className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-[#7A005D] hover:opacity-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Create
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null;
+
   if (currentStep === 'placement') {
-    const activeSigner = recipients.find(r => r.user !== null);
-    const isCC = activeSigner?.action === 'CC recipient';
-    const displayName = isCC ? 'CC recipient' : (activeSigner?.user?.name || 'David Gonzales');
+    const displayName = placementRecipientLabel(placementActiveRecipientId);
+    const selectedField = placementFields.find((f) => f.id === selectedPlacementFieldId) ?? null;
+    const pageW = placementPageRef.current?.clientWidth ?? 850;
 
     return (
+      <>
+        {renderCreateTagModal()}
+        {autoFieldsModalOpen && (
+          <div
+            className="fixed inset-0 z-[550] flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setAutoFieldsModalOpen(false)}
+            role="presentation"
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-[520px] border border-slate-100 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+            >
+              <div className="flex justify-end p-2">
+                <button
+                  type="button"
+                  onClick={() => setAutoFieldsModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-lg"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="px-8 pb-2 text-center">
+                <div className="mx-auto w-14 h-14 rounded-xl bg-[#F3E8FF] flex items-center justify-center mb-4">
+                  <Sparkles className="text-[#7A005D]" size={28} />
+                </div>
+                <h2 className="text-lg font-bold text-slate-900 mb-2">Insert fields automatically?</h2>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  We detected empty lines in your document. Would you like to automatically insert signature and text fields for a recipient?
+                </p>
+              </div>
+              <div className="px-8 pb-6">
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Select recipient</p>
+                <div className="relative">
+                  <select
+                    value={autoModalRecipientId}
+                    onChange={(e) => setAutoModalRecipientId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl py-3 px-4 text-sm font-semibold text-slate-900 appearance-none bg-white cursor-pointer outline-none focus:ring-2 focus:ring-[#7A005D]/25"
+                  >
+                    {recipients.map((r, i) => (
+                      <option key={r.id} value={r.id}>
+                        {r.user?.name ?? `Recipient ${i + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+              <div className="px-8 pb-6 space-y-3 bg-slate-50/80 border-t border-slate-100 pt-5">
+                <button
+                  type="button"
+                  onClick={insertAutoFieldsFromModal}
+                  className="w-full py-3 rounded-xl bg-[#7A005D] text-white text-sm font-bold hover:opacity-95"
+                >
+                  Insert fields
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutoFieldsModalOpen(false);
+                    setShowInsertFieldsButton(true);
+                  }}
+                  className="w-full py-2 text-sm font-semibold text-slate-500 hover:text-slate-800"
+                >
+                  Maybe later
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       <div className="flex flex-col h-screen bg-[#F9FAFB] overflow-hidden text-[#1e293b]">
         {/* Placement Header */}
         <header className="h-14 border-b border-slate-200 px-4 flex items-center justify-between shrink-0 bg-white z-[100]">
@@ -676,14 +984,25 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
         </div>
 
         <div className="flex flex-1 overflow-hidden relative">
-          <div className="w-64 border-r border-slate-200 bg-white flex flex-col p-5 space-y-6 shrink-0 relative">
+          <div className="w-64 border-r border-slate-200 bg-white flex flex-col p-5 space-y-4 shrink-0 relative overflow-y-auto custom-scrollbar">
             <div>
-              <h3 className="text-[12px] font-bold text-slate-500 mb-4 uppercase tracking-widest">Fields</h3>
-              
-              <div className="relative">
-                <div 
+              <h3 className="text-[12px] font-bold text-slate-500 mb-3 uppercase tracking-widest">Fields</h3>
+              {showInsertFieldsButton && (
+                <button
+                  type="button"
+                  onClick={() => setAutoFieldsModalOpen(true)}
+                  className="w-full mb-4 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-[#7A005D] bg-[#FDF2FB] text-[#7A005D] text-sm font-bold hover:opacity-90 shadow-sm"
+                >
+                  <FileInput size={18} />
+                  Insert fields
+                </button>
+              )}
+              <div className="relative mb-4">
+                <button
+                  type="button"
                   ref={recipientSelectorRef}
-                  className="border-2 border-[#14B8A6] rounded-xl px-4 py-2 flex items-center justify-between bg-white cursor-pointer hover:bg-slate-50 shadow-sm transition-all mb-6"
+                  onClick={() => setPlacementRecipientMenuOpen((o) => !o)}
+                  className="w-full border-2 border-[#14B8A6] rounded-xl px-4 py-2 flex items-center justify-between bg-white cursor-pointer hover:bg-slate-50 shadow-sm transition-all"
                 >
                   <div className="flex items-center space-x-3 min-w-0">
                     <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 shrink-0">
@@ -691,114 +1010,282 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     </div>
                     <span className="text-sm font-medium text-slate-800 truncate">{displayName}</span>
                   </div>
-                  <ChevronDown size={14} className="text-slate-400 shrink-0" />
-                </div>
-
+                  <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${placementRecipientMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {placementRecipientMenuOpen && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto py-1">
+                    {recipients.map((r, i) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => {
+                          setPlacementActiveRecipientId(r.id);
+                          setPlacementRecipientMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 font-medium text-slate-800"
+                      >
+                        {r.user?.name ?? `Recipient ${i + 1}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {activeCoachmark === 1 && (
                   <div className="absolute left-[105%] top-[-8px] z-[210]">
-                     <Coachmark 
-                        title="Switch recipients"
-                        content="You can switch recipients to add fields here."
-                        step={1}
-                        onNext={() => setActiveCoachmark(2)}
-                        onClose={() => setActiveCoachmark(null)}
-                     />
+                    <Coachmark
+                      title="Switch recipients"
+                      content="You can switch recipients to add fields here."
+                      step={1}
+                      onNext={() => setActiveCoachmark(2)}
+                      onClose={() => setActiveCoachmark(null)}
+                    />
                   </div>
                 )}
               </div>
 
               <div ref={fieldsContainerRef} className="space-y-3 relative">
-                <div className="flex items-center justify-between border border-slate-200 p-3.5 rounded-xl cursor-grab bg-white hover:border-slate-300 transition-all group">
-                  <div className="flex items-center space-x-3">
-                    <Type size={18} className="text-slate-700" />
-                    <span className="text-sm font-bold text-slate-800">Text</span>
+                {(
+                  [
+                    { type: 'text' as const, label: 'Text', Icon: Type },
+                    { type: 'signature' as const, label: 'Signature', Icon: PenTool },
+                    { type: 'date_signed' as const, label: 'Date signed', Icon: Calendar },
+                    { type: 'checkbox' as const, label: 'Checkbox', Icon: CheckSquare },
+                  ] as const
+                ).map(({ type, label, Icon }) => (
+                  <div
+                    key={type}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(PLACEMENT_FIELD_MIME, type);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    className="flex items-center justify-between border border-slate-200 p-3.5 rounded-xl cursor-grab active:cursor-grabbing bg-white hover:border-slate-300 transition-all shadow-sm group"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <Icon size={18} className="text-slate-700" />
+                      <span className="text-sm font-bold text-slate-800">{label}</span>
+                    </div>
+                    <GripVertical size={16} className="text-slate-300 group-hover:text-slate-400" />
                   </div>
-                  <GripVertical size={16} className="text-slate-300 group-hover:text-slate-400" />
-                </div>
-                <div className="flex items-center justify-between border border-slate-200 p-3.5 rounded-xl cursor-grab bg-white hover:border-slate-300 transition-all group">
-                  <div className="flex items-center space-x-3">
-                    <PenTool size={18} className="text-slate-700" />
-                    <span className="text-sm font-bold text-slate-800">Signature</span>
-                  </div>
-                  <GripVertical size={16} className="text-slate-300 group-hover:text-slate-400" />
-                </div>
-                <div className="flex items-center justify-between border border-slate-200 p-3.5 rounded-xl cursor-grab bg-white hover:border-slate-300 transition-all group">
-                  <div className="flex items-center space-x-3">
-                    <Calendar size={18} className="text-slate-700" />
-                    <span className="text-sm font-bold text-slate-800">Date signed</span>
-                  </div>
-                  <GripVertical size={16} className="text-slate-300 group-hover:text-slate-400" />
-                </div>
-                <div className="flex items-center justify-between border border-slate-200 p-3.5 rounded-xl cursor-grab bg-white hover:border-slate-300 transition-all group">
-                  <div className="flex items-center space-x-3">
-                    <CheckSquare size={18} className="text-slate-700" />
-                    <span className="text-sm font-bold text-slate-800">Checkbox</span>
-                  </div>
-                  <GripVertical size={16} className="text-slate-300 group-hover:text-slate-400" />
-                </div>
-
+                ))}
                 {activeCoachmark === 2 && (
                   <div className="absolute left-[105%] top-0 z-[210]">
-                     <Coachmark 
-                        title="Drag and drop fields"
-                        content="you need to drag and drop the fields into the canvas to finish the setup."
-                        step={2}
-                        onNext={() => setActiveCoachmark(null)}
-                        onClose={() => setActiveCoachmark(null)}
-                        isLast
-                     />
+                    <Coachmark
+                      title="Drag and drop fields"
+                      content="Drag fields onto the document. They sit above the static PDF text."
+                      step={2}
+                      onNext={() => setActiveCoachmark(null)}
+                      onClose={() => setActiveCoachmark(null)}
+                      isLast
+                    />
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Document Preview */}
-          <div className="flex-1 bg-[#F1F5F9] flex flex-col relative overflow-hidden">
-             <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200 py-1.5 px-4 flex items-center justify-start space-x-4">
-               <div className="flex items-center space-x-1 border border-slate-200 rounded px-2 py-1 bg-white text-[12px] font-bold">
-                 <span>256%</span>
-                 <ChevronDown size={14} className="text-slate-400" />
-               </div>
-               <div className="flex items-center bg-white border border-slate-200 rounded overflow-hidden">
-                 <button className="p-1.5 hover:bg-slate-50 border-r border-slate-200 text-slate-400"><Minus size={14} /></button>
-                 <button className="p-1.5 hover:bg-slate-50 text-slate-400"><Plus size={14} /></button>
-               </div>
-               <button className="p-1.5 text-slate-400 hover:text-slate-600"><Hand size={18} /></button>
-               <div className="flex-1"></div>
-               <button className="p-1.5 text-slate-400 hover:text-slate-600"><Search size={18} /></button>
-             </div>
+          <div className="flex-1 bg-[#F1F5F9] flex flex-col relative overflow-hidden min-w-0">
+            <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200 py-1.5 px-4 flex items-center justify-start space-x-4 shrink-0">
+              <div className="flex items-center space-x-1 border border-slate-200 rounded px-2 py-1 bg-white text-[12px] font-bold">
+                <span>256%</span>
+                <ChevronDown size={14} className="text-slate-400" />
+              </div>
+              <div className="flex items-center bg-white border border-slate-200 rounded overflow-hidden">
+                <button type="button" className="p-1.5 hover:bg-slate-50 border-r border-slate-200 text-slate-400">
+                  <Minus size={14} />
+                </button>
+                <button type="button" className="p-1.5 hover:bg-slate-50 text-slate-400">
+                  <Plus size={14} />
+                </button>
+              </div>
+              <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600">
+                <Hand size={18} />
+              </button>
+              <div className="flex-1" />
+              <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600">
+                <Search size={18} />
+              </button>
+            </div>
 
-             <div className="flex-1 overflow-y-auto p-12 custom-scrollbar flex flex-col items-center">
-                <div className="max-w-[850px] w-full bg-white shadow-xl min-h-[1100px] p-24 text-[15px] leading-relaxed text-slate-800 border border-slate-100 relative">
-                  <div className="flex justify-center mb-12">
-                    <div className="relative w-16 h-16">
-                      {[...Array(8)].map((_, i) => (
-                        <div 
-                          key={i} 
-                          className={`absolute w-1.5 h-4 rounded-full opacity-80`}
-                          style={{
-                            transform: `rotate(${i * 45}deg) translateY(-18px)`,
-                            backgroundColor: i % 3 === 0 ? '#EC4899' : i % 3 === 1 ? '#6366F1' : '#14B8A6',
-                            left: 'calc(50% - 0.75px)',
-                            top: 'calc(50% - 2px)',
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  <h1 className="text-center font-bold mb-10 text-lg uppercase tracking-tight">PROPRIETARY INFORMATION AND INVENTIONS AGREEMENT<br/><span className="normal-case">(California employees)</span></h1>
+            <div className="flex-1 overflow-y-auto p-12 custom-scrollbar flex flex-col items-center">
+              <div
+                ref={placementPageRef}
+                onClick={() => setSelectedPlacementFieldId(null)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const type = e.dataTransfer.getData(PLACEMENT_FIELD_MIME) as PlacementFieldType;
+                  if (!type || !['text', 'signature', 'date_signed', 'checkbox'].includes(type)) return;
+                  addPlacementFieldAt(type, e.clientX, e.clientY);
+                }}
+                className="max-w-[850px] w-full bg-white shadow-xl min-h-[1100px] p-24 text-[15px] leading-relaxed text-slate-800 border border-slate-100 relative select-none"
+              >
+                <div className="pointer-events-none space-y-6">
+                  <h1 className="text-center font-bold mb-10 text-lg uppercase tracking-tight">
+                    PROPRIETARY INFORMATION AND INVENTIONS AGREEMENT
+                    <br />
+                    <span className="normal-case">(California employees)</span>
+                  </h1>
                   <p className="mb-6">
-                    The following confirms and memorializes an agreement that <VariableChip label="Business legal name" color="blue" />, (the “Company”) and I (<VariableChip label="Full name" color="blue" />) have had since the commencement of my employment with the Company in any capacity and that is and has been a material part of the consideration for my employment by Company:
+                    The following confirms and memorializes an agreement that{' '}
+                    <span className="underline decoration-dotted font-medium text-slate-900">Business legal name</span>, (the
+                    “Company”) and I (
+                    <span className="underline decoration-dotted font-medium text-slate-900">Full name</span>) have had since the
+                    commencement of my employment with the Company in any capacity and that is and has been a material part of the
+                    consideration for my employment by Company:
                   </p>
                   <div className="space-y-6">
-                    <p>1. I have not entered into, and I agree I will not enter into, any agreement either written or oral in conflict with this Agreement or my employment with Company...</p>
-                    <p>2. Company shall own all right, title and interest (including patent rights, copyrights, trade secret rights, mask work rights, sui generis database rights and all other intellectual property rights of any sort throughout the world)...</p>
+                    <p>
+                      1. I have not entered into, and I agree I will not enter into, any agreement either written or oral in conflict
+                      with this Agreement or my employment with Company...
+                    </p>
+                    <p>
+                      2. Company shall own all right, title and interest (including patent rights, copyrights, trade secret rights,
+                      mask work rights, sui generis database rights and all other intellectual property rights of any sort throughout
+                      the world)...
+                    </p>
                   </div>
                 </div>
-             </div>
+
+                <div className="absolute inset-0 pointer-events-none p-24">
+                  <div className="relative w-full h-full pointer-events-auto">
+                    {placementFields.map((f) => (
+                      <div
+                        key={f.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPlacementFieldId(f.id);
+                        }}
+                        onMouseDown={(e) => onPlacementFieldMouseDown(e, f.id)}
+                        className={`absolute rounded-md border-2 bg-white/95 flex flex-col justify-center items-stretch px-1.5 py-1 shadow-sm cursor-move ${
+                          selectedPlacementFieldId === f.id ? 'border-[#7A005D] ring-2 ring-[#7A005D]/25' : 'border-slate-300'
+                        }`}
+                        style={{ left: f.x, top: f.y, width: f.w, height: f.h }}
+                      >
+                        <button
+                          type="button"
+                          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center text-xs leading-none shadow"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPlacementFields((prev) => prev.filter((x) => x.id !== f.id));
+                            if (selectedPlacementFieldId === f.id) setSelectedPlacementFieldId(null);
+                          }}
+                          aria-label="Remove field"
+                        >
+                          ×
+                        </button>
+                        <span className="text-[10px] font-bold text-slate-700 text-center leading-tight">{fieldTypeLabel(f.type)}</span>
+                        <span className="text-[9px] text-slate-500 flex items-center gap-1 mt-0.5 justify-center truncate max-w-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <span className="truncate">{placementRecipientLabel(f.recipientSlotId)}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
+
+          {selectedField && (
+            <div className="w-80 border-l border-slate-200 bg-white flex flex-col shrink-0 z-40 shadow-[ -4px_0_24px_rgba(0,0,0,0.06)] overflow-y-auto custom-scrollbar">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-900">1 selected</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-50"
+                    aria-label="Duplicate"
+                    onClick={() => {
+                      const copy: PlacementField = {
+                        ...selectedField,
+                        id: `${Date.now()}-dup`,
+                        x: selectedField.x + 16,
+                        y: selectedField.y + 16,
+                      };
+                      setPlacementFields((prev) => [...prev, copy]);
+                      setSelectedPlacementFieldId(copy.id);
+                    }}
+                  >
+                    <Copy size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-50"
+                    aria-label="Delete"
+                    onClick={() => {
+                      setPlacementFields((prev) => prev.filter((x) => x.id !== selectedField.id));
+                      setSelectedPlacementFieldId(null);
+                    }}
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+              <div className="p-4 space-y-4 border-b border-slate-100">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Recipient</p>
+                <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/50">
+                  <div className="w-10 h-10 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 text-xs font-bold shrink-0">
+                    {placementRecipientLabel(selectedField.recipientSlotId).slice(0, 1)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-900 truncate">{placementRecipientLabel(selectedField.recipientSlotId)}</p>
+                    <p className="text-xs text-slate-500">Assigned signer</p>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedField.required}
+                    onChange={(e) => updateSelectedPlacementField({ required: e.target.checked })}
+                    className="w-4 h-4 rounded accent-[#7A005D]"
+                  />
+                  Required
+                </label>
+              </div>
+              <div className="p-4 space-y-3">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Location</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <label className="col-span-2 text-xs text-slate-500">Page number</label>
+                  <input
+                    type="number"
+                    readOnly
+                    value={1}
+                    className="col-span-2 border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                  />
+                  <label className="col-span-2 text-xs text-slate-500">px from left</label>
+                  <input
+                    type="number"
+                    value={Math.round(selectedField.x)}
+                    onChange={(e) => updateSelectedPlacementField({ x: Number(e.target.value) || 0 })}
+                    className="col-span-2 border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                  />
+                  <label className="col-span-2 text-xs text-slate-500">px from right</label>
+                  <input
+                    type="number"
+                    value={Math.max(0, Math.round(pageW - selectedField.x - selectedField.w))}
+                    readOnly
+                    className="col-span-2 border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-slate-50"
+                  />
+                  <label className="col-span-2 text-xs text-slate-500">px wide</label>
+                  <input
+                    type="number"
+                    value={Math.round(selectedField.w)}
+                    onChange={(e) => updateSelectedPlacementField({ w: Math.max(24, Number(e.target.value) || 24) })}
+                    className="col-span-2 border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                  />
+                  <label className="col-span-2 text-xs text-slate-500">px tall</label>
+                  <input
+                    type="number"
+                    value={Math.round(selectedField.h)}
+                    onChange={(e) => updateSelectedPlacementField({ h: Math.max(24, Number(e.target.value) || 24) })}
+                    className="col-span-2 border border-slate-200 rounded-lg px-2 py-1.5 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <footer className="h-16 border-t border-slate-200 px-8 flex items-center justify-between shrink-0 bg-white z-[100]">
@@ -809,10 +1296,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
           <button onClick={() => handleContinue()} className="font-bold px-10 py-3 rounded-xl bg-[#7A005D] text-white hover:opacity-90 shadow-lg transition-all">Send</button>
         </footer>
       </div>
+      </>
     );
   }
 
   return (
+    <>
+      {renderCreateTagModal()}
     <div className={`flex flex-col h-screen bg-white overflow-hidden text-[#1e293b] ${isResizing ? 'cursor-col-resize select-none' : ''}`}>
       <header className="h-14 border-b border-slate-200 px-4 flex items-center justify-between shrink-0 bg-white z-[100]">
         <div className="flex items-center space-x-6">
@@ -901,7 +1391,11 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   ) : (
                     <>
                       <div
-                        onClick={() => uploadedFiles.length === 0 && setIsTemplateMenuOpen(!isTemplateMenuOpen)}
+                        onClick={() => {
+                          if (uploadedFiles.length > 0) return;
+                          setTemplateFilter('');
+                          setIsTemplateMenuOpen(!isTemplateMenuOpen);
+                        }}
                         className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex items-center gap-2 cursor-pointer bg-white"
                       >
                         <div className="flex flex-wrap gap-1.5 flex-1 min-w-0 max-h-[96px] overflow-y-auto">
@@ -949,14 +1443,56 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                         </div>
                       </div>
                       {isTemplateMenuOpen && (
-                        <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-[320px] overflow-hidden">
-                          <div className="py-2 overflow-y-auto custom-scrollbar min-h-0 flex-1">
-                            {allTemplateNames.map((tpl) => (
-                              <div key={tpl} onClick={(e) => { e.stopPropagation(); toggleTemplate(tpl); }} className="flex items-center justify-between px-5 py-2.5 hover:bg-slate-50 cursor-pointer">
+                        <div className="absolute z-[300] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-[360px] overflow-hidden">
+                          <div className="p-2 border-b border-slate-100 shrink-0">
+                            <div className="relative">
+                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                              <input
+                                type="text"
+                                value={templateFilter}
+                                onChange={(e) => setTemplateFilter(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="Search templates..."
+                                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="py-1 overflow-y-auto custom-scrollbar min-h-0 flex-1">
+                            {filteredTemplatesList.map((tpl) => (
+                              <div
+                                key={tpl}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleTemplate(tpl);
+                                }}
+                                className="flex items-center justify-between px-5 py-2.5 hover:bg-slate-50 cursor-pointer"
+                              >
                                 <span className="text-sm text-slate-800 font-medium truncate pr-4">{tpl}</span>
                                 {selectedTemplates.includes(tpl) && <Check size={16} className="text-blue-600 ml-auto shrink-0" />}
                               </div>
                             ))}
+                            {templateFilter.trim() &&
+                              !allTemplateNames.some((t) => t.toLowerCase() === templateFilter.trim().toLowerCase()) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const name = templateFilter.trim();
+                                    setIsTemplateMenuOpen(false);
+                                    setTemplateFilter('');
+                                    if (onCreateTemplateWithName) onCreateTemplateWithName(name);
+                                    else onCreateTemplate?.();
+                                  }}
+                                  className="w-full flex items-center gap-2 px-5 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 border-t border-slate-100"
+                                >
+                                  <div className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center shrink-0">
+                                    <Plus size={14} className="text-slate-600" />
+                                  </div>
+                                  <span>
+                                    Create and select &apos;{templateFilter.trim()}&apos;
+                                  </span>
+                                </button>
+                              )}
                           </div>
                           <div className="border-t border-slate-200 shrink-0 bg-white">
                             <button
@@ -964,6 +1500,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setIsTemplateMenuOpen(false);
+                                setTemplateFilter('');
                                 onCreateTemplate?.();
                               }}
                               className="w-full text-left px-5 py-3 text-sm font-semibold text-blue-600 hover:bg-slate-50 transition-colors"
@@ -1155,17 +1692,14 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                                   return taken ? (
                                                     <div
                                                       key={user.id}
-                                                      className="relative px-4 py-2 opacity-50 cursor-not-allowed select-none"
-                                                      onMouseEnter={() => setDuplicateHoverUserId(user.id)}
-                                                      onMouseLeave={() => setDuplicateHoverUserId(null)}
+                                                      className="group relative px-4 py-2 opacity-50 cursor-not-allowed select-none"
+                                                      title="recipient existed"
                                                     >
                                                       <p className="text-sm font-bold text-slate-800">{user.name}</p>
                                                       <p className="text-xs text-slate-500">{user.email}</p>
-                                                      {duplicateHoverUserId === user.id && (
-                                                        <div className="absolute bottom-full left-2 mb-1 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-md text-[12px] text-slate-700 max-w-[220px] text-left z-[120] pointer-events-none leading-snug">
-                                                          Recipient already existed
-                                                        </div>
-                                                      )}
+                                                      <div className="absolute left-2 top-full mt-1 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-md text-[12px] text-slate-700 max-w-[220px] text-left z-[500] pointer-events-none leading-snug opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        recipient existed
+                                                      </div>
                                                     </div>
                                                   ) : (
                                                     <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
@@ -1251,17 +1785,14 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                         return taken ? (
                                           <div
                                             key={user.id}
-                                            className="relative px-4 py-2 opacity-50 cursor-not-allowed select-none"
-                                            onMouseEnter={() => setDuplicateHoverUserId(user.id)}
-                                            onMouseLeave={() => setDuplicateHoverUserId(null)}
+                                            className="group relative px-4 py-2 opacity-50 cursor-not-allowed select-none"
+                                            title="recipient existed"
                                           >
                                             <p className="text-sm font-bold text-slate-800">{user.name}</p>
                                             <p className="text-xs text-slate-500">{user.email}</p>
-                                            {duplicateHoverUserId === user.id && (
-                                              <div className="absolute bottom-full left-2 mb-1 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-md text-[12px] text-slate-700 max-w-[220px] text-left z-[120] pointer-events-none leading-snug">
-                                                Recipient already existed
-                                              </div>
-                                            )}
+                                            <div className="absolute left-2 top-full mt-1 px-3 py-2 bg-[#EDEBE7] border border-slate-300/40 rounded-lg shadow-md text-[12px] text-slate-700 max-w-[220px] text-left z-[500] pointer-events-none leading-snug opacity-0 group-hover:opacity-100 transition-opacity">
+                                              recipient existed
+                                            </div>
                                           </div>
                                         ) : (
                                           <div key={user.id} onClick={() => updateRecipient(recipient.id, { user, searchTerm: '', isSearching: false })} className="px-4 py-2 hover:bg-slate-50 cursor-pointer">
@@ -1403,7 +1934,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             )}
           </div>
 
-          <div className="border border-slate-200 rounded-2xl shadow-sm bg-white relative">
+          <div className="border border-slate-200 rounded-2xl shadow-sm bg-white relative z-30 overflow-visible">
             <button type="button" onClick={() => toggleSection('advanced')} className="w-full flex items-center justify-between p-5 bg-white text-left rounded-t-2xl">
               <div>
                 <h3 className="font-bold text-lg text-slate-800">Advanced settings</h3>
@@ -1420,7 +1951,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     <input
                       type="text"
                       readOnly
-                      onClick={() => setIsLocationMenuOpen(!isLocationMenuOpen)}
+                      onClick={() => {
+                        setLocationFilter('');
+                        setIsLocationMenuOpen(!isLocationMenuOpen);
+                      }}
                       value={selectedFolder}
                       placeholder="Choose folder"
                       className={`w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 cursor-pointer placeholder:text-slate-400 ${!selectedFolder ? 'text-slate-400' : 'text-slate-900'}`}
@@ -1428,8 +1962,40 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
                   </div>
                   {isLocationMenuOpen && (
-                    <div className="absolute z-[110] top-full mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
-                      <div className="py-2 max-h-[300px] overflow-y-auto custom-scrollbar">{renderFolderTree(FOLDER_STRUCTURE)}</div>
+                    <div className="absolute z-[400] top-full mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col max-h-[320px] overflow-hidden">
+                      <div className="p-2 border-b border-slate-100 shrink-0">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                          <input
+                            type="text"
+                            value={locationFilter}
+                            onChange={(e) => setLocationFilter(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="Search folders..."
+                            className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                      <div className="py-1 max-h-[260px] overflow-y-auto custom-scrollbar">
+                        {filteredFolderLeaves.map((row) => (
+                          <button
+                            key={row.id}
+                            type="button"
+                            onClick={() => {
+                              updateState({ selectedFolder: row.name });
+                              setIsLocationMenuOpen(false);
+                              setLocationFilter('');
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex flex-col ${selectedFolder === row.name ? 'bg-slate-50' : ''}`}
+                          >
+                            <span className="font-medium text-slate-900">{row.name}</span>
+                            <span className="text-xs text-slate-500 truncate">{row.path}</span>
+                          </button>
+                        ))}
+                        {filteredFolderLeaves.length === 0 && (
+                          <p className="px-4 py-6 text-sm text-slate-500 text-center">No folders match</p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1440,7 +2006,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     <input
                       type="text"
                       readOnly
-                      onClick={() => setIsTagsMenuOpen(!isTagsMenuOpen)}
+                      onClick={() => {
+                        setTagFilter('');
+                        setIsTagsMenuOpen(!isTagsMenuOpen);
+                      }}
                       value={advancedTags.length ? advancedTags.join(', ') : ''}
                       placeholder="Choose or add tags"
                       className={`w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 cursor-pointer placeholder:text-slate-400 ${advancedTags.length === 0 ? 'text-slate-400' : 'text-slate-900'}`}
@@ -1448,21 +2017,72 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
                   </div>
                   {isTagsMenuOpen && (
-                    <div className="absolute z-[110] top-full mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-                      {TAG_OPTIONS.map((tag) => (
+                    <div className="absolute z-[400] top-full mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col max-h-80 overflow-hidden">
+                      <div className="p-2 border-b border-slate-100 shrink-0">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                          <input
+                            type="text"
+                            value={tagFilter}
+                            onChange={(e) => setTagFilter(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="Search tags..."
+                            className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                      <div className="overflow-y-auto flex-1 min-h-0 max-h-52">
+                        {filteredTagOptions.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              const has = advancedTags.includes(tag);
+                              updateState({ advancedTags: has ? advancedTags.filter((t) => t !== tag) : [...advancedTags, tag] });
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex items-center justify-between"
+                          >
+                            {tag}
+                            {advancedTags.includes(tag) && <Check size={16} className="text-blue-600 shrink-0" />}
+                          </button>
+                        ))}
+                        {tagFilter.trim() && !filteredTagOptions.length && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const t = tagFilter.trim();
+                              if (!t) return;
+                              if (!advancedTags.includes(t)) {
+                                setExtraTagOptions((prev) => (prev.includes(t) ? prev : [...prev, t]));
+                                updateState({ advancedTags: [...advancedTags, t] });
+                              }
+                              setTagFilter('');
+                              setIsTagsMenuOpen(false);
+                            }}
+                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 border-t border-slate-100"
+                          >
+                            <div className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center shrink-0">
+                              <Plus size={14} className="text-slate-600" />
+                            </div>
+                            <span>Create and select &apos;{tagFilter.trim()}&apos;</span>
+                          </button>
+                        )}
+                        {!tagFilter.trim() && filteredTagOptions.length === 0 && (
+                          <p className="px-4 py-6 text-sm text-slate-500 text-center">No tags yet</p>
+                        )}
+                      </div>
+                      <div className="border-t border-slate-200 bg-white shrink-0">
                         <button
-                          key={tag}
                           type="button"
                           onClick={() => {
-                            const has = advancedTags.includes(tag);
-                            updateState({ advancedTags: has ? advancedTags.filter((t) => t !== tag) : [...advancedTags, tag] });
+                            setCreateTagDraft(tagFilter.trim());
+                            setCreateTagModalOpen(true);
                           }}
-                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex items-center justify-between"
+                          className="w-full text-left px-4 py-3 text-sm font-bold text-[#7A005D] hover:bg-slate-50"
                         >
-                          {tag}
-                          {advancedTags.includes(tag) && <Check size={16} className="text-blue-600" />}
+                          Create new tag
                         </button>
-                      ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1603,6 +2223,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
         </button>
       </footer>
     </div>
+    </>
   );
 };
 

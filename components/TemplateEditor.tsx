@@ -516,9 +516,11 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               <span className="text-[12px] font-medium text-slate-700">Normal text</span>
               <ChevronDown size={14} className="text-slate-400" />
             </div>
-            <div className="flex items-center space-x-1 border border-slate-200 rounded px-2 py-0.5 bg-white cursor-pointer hover:bg-slate-50 min-w-[130px] justify-between">
-              <span className="text-[12px] font-medium text-slate-700">Rippling&apos;s Default</span>
-              <ChevronDown size={14} className="text-slate-400" />
+            <div className="flex items-center gap-1 border border-slate-200 rounded px-2 py-0.5 bg-white cursor-pointer hover:bg-slate-50 w-[130px] max-w-[130px] justify-between min-w-0">
+              <span className="text-[12px] font-medium text-slate-700 truncate min-w-0 block text-left">
+                Rippling&apos;s Default
+              </span>
+              <ChevronDown size={14} className="text-slate-400 shrink-0" />
             </div>
             <div className="h-6 w-px bg-slate-200 mx-1" />
             <div className="flex items-center gap-1">

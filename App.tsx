@@ -79,7 +79,7 @@ const App: React.FC = () => {
   const [selectedEnvelopeName, setSelectedEnvelopeName] = useState('');
   const [viewByDocuments, setViewByDocuments] = useState(false);
   const [templateEditorMode, setTemplateEditorMode] = useState<'create' | 'edit'>('edit');
-  const [templateEditorSeed, setTemplateEditorSeed] = useState<{ title: string; bodyHtml: string } | null>(null);
+  const [templateEditorSeed, setTemplateEditorSeed] = useState<{ title: string; bodyHtml: string | null } | null>(null);
 
   // Persistent Envelope Creation State
   const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
@@ -233,6 +233,12 @@ const App: React.FC = () => {
             }}
             onCreateTemplate={() => {
               setTemplateEditorSeed(null);
+              setTemplateEditorMode('create');
+              navigateTo('template_editor');
+            }}
+            onCreateTemplateWithName={(name) => {
+              const t = name.trim();
+              setTemplateEditorSeed({ title: t || 'Untitled template', bodyHtml: null });
               setTemplateEditorMode('create');
               navigateTo('template_editor');
             }}
