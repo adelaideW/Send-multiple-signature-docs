@@ -27,16 +27,22 @@ interface EnvelopeState {
   signingOrderGroups: string[][];
   /** User-created templates from the template editor (name + body for preview). */
   customTemplates: Array<{ name: string; body: string }>;
+  customMessageSubject: string;
+  customMessageBody: string;
+  advancedTags: string[];
 }
 
 const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   selectedTemplates: [],
   uploadedFiles: [],
   recipients: [{ id: '1', user: null, action: 'Needs to complete', isSearching: false, searchTerm: '', isActionDropdownOpen: false }],
-  selectedFolder: 'All documents',
+  selectedFolder: '',
   signingOrderEnabled: false,
   signingOrderGroups: [],
-  customTemplates: []
+  customTemplates: [],
+  customMessageSubject: 'Action required for documents',
+  customMessageBody: 'Please review and send the documents\n• {Document names}',
+  advancedTags: [],
 };
 
 const SuccessSnackbar: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {
@@ -73,6 +79,7 @@ const App: React.FC = () => {
   const [selectedEnvelopeName, setSelectedEnvelopeName] = useState('');
   const [viewByDocuments, setViewByDocuments] = useState(false);
   const [templateEditorMode, setTemplateEditorMode] = useState<'create' | 'edit'>('edit');
+  const [templateEditorSeed, setTemplateEditorSeed] = useState<{ title: string; bodyHtml: string } | null>(null);
 
   // Persistent Envelope Creation State
   const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
@@ -219,11 +226,13 @@ const App: React.FC = () => {
         <div className="absolute inset-0 z-[100] bg-white">
           <EnvelopeCreator 
             onExit={goBack} 
-            onEditDocument={() => {
+            onEditDocument={(detail) => {
+              setTemplateEditorSeed(detail ?? null);
               setTemplateEditorMode('edit');
               navigateTo('template_editor');
             }}
             onCreateTemplate={() => {
+              setTemplateEditorSeed(null);
               setTemplateEditorMode('create');
               navigateTo('template_editor');
             }}
@@ -237,9 +246,14 @@ const App: React.FC = () => {
       {currentView === 'template_editor' && (
         <div className="absolute inset-0 z-[110] bg-white">
           <TemplateEditor 
-            onExit={goBack} 
+            onExit={() => {
+              setTemplateEditorSeed(null);
+              goBack();
+            }} 
             onGoHome={() => setViewHistory(['landing'])}
             mode={templateEditorMode}
+            initialTitle={templateEditorSeed?.title}
+            initialBodyHtml={templateEditorSeed?.bodyHtml ?? null}
             onSaveNewTemplate={(name, body) => {
               const finalName = name.trim() || 'Untitled template';
               setEnvelopeState((prev) => ({
@@ -250,6 +264,7 @@ const App: React.FC = () => {
                 ],
                 selectedTemplates: Array.from(new Set([...prev.selectedTemplates, finalName])),
               }));
+              setTemplateEditorSeed(null);
               goBack();
             }}
           />

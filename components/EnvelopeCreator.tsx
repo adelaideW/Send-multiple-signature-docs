@@ -47,7 +47,7 @@ import type { UploadedFileItem } from '../types';
 
 interface EnvelopeCreatorProps {
   onExit: () => void;
-  onEditDocument?: () => void;
+  onEditDocument?: (detail: { title: string; bodyHtml: string }) => void;
   onCreateTemplate?: () => void;
   onContinue?: (envelopeName: string) => void;
   state?: any;
@@ -195,6 +195,8 @@ interface FolderNode {
   children?: FolderNode[];
 }
 
+const TAG_OPTIONS = ['HR', 'Legal', 'Onboarding', 'Contractor', 'Confidential', 'Payroll'];
+
 const FOLDER_STRUCTURE: FolderNode[] = [
   {
     id: 'root',
@@ -308,7 +310,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   onUpdateState
 }) => {
   const [currentStep, setCurrentStep] = useState<'setup' | 'placement'>('setup');
-  const [expandedSections, setExpandedSections] = useState<string[]>(['documents', 'recipients', 'destination', 'customMessage']);
+  const [expandedSections, setExpandedSections] = useState<string[]>(['documents', 'recipients', 'customMessage', 'advanced']);
   const [leftWidth, setLeftWidth] = useState(500);
   const [isResizing, setIsResizing] = useState(false);
   const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false);
@@ -317,10 +319,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const selectedTemplates = persistentState?.selectedTemplates || [];
   const uploadedFiles = persistentState?.uploadedFiles || [];
   const recipients = persistentState?.recipients || [{ id: '1', user: null, action: 'Needs to complete', isSearching: false, searchTerm: '', isActionDropdownOpen: false }];
-  const selectedFolder = persistentState?.selectedFolder || 'All documents';
+  const selectedFolder = persistentState?.selectedFolder ?? '';
   const signingOrderEnabled = persistentState?.signingOrderEnabled ?? false;
   const signingOrderGroups: string[][] = persistentState?.signingOrderGroups ?? [];
   const customTemplates: Array<{ name: string; body: string }> = persistentState?.customTemplates ?? [];
+  const customMessageSubject = persistentState?.customMessageSubject ?? 'Action required for documents';
+  const customMessageBody = persistentState?.customMessageBody ?? 'Please review and send the documents\n• {Document names}';
+  const advancedTags: string[] = persistentState?.advancedTags ?? [];
 
   const updateState = (updates: any) => {
     onUpdateState?.({
@@ -331,17 +336,19 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       signingOrderEnabled,
       signingOrderGroups,
       customTemplates,
+      customMessageSubject,
+      customMessageBody,
+      advancedTags,
       ...updates
     });
   };
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
+  const [isTagsMenuOpen, setIsTagsMenuOpen] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<string[]>(['root', 'f1']); 
   const [isPreviewRecipientsExpanded, setIsPreviewRecipientsExpanded] = useState(false);
   const [currentPreviewPage, setCurrentPreviewPage] = useState(1);
   const [messageMode, setMessageMode] = useState<'edit' | 'preview'>('edit');
-  const [subject, setSubject] = useState('Action required for documents');
-  const [body, setBody] = useState('Please review and send the documents\n• {Document names}');
   const [activeCoachmark, setActiveCoachmark] = useState<number | null>(null);
   const [draggingRecipientId, setDraggingRecipientId] = useState<string | null>(null);
   const [signingOrderSummaryOpen, setSigningOrderSummaryOpen] = useState(false);
@@ -350,6 +357,29 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const [showRecipientErrors, setShowRecipientErrors] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const tagsRef = useRef<HTMLDivElement>(null);
+
+  const buildTemplateEditSnapshot = (): { title: string; bodyHtml: string } => {
+    const name = selectedTemplates[currentPreviewPage - 1] || 'Document';
+    const custom = customTemplates.find((c) => c.name === name);
+    const chipStyle =
+      'display:inline-flex;align-items:center;margin:0 4px;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;background:#F3E8FF;border:2px solid #D8B4FE;color:#0f172a';
+    const chip = (t: string) =>
+      `<span data-chip="recipient-field" data-label="${t.replace(/"/g, '&quot;')}" draggable="true" contenteditable="false" style="${chipStyle}">${t}</span>`;
+    if (custom) {
+      let html = custom.body;
+      if (!html.trim().startsWith('<')) {
+        html = custom.body
+          .split(/\n+/)
+          .filter((p) => p.trim())
+          .map((p) => `<p>${p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
+          .join('');
+      }
+      return { title: name, bodyHtml: html || '<p></p>' };
+    }
+    const bodyHtml = `<p>Effective ${chip('Start date')}, , ${chip('Contractor Name')} ("Consultant") and ${chip('Business legal name')} ("Company") agree as follows:</p><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p>`;
+    return { title: name, bodyHtml };
+  };
 
   const allTemplateNames = [
     ...TEMPLATES,
@@ -400,6 +430,9 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       }
       if (locationRef.current && !locationRef.current.contains(event.target as Node)) {
         setIsLocationMenuOpen(false);
+      }
+      if (tagsRef.current && !tagsRef.current.contains(event.target as Node)) {
+        setIsTagsMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -904,10 +937,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                 e.stopPropagation();
                                 clearTemplates(e);
                               }}
-                              className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+                              className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors"
                               aria-label="Clear all selected templates"
                             >
-                              <X size={14} strokeWidth={3} />
+                              <X size={10} strokeWidth={2.5} className="shrink-0" aria-hidden />
                             </button>
                           )}
                           <div className="flex h-8 w-8 items-center justify-center text-slate-400">
@@ -1289,17 +1322,109 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
           </div>
 
           <div className="border border-slate-200 rounded-2xl shadow-sm bg-white relative">
-            <button onClick={() => toggleSection('destination')} className="w-full flex items-center justify-between p-5 bg-white text-left rounded-t-2xl">
-              <h3 className="font-bold text-lg text-slate-800">Destination folder</h3>
-              {isExpanded('destination') ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+            <button type="button" onClick={() => toggleSection('customMessage')} className="w-full flex items-center justify-between p-5 bg-white text-left rounded-t-2xl">
+              <div>
+                <h3 className="font-bold text-lg text-slate-800">Add custom message</h3>
+                <p className="text-sm text-slate-500 mt-1">Insert a custom note for the recipient(s)</p>
+              </div>
+              {isExpanded('customMessage') ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </button>
-            {isExpanded('destination') && (
-              <div className="px-5 pb-6 space-y-6">
+            {isExpanded('customMessage') && (
+              <div className="px-5 pb-6 space-y-4 border-t border-slate-100">
+                <div className="flex rounded-xl border border-slate-200 overflow-hidden w-fit mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setMessageMode('edit')}
+                    className={`px-5 py-2 text-sm font-bold transition-colors ${messageMode === 'edit' ? 'bg-[#7A005D] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMessageMode('preview')}
+                    className={`px-5 py-2 text-sm font-bold transition-colors border-l border-slate-200 ${messageMode === 'preview' ? 'bg-[#7A005D] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Preview
+                  </button>
+                </div>
+                {messageMode === 'edit' ? (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-900">Subject<span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        value={customMessageSubject}
+                        onChange={(e) => updateState({ customMessageSubject: e.target.value })}
+                        className="w-full border border-slate-200 rounded-xl py-3 px-4 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-900">Body<span className="text-red-500">*</span></label>
+                      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                        <div className="flex flex-wrap items-center gap-1 px-2 py-1.5 border-b border-slate-100 bg-slate-50/80">
+                          <button type="button" className="p-1.5 rounded hover:bg-slate-200 text-slate-600"><Undo2 size={14} /></button>
+                          <button type="button" className="p-1.5 rounded hover:bg-slate-200 text-slate-600"><Redo2 size={14} /></button>
+                          <div className="w-px h-5 bg-slate-200 mx-0.5" />
+                          <button type="button" className="p-1.5 rounded hover:bg-slate-200 font-bold text-slate-700">B</button>
+                          <button type="button" className="p-1.5 rounded hover:bg-slate-200 italic text-slate-700">I</button>
+                          <div className="w-px h-5 bg-slate-200 mx-0.5" />
+                          <span className="text-[11px] font-medium text-slate-500 px-2 border border-slate-200 rounded bg-white py-0.5">Normal text</span>
+                          <div className="w-px h-5 bg-slate-200 mx-0.5" />
+                          <button type="button" className="p-1 rounded hover:bg-slate-200"><Minus size={12} /></button>
+                          <span className="text-xs font-bold px-1">15</span>
+                          <button type="button" className="p-1 rounded hover:bg-slate-200"><Plus size={12} /></button>
+                          <div className="w-px h-5 bg-slate-200 mx-0.5" />
+                          <button type="button" className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 ml-auto">
+                            <Zap size={12} className="fill-slate-700" /> Insert variable
+                          </button>
+                        </div>
+                        <textarea
+                          value={customMessageBody}
+                          onChange={(e) => updateState({ customMessageBody: e.target.value })}
+                          rows={6}
+                          className="w-full border-0 text-sm p-4 resize-y min-h-[140px] outline-none focus:ring-0"
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-6 space-y-4 text-[15px]">
+                    <div className="border-b border-slate-200 pb-3">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Subject</p>
+                      <p className="font-semibold text-slate-900">{customMessageSubject || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Message</p>
+                      <div className="text-slate-800 whitespace-pre-wrap leading-relaxed">{customMessageBody || '—'}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="border border-slate-200 rounded-2xl shadow-sm bg-white relative">
+            <button type="button" onClick={() => toggleSection('advanced')} className="w-full flex items-center justify-between p-5 bg-white text-left rounded-t-2xl">
+              <div>
+                <h3 className="font-bold text-lg text-slate-800">Advanced settings</h3>
+                <p className="text-sm text-slate-500 mt-1">Select a folder in the profile or add a tag for sent documents</p>
+              </div>
+              {isExpanded('advanced') ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+            </button>
+            {isExpanded('advanced') && (
+              <div className="px-5 pb-6 space-y-6 border-t border-slate-100">
                 <div className="space-y-2 relative" ref={locationRef}>
-                  <label className="text-sm font-bold text-slate-900">Location</label>
+                  <label className="text-sm font-bold text-slate-900">Location<span className="text-red-500">*</span></label>
                   <div className="relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                    <input type="text" readOnly onClick={() => setIsLocationMenuOpen(!isLocationMenuOpen)} value={selectedFolder} className="w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 cursor-pointer" />
+                    <input
+                      type="text"
+                      readOnly
+                      onClick={() => setIsLocationMenuOpen(!isLocationMenuOpen)}
+                      value={selectedFolder}
+                      placeholder="Choose folder"
+                      className={`w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 cursor-pointer placeholder:text-slate-400 ${!selectedFolder ? 'text-slate-400' : 'text-slate-900'}`}
+                    />
                     <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
                   </div>
                   {isLocationMenuOpen && (
@@ -1308,21 +1433,60 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     </div>
                   )}
                 </div>
-                <div className="flex items-center space-x-3 text-slate-800 group cursor-pointer">
-                  <input type="checkbox" className="w-5 h-5 rounded-md border-slate-300 cursor-pointer" />
-                  <span className="text-sm font-medium">Save completed document to recipients' profile</span>
+                <div className="space-y-2 relative" ref={tagsRef}>
+                  <label className="text-sm font-bold text-slate-900">Tags<span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="text"
+                      readOnly
+                      onClick={() => setIsTagsMenuOpen(!isTagsMenuOpen)}
+                      value={advancedTags.length ? advancedTags.join(', ') : ''}
+                      placeholder="Choose or add tags"
+                      className={`w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 cursor-pointer placeholder:text-slate-400 ${advancedTags.length === 0 ? 'text-slate-400' : 'text-slate-900'}`}
+                    />
+                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                  {isTagsMenuOpen && (
+                    <div className="absolute z-[110] top-full mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+                      {TAG_OPTIONS.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            const has = advancedTags.includes(tag);
+                            updateState({ advancedTags: has ? advancedTags.filter((t) => t !== tag) : [...advancedTags, tag] });
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex items-center justify-between"
+                        >
+                          {tag}
+                          {advancedTags.includes(tag) && <Check size={16} className="text-blue-600" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+                <label className="flex items-start space-x-3 text-slate-800 cursor-pointer">
+                  <input type="checkbox" className="w-5 h-5 mt-0.5 rounded-md border-slate-300 cursor-pointer accent-[#7A005D]" />
+                  <span>
+                    <span className="text-sm font-medium block">Save completed document to recipients&apos; profile</span>
+                    <span className="text-xs text-slate-500 block mt-1">This only applies if the selected employee is not a recipient of the document</span>
+                  </span>
+                </label>
+                <label className="flex items-center space-x-3 text-slate-800 cursor-pointer">
+                  <input type="checkbox" className="w-5 h-5 rounded-md border-slate-300 cursor-pointer accent-[#7A005D]" />
+                  <span className="text-sm font-medium">Allow recipients to reassign to other people</span>
+                </label>
               </div>
             )}
           </div>
-          {/* Custom Message Section (Hidden for brevity, same as previous) */}
         </div>
 
         <div onMouseDown={startResizing} className={`w-1.5 hover:w-2 hover:bg-blue-400 bg-slate-200 cursor-col-resize h-full z-50 flex items-center justify-center ${isResizing ? 'bg-blue-500 w-2' : ''}`}>
           <div className={`w-px h-10 bg-slate-400 ${isResizing ? 'bg-white' : ''}`} />
         </div>
 
-        <div className="flex-1 bg-[#f8fafc] flex flex-col p-8 overflow-y-auto custom-scrollbar relative">
+        <div className="flex-1 bg-[#f8fafc] flex flex-col p-12 overflow-y-auto custom-scrollbar relative">
           <div className="max-w-4xl mx-auto w-full flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-slate-900">Preview</h2>
             {totalPages > 0 && (
@@ -1361,46 +1525,56 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   )}
                 </div>
               )}
-              <div className="relative group bg-white border border-slate-200 rounded-2xl shadow-sm p-12 min-h-[1000px] text-[15px] leading-relaxed text-slate-800 transition-all cursor-default">
+              <div className="relative group max-w-[850px] mx-auto w-full">
                 {!isUploadMode && (
-                  <div className="absolute inset-0 bg-slate-900/5 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-start pt-32 rounded-2xl z-20 pointer-events-none group-hover:pointer-events-auto backdrop-blur-[0.5px]">
-                    <button onClick={onEditDocument} className="bg-white text-slate-900 font-bold px-6 py-3 rounded-xl shadow-2xl border border-slate-200 flex items-center space-x-3 hover:scale-105 transition-all">
+                  <div className="absolute inset-0 bg-slate-900/5 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-start pt-32 z-20 pointer-events-none group-hover:pointer-events-auto backdrop-blur-[0.5px]">
+                    <button type="button" onClick={() => onEditDocument?.(buildTemplateEditSnapshot())} className="bg-white text-slate-900 font-bold px-6 py-3 rounded-xl shadow-2xl border border-slate-200 flex items-center space-x-3 hover:scale-105 transition-all">
                       <Pencil size={18} className="text-slate-600" /><span>Edit document</span>
                     </button>
                   </div>
                 )}
-                <h1 className="text-2xl font-bold text-center mb-10">
-                  {selectedTemplates.length > 0
-                    ? selectedTemplates[currentPreviewPage - 1]
-                    : uploadedFiles[currentPreviewPage - 1]?.previewTitle}
-                </h1>
-                {isUploadMode ? (
-                  <div className="space-y-5 text-slate-700">
-                    {(uploadedFiles[currentPreviewPage - 1]?.previewParagraphs ?? []).map((para, i) => (
-                      <p key={i} className="leading-relaxed">{para}</p>
-                    ))}
-                  </div>
-                ) : (() => {
-                  const tplName = selectedTemplates[currentPreviewPage - 1];
-                  const customEntry = customTemplates.find((c) => c.name === tplName);
-                  if (customEntry) {
+                <div className="bg-white border border-slate-100 shadow-xl min-h-[1100px] p-24 text-[15px] leading-relaxed text-slate-800">
+                  <h1 className="text-2xl font-bold text-center mb-10">
+                    {selectedTemplates.length > 0
+                      ? selectedTemplates[currentPreviewPage - 1]
+                      : uploadedFiles[currentPreviewPage - 1]?.previewTitle}
+                  </h1>
+                  {isUploadMode ? (
+                    <div className="space-y-5 text-slate-700">
+                      {(uploadedFiles[currentPreviewPage - 1]?.previewParagraphs ?? []).map((para, i) => (
+                        <p key={i} className="leading-relaxed">{para}</p>
+                      ))}
+                    </div>
+                  ) : (() => {
+                    const tplName = selectedTemplates[currentPreviewPage - 1];
+                    const customEntry = customTemplates.find((c) => c.name === tplName);
+                    if (customEntry && customEntry.body.trim().startsWith('<')) {
+                      return (
+                        <div
+                          className="space-y-4 text-slate-700 [&_span[data-chip]]:inline-flex [&_span[data-chip]]:items-center [&_span[data-chip]]:mx-0.5 [&_span[data-chip]]:px-2 [&_span[data-chip]]:py-0.5 [&_span[data-chip]]:rounded-md [&_span[data-chip]]:text-sm [&_span[data-chip]]:font-semibold [&_span[data-chip]]:bg-[#F3E8FF] [&_span[data-chip]]:border-2 [&_span[data-chip]]:border-[#D8B4FE]"
+                          dangerouslySetInnerHTML={{ __html: customEntry.body }}
+                        />
+                      );
+                    }
+                    if (customEntry) {
+                      return (
+                        <div className="space-y-4 text-slate-700">
+                          {customEntry.body.split(/\n+/).filter((p) => p.trim()).map((para, i) => (
+                            <p key={i} className="leading-relaxed whitespace-pre-wrap">
+                              {para}
+                            </p>
+                          ))}
+                        </div>
+                      );
+                    }
                     return (
-                      <div className="space-y-4 text-slate-700">
-                        {customEntry.body.split(/\n+/).filter((p) => p.trim()).map((para, i) => (
-                          <p key={i} className="leading-relaxed whitespace-pre-wrap">
-                            {para}
-                          </p>
-                        ))}
-                      </div>
+                      <>
+                        <p className="mb-6">Effective <VariableChip label="Start date" />, , <VariableChip label="Contractor Name" /> ("Consultant") and <VariableChip label="Business legal name" /> ("Company") agree as follows:</p>
+                        <div className="space-y-6 text-slate-600"><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p></div>
+                      </>
                     );
-                  }
-                  return (
-                    <>
-                      <p className="mb-6">Effective <VariableChip label="Start date" />, , <VariableChip label="Contractor Name" /> ("Consultant") and <VariableChip label="Business legal name" /> ("Company") agree as follows:</p>
-                      <div className="space-y-6 text-slate-600"><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p></div>
-                    </>
-                  );
-                })()}
+                  })()}
+                </div>
               </div>
             </div>
           ) : (
