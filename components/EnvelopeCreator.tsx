@@ -722,7 +722,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             {isExpanded('documents') && (
               <div className="px-5 pb-6 space-y-6">
                 <div className="space-y-2 relative rounded-lg" ref={dropdownRef}>
-                  <label className="text-sm font-bold text-slate-800">Select templates</label>
+                  <label className="text-sm font-bold text-slate-800">select templates</label>
                   {uploadedFiles.length > 0 ? (
                     <DisabledWithTooltip message="Remove uploaded documents to allow selecting documents">
                       <div className="rounded-lg">
