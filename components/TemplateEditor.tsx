@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   X, 
   ChevronDown, 
@@ -47,9 +47,14 @@ import {
 interface TemplateEditorProps {
   onExit: () => void;
   onGoHome?: () => void;
+  /** When `create`, the canvas starts empty so users can add their own content. */
+  mode?: 'create' | 'edit';
 }
 
-const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome }) => {
+const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome, mode = 'edit' }) => {
+  const [templateName, setTemplateName] = useState('');
+  const [draftBody, setDraftBody] = useState('');
+  const isCreate = mode === 'create';
   return (
     <div className="flex flex-col h-screen bg-white text-[#1e293b] font-sans overflow-hidden">
       {/* --- Tier 1: Global Header --- */}
@@ -102,8 +107,18 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome }) => 
 
       {/* --- Tier 2: Template Action Bar --- */}
       <div className="h-14 bg-white border-b border-slate-100 flex items-center justify-between px-6 shrink-0 z-10">
-        <div className="flex items-center space-x-3">
-          <h2 className="text-[14px] font-bold text-slate-800">[Envelope Templates Name]</h2>
+        <div className="flex items-center space-x-3 flex-1 min-w-0 max-w-xl">
+          {isCreate ? (
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="[Envelope Templates Name]"
+              className="text-[14px] font-bold text-slate-800 w-full border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-slate-300"
+            />
+          ) : (
+            <h2 className="text-[14px] font-bold text-slate-800 truncate">[Envelope Templates Name]</h2>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           <button className="flex items-center space-x-2 px-3.5 py-1.5 bg-white border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm">
@@ -195,27 +210,38 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ onExit, onGoHome }) => 
 
           <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
             <div className="max-w-[850px] mx-auto bg-white shadow-xl min-h-[1100px] p-24 text-[15px] leading-relaxed text-slate-800 border border-slate-100">
-              <h1 className="text-center font-bold mb-12 text-lg uppercase tracking-tight">CCPA PRIVACY NOTICE FOR EMPLOYEES</h1>
-              
-              <p className="mb-6">
-                <span className="inline-flex items-center bg-[#f1f5f9] border border-slate-200 rounded px-1.5 py-0.5 text-[12px] font-bold mx-1 text-slate-600">
-                  BusinessLegalName <ChevronRight size={10} className="ml-1 text-slate-400" />
-                </span> 
-                (the “Company,” “we,” “us,” “our”) is providing this Privacy Notice (“Notice”) pursuant to the California Consumer Privacy Act (“CCPA”) to inform you about:
-              </p>
+              {isCreate ? (
+                <textarea
+                  value={draftBody}
+                  onChange={(e) => setDraftBody(e.target.value)}
+                  placeholder="Start typing your template, or use Recipient fields and Insert variable from the toolbar."
+                  className="w-full min-h-[900px] border-0 resize-y text-[15px] leading-relaxed text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
+                />
+              ) : (
+                <>
+                  <h1 className="text-center font-bold mb-12 text-lg uppercase tracking-tight">CCPA PRIVACY NOTICE FOR EMPLOYEES</h1>
+                  
+                  <p className="mb-6">
+                    <span className="inline-flex items-center bg-[#f1f5f9] border border-slate-200 rounded px-1.5 py-0.5 text-[12px] font-bold mx-1 text-slate-600">
+                      BusinessLegalName <ChevronRight size={10} className="ml-1 text-slate-400" />
+                    </span> 
+                    (the “Company,” “we,” “us,” “our”) is providing this Privacy Notice (“Notice”) pursuant to the California Consumer Privacy Act (“CCPA”) to inform you about:
+                  </p>
 
-              <ol className="list-decimal space-y-6 ml-8 text-slate-700">
-                <li>
-                  the Categories of Personal Information that Company collects through Rippling and integrated applications about employees, officers, directors, candidates, and contractors who reside in California (“Employees”); and,
-                </li>
-                <li>
-                  the purposes for which the Company uses that Personal Information (“Purposes of Use”).
-                </li>
-              </ol>
+                  <ol className="list-decimal space-y-6 ml-8 text-slate-700">
+                    <li>
+                      the Categories of Personal Information that Company collects through Rippling and integrated applications about employees, officers, directors, candidates, and contractors who reside in California (“Employees”); and,
+                    </li>
+                    <li>
+                      the purposes for which the Company uses that Personal Information (“Purposes of Use”).
+                    </li>
+                  </ol>
 
-              <p className="mt-8 mb-8 text-slate-700">
-                If you do not reside in California, Company has decided to provide this notice as a courtesy to you. For purposes of this Notice, “Personal Information” means information that identifies, relates to, describes, is reasonably capable of being associated with...
-              </p>
+                  <p className="mt-8 mb-8 text-slate-700">
+                    If you do not reside in California, Company has decided to provide this notice as a courtesy to you. For purposes of this Notice, “Personal Information” means information that identifies, relates to, describes, is reasonably capable of being associated with...
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>

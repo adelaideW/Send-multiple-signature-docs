@@ -30,3 +30,11 @@ export interface SidebarItem {
   icon?: string;
   active?: boolean;
 }
+
+/** Mock uploaded file with distinct preview content for the envelope creator */
+export interface UploadedFileItem {
+  id: string;
+  name: string;
+  previewTitle: string;
+  previewParagraphs: string[];
+}

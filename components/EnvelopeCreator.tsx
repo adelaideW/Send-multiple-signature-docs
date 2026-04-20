@@ -43,14 +43,112 @@ import {
   Baseline,
   Eraser
 } from 'lucide-react';
+import type { UploadedFileItem } from '../types';
 
 interface EnvelopeCreatorProps {
   onExit: () => void;
   onEditDocument?: () => void;
+  onCreateTemplate?: () => void;
   onContinue?: (envelopeName: string) => void;
   state?: any;
   onUpdateState?: (state: any) => void;
 }
+
+const HR_UPLOAD_SAMPLES: Omit<UploadedFileItem, 'id'>[] = [
+  {
+    name: 'Remote_Work_Acknowledgment_v3.pdf',
+    previewTitle: 'Remote work expectations',
+    previewParagraphs: [
+      'By signing below, you acknowledge receipt of Acme’s Remote Work Policy, including equipment care, data security, and core collaboration hours for your team.',
+      'You agree to maintain a secure home workspace and to report lost or stolen company devices to IT within twenty-four hours.',
+    ],
+  },
+  {
+    name: 'Benefits_Enrollment_Summary_2026.pdf',
+    previewTitle: 'Annual benefits enrollment summary',
+    previewParagraphs: [
+      'This summary highlights medical, dental, vision, and voluntary life coverage effective on your eligibility date. Detailed plan documents are available in Rippling.',
+      'Election changes are binding for the plan year unless you experience a qualifying life event approved under IRS guidelines.',
+    ],
+  },
+  {
+    name: 'Anti_Harassment_Certification.pdf',
+    previewTitle: 'Workplace conduct certification',
+    previewParagraphs: [
+      'I certify that I have reviewed Acme’s Anti-Harassment and Non-Discrimination Policy and understand my obligation to report concerns promptly.',
+      'I understand that retaliation against anyone who reports in good faith is strictly prohibited and may result in disciplinary action up to termination.',
+    ],
+  },
+  {
+    name: 'PTO_and_Leave_Policy.pdf',
+    previewTitle: 'Paid time off and leave',
+    previewParagraphs: [
+      'Eligible employees accrue PTO per the schedule in Exhibit A. Requests should be submitted at least two weeks in advance when practicable.',
+      'Family and medical leave may be available under federal or state law; contact People Ops for jurisdiction-specific guidance.',
+    ],
+  },
+  {
+    name: 'Confidentiality_Reminder_HR.pdf',
+    previewTitle: 'Ongoing confidentiality obligations',
+    previewParagraphs: [
+      'This reminder supplements your Proprietary Information Agreement. Do not share customer lists, roadmaps, compensation data, or unreleased product details outside Acme.',
+      'Questions about what may be shared in demos or interviews should be routed through Legal before disclosure.',
+    ],
+  },
+  {
+    name: 'I9_Reverification_Checklist.pdf',
+    previewTitle: 'Employment eligibility reverification',
+    previewParagraphs: [
+      'Use this checklist when an employee’s work authorization requires reverification. Complete Section 3 of Form I-9 no later than the expiration date shown on their documentation.',
+      'If reverification is not completed on time, pause the employee’s systems access and notify People Ops immediately.',
+    ],
+  },
+  {
+    name: 'Performance_Review_Cycle_Q2.pdf',
+    previewTitle: 'Q2 performance review acknowledgment',
+    previewParagraphs: [
+      'Managers will share written feedback and growth goals by the published deadline. Employees may add comments and self-assessment materials in Rippling.',
+      'Final ratings are calibrated across departments; your manager will schedule a one-on-one to discuss outcomes and next steps.',
+    ],
+  },
+  {
+    name: 'Workplace_Safety_Briefing.pdf',
+    previewTitle: 'General safety briefing',
+    previewParagraphs: [
+      'Report hazards, injuries, or near-misses to your manager and the safety alias without delay. Emergency exits and muster points are posted on each floor.',
+      'Personal protective equipment is required in marked lab and warehouse zones; training must be completed before access is granted.',
+    ],
+  },
+];
+
+const pickRandomUpload = (existing: UploadedFileItem[]): UploadedFileItem => {
+  const used = new Set(existing.map((f) => f.name));
+  const pool = HR_UPLOAD_SAMPLES.filter((s) => !used.has(s.name));
+  const base = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : HR_UPLOAD_SAMPLES[Math.floor(Math.random() * HR_UPLOAD_SAMPLES.length)];
+  return { ...base, id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}` };
+};
+
+const DisabledWithTooltip: React.FC<{ message: string; children: React.ReactNode }> = ({ message, children }) => {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      <div
+        className="absolute inset-0 z-10 cursor-not-allowed rounded-[inherit]"
+        aria-hidden
+      />
+      {visible && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-white border border-slate-200 rounded-lg shadow-lg text-[13px] text-slate-600 max-w-[280px] text-center z-20 pointer-events-none leading-snug">
+          {message}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const TEMPLATES = [
   "Consulting Agreement",
@@ -153,6 +251,7 @@ const Coachmark: React.FC<{
 const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({ 
   onExit, 
   onEditDocument, 
+  onCreateTemplate,
   onContinue,
   state: persistentState,
   onUpdateState
@@ -262,7 +361,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
   const addFile = () => {
     if (selectedTemplates.length > 0) return;
-    updateState({ uploadedFiles: [...uploadedFiles, 'Proprietary_Info_Agreement.pdf'] });
+    updateState({ uploadedFiles: [...uploadedFiles, pickRandomUpload(uploadedFiles)] });
   };
 
   const removeFile = (idx: number, e: React.MouseEvent) => {
@@ -341,7 +440,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       setCurrentStep('placement');
       setTimeout(() => setActiveCoachmark(1), 600);
     } else {
-      onContinue?.(selectedTemplates[0] || uploadedFiles[0] || "[Envelope Name]");
+      onContinue?.(selectedTemplates[0] || uploadedFiles[0]?.name || "[Envelope Name]");
     }
   };
 
@@ -622,47 +721,117 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             </button>
             {isExpanded('documents') && (
               <div className="px-5 pb-6 space-y-6">
-                <div className={`space-y-2 relative ${uploadedFiles.length > 0 ? 'opacity-50 pointer-events-none' : ''}`} ref={dropdownRef}>
-                  <label className="text-sm font-bold text-slate-800">Select a template</label>
-                  <div onClick={() => setIsTemplateMenuOpen(!isTemplateMenuOpen)} className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex flex-wrap items-center gap-2 cursor-pointer bg-white">
-                    {selectedTemplates.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 flex-1 max-h-[96px] overflow-hidden">
-                        {selectedTemplates.map(t => (
-                          <span key={t} className="bg-slate-100 text-slate-700 text-[11px] px-2 py-0.5 rounded flex items-center max-w-full truncate">{t}</span>
-                        ))}
+                <div className="space-y-2 relative rounded-lg" ref={dropdownRef}>
+                  <label className="text-sm font-bold text-slate-800">Select templates</label>
+                  {uploadedFiles.length > 0 ? (
+                    <DisabledWithTooltip message="Remove uploaded documents to allow selecting documents">
+                      <div className="rounded-lg">
+                        <div className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex flex-wrap items-center gap-2 bg-slate-50 opacity-50">
+                          {selectedTemplates.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5 flex-1 max-h-[96px] overflow-hidden">
+                              {selectedTemplates.map(t => (
+                                <span key={t} className="bg-slate-100 text-slate-700 text-[11px] px-2 py-0.5 rounded flex items-center max-w-full truncate">{t}</span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-sm flex-1">Search</span>
+                          )}
+                          <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                        </div>
                       </div>
-                    ) : (<span className="text-slate-400 text-sm flex-1">Search</span>)}
-                    <ChevronDown size={14} className="text-slate-400" />
-                  </div>
-                  {isTemplateMenuOpen && (
-                    <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
-                      <div className="py-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                        {TEMPLATES.map((tpl) => (
-                          <div key={tpl} onClick={(e) => { e.stopPropagation(); toggleTemplate(tpl); }} className="flex items-center justify-between px-5 py-2.5 hover:bg-slate-50 cursor-pointer">
-                            <span className="text-sm text-slate-800 font-medium truncate pr-4">{tpl}</span>
-                            {selectedTemplates.includes(tpl) && <Check size={16} className="text-blue-600 ml-auto" />}
+                    </DisabledWithTooltip>
+                  ) : (
+                    <>
+                      <div
+                        onClick={() => uploadedFiles.length === 0 && setIsTemplateMenuOpen(!isTemplateMenuOpen)}
+                        className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex flex-wrap items-center gap-2 cursor-pointer bg-white"
+                      >
+                        {selectedTemplates.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={clearTemplates}
+                            className="shrink-0 p-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+                            aria-label="Clear all selected templates"
+                          >
+                            <X size={16} />
+                          </button>
+                        )}
+                        {selectedTemplates.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 flex-1 max-h-[96px] overflow-hidden min-w-0">
+                            {selectedTemplates.map(t => (
+                              <span key={t} className="bg-slate-100 text-slate-700 text-[11px] px-2 py-0.5 rounded flex items-center max-w-full truncate">{t}</span>
+                            ))}
                           </div>
-                        ))}
+                        ) : (
+                          <span className="text-slate-400 text-sm flex-1">Search</span>
+                        )}
+                        <ChevronDown size={14} className="text-slate-400 shrink-0" />
                       </div>
-                    </div>
+                      {isTemplateMenuOpen && (
+                        <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-[320px] overflow-hidden">
+                          <div className="py-2 overflow-y-auto custom-scrollbar min-h-0 flex-1">
+                            {TEMPLATES.map((tpl) => (
+                              <div key={tpl} onClick={(e) => { e.stopPropagation(); toggleTemplate(tpl); }} className="flex items-center justify-between px-5 py-2.5 hover:bg-slate-50 cursor-pointer">
+                                <span className="text-sm text-slate-800 font-medium truncate pr-4">{tpl}</span>
+                                {selectedTemplates.includes(tpl) && <Check size={16} className="text-blue-600 ml-auto shrink-0" />}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="border-t border-slate-200 shrink-0 bg-white">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsTemplateMenuOpen(false);
+                                onCreateTemplate?.();
+                              }}
+                              className="w-full text-left px-5 py-3 text-sm font-semibold text-blue-600 hover:bg-slate-50 transition-colors"
+                            >
+                              Create a template
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
-                <div className={`space-y-2 ${selectedTemplates.length > 0 ? 'opacity-50 pointer-events-none' : ''}`}>
+                <div className="space-y-2 rounded-2xl">
                   <label className="text-sm font-bold text-slate-800">Or upload existing documents <span className="text-red-500">*</span></label>
-                  <div className={`border-2 border-dashed border-slate-200 rounded-2xl p-4 min-h-[68px] flex items-center bg-white relative ${uploadedFiles.length > 0 ? 'border-slate-300' : 'bg-slate-50/20'}`}>
-                    <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-                      {uploadedFiles.map((file, idx) => (
-                        <div key={idx} className="flex items-center border border-slate-200 rounded-lg overflow-hidden h-9 bg-white shadow-sm max-w-full">
-                          <span className="px-3.5 text-[13px] font-medium text-slate-800 border-r border-slate-200 h-full flex items-center bg-slate-50/30 truncate">{file}</span>
-                          <button onClick={(e) => removeFile(idx, e)} className="px-2.5 h-full hover:bg-slate-50"><X size={16} className="text-slate-500" /></button>
+                  {selectedTemplates.length > 0 ? (
+                    <DisabledWithTooltip message="Remove selected templates to allow uploading documents">
+                      <div className="rounded-2xl">
+                        <div className={`border-2 border-dashed border-slate-200 rounded-2xl p-4 min-h-[68px] flex items-center bg-slate-50 opacity-50 relative`}>
+                          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                            {uploadedFiles.map((file, idx) => (
+                              <div key={file.id} className="flex items-center border border-slate-200 rounded-lg overflow-hidden h-9 bg-white shadow-sm max-w-full">
+                                <span className="px-3.5 text-[13px] font-medium text-slate-800 border-r border-slate-200 h-full flex items-center bg-slate-50/30 truncate">{file.name}</span>
+                                <button type="button" onClick={(e) => removeFile(idx, e)} className="px-2.5 h-full hover:bg-slate-50"><X size={16} className="text-slate-500" /></button>
+                              </div>
+                            ))}
+                            <div className="flex-1 flex flex-col items-center justify-center py-2">
+                              <p className="text-sm text-slate-400 font-medium">Drop or select a file (file.type)</p>
+                            </div>
+                          </div>
+                          <div className="ml-4 text-slate-400 shrink-0"><Camera size={20} /></div>
                         </div>
-                      ))}
-                      <button onClick={addFile} className="text-slate-500 hover:text-slate-700 hover:bg-slate-50 p-1.5 rounded-full transition-all shrink-0">
-                        {uploadedFiles.length > 0 ? <CirclePlus size={20} /> : <div className="flex-1 flex flex-col items-center justify-center py-2 cursor-pointer"><p className="text-sm text-slate-400 font-medium">Drop or select a file (file.type)</p></div>}
-                      </button>
+                      </div>
+                    </DisabledWithTooltip>
+                  ) : (
+                    <div className={`border-2 border-dashed border-slate-200 rounded-2xl p-4 min-h-[68px] flex items-center bg-white relative ${uploadedFiles.length > 0 ? 'border-slate-300' : 'bg-slate-50/20'}`}>
+                      <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                        {uploadedFiles.map((file, idx) => (
+                          <div key={file.id} className="flex items-center border border-slate-200 rounded-lg overflow-hidden h-9 bg-white shadow-sm max-w-full">
+                            <span className="px-3.5 text-[13px] font-medium text-slate-800 border-r border-slate-200 h-full flex items-center bg-slate-50/30 truncate">{file.name}</span>
+                            <button type="button" onClick={(e) => removeFile(idx, e)} className="px-2.5 h-full hover:bg-slate-50"><X size={16} className="text-slate-500" /></button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={addFile} className="text-slate-500 hover:text-slate-700 hover:bg-slate-50 p-1.5 rounded-full transition-all shrink-0">
+                          {uploadedFiles.length > 0 ? <CirclePlus size={20} /> : <div className="flex-1 flex flex-col items-center justify-center py-2 cursor-pointer w-full"><p className="text-sm text-slate-400 font-medium">Drop or select a file (file.type)</p></div>}
+                        </button>
+                      </div>
+                      <div className="ml-4 text-slate-400 shrink-0"><Camera size={20} /></div>
                     </div>
-                    <div className="ml-4 text-slate-400 shrink-0"><Camera size={20} /></div>
-                  </div>
+                  )}
                 </div>
               </div>
             )}
@@ -808,9 +977,23 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     </button>
                   </div>
                 )}
-                <h1 className="text-2xl font-bold text-center mb-10">{selectedTemplates.length > 0 ? selectedTemplates[currentPreviewPage - 1] : uploadedFiles[currentPreviewPage - 1]}</h1>
-                <p className="mb-6">Effective <VariableChip label="Start date" />, , <VariableChip label="Contractor Name" /> ("Consultant") and <VariableChip label="Business legal name" /> ("Company") agree as follows:</p>
-                <div className="space-y-6 text-slate-600"><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p></div>
+                <h1 className="text-2xl font-bold text-center mb-10">
+                  {selectedTemplates.length > 0
+                    ? selectedTemplates[currentPreviewPage - 1]
+                    : uploadedFiles[currentPreviewPage - 1]?.previewTitle}
+                </h1>
+                {isUploadMode ? (
+                  <div className="space-y-5 text-slate-700">
+                    {uploadedFiles[currentPreviewPage - 1]?.previewParagraphs.map((para, i) => (
+                      <p key={i} className="leading-relaxed">{para}</p>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <p className="mb-6">Effective <VariableChip label="Start date" />, , <VariableChip label="Contractor Name" /> ("Consultant") and <VariableChip label="Business legal name" /> ("Company") agree as follows:</p>
+                    <div className="space-y-6 text-slate-600"><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p></div>
+                  </>
+                )}
               </div>
             </div>
           ) : (

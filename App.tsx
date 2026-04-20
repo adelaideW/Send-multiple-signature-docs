@@ -11,13 +11,14 @@ import LandingPage from './components/LandingPage';
 import PeopleTabView from './components/PeopleTabView';
 import GeminiAssistant from './components/GeminiAssistant';
 import { MOCK_EMPLOYEE } from './constants';
+import type { UploadedFileItem } from './types';
 
 type ViewType = 'landing' | 'profile' | 'envelope' | 'template_editor' | 'envelope_details' | 'document_review' | 'people_tab';
 
 // Define the state structure for persistent envelope creation
 interface EnvelopeState {
   selectedTemplates: string[];
-  uploadedFiles: string[];
+  uploadedFiles: UploadedFileItem[];
   recipients: any[];
   selectedFolder: string | null;
 }
@@ -62,6 +63,7 @@ const App: React.FC = () => {
   const [sentEnvelopeName, setSentEnvelopeName] = useState('');
   const [selectedEnvelopeName, setSelectedEnvelopeName] = useState('');
   const [viewByDocuments, setViewByDocuments] = useState(false);
+  const [templateEditorMode, setTemplateEditorMode] = useState<'create' | 'edit'>('edit');
 
   // Persistent Envelope Creation State
   const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
@@ -111,7 +113,7 @@ const App: React.FC = () => {
       {/* Landing Page View */}
       {currentView === 'landing' && (
         <div className="flex flex-col h-screen bg-white">
-          <Header />
+          <Header onProfileClick={() => navigateTo('profile')} />
           <LandingPage 
             onSelectUserProfile={() => navigateTo('profile')} 
             onSelectPeopleTab={() => navigateTo('people_tab')}
@@ -150,7 +152,7 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex-1 flex flex-col h-screen overflow-hidden">
-          <Header />
+          <Header onProfileClick={() => navigateTo('profile')} />
           <main className="flex-1 overflow-y-auto custom-scrollbar relative bg-[#F9FAFB]">
             {currentView === 'profile' && (
               <>
@@ -208,7 +210,14 @@ const App: React.FC = () => {
         <div className="absolute inset-0 z-[100] bg-white">
           <EnvelopeCreator 
             onExit={goBack} 
-            onEditDocument={() => navigateTo('template_editor')}
+            onEditDocument={() => {
+              setTemplateEditorMode('edit');
+              navigateTo('template_editor');
+            }}
+            onCreateTemplate={() => {
+              setTemplateEditorMode('create');
+              navigateTo('template_editor');
+            }}
             onContinue={handleEnvelopeContinue}
             state={envelopeState}
             onUpdateState={setEnvelopeState}
@@ -221,6 +230,7 @@ const App: React.FC = () => {
           <TemplateEditor 
             onExit={goBack} 
             onGoHome={() => setViewHistory(['landing'])}
+            mode={templateEditorMode}
           />
         </div>
       )}

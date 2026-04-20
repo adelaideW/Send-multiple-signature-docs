@@ -2,7 +2,11 @@
 import React from 'react';
 import { Search, HelpCircle, Bell, Accessibility, ChevronDown, Grid } from 'lucide-react';
 
-const Header: React.FC = () => {
+interface HeaderProps {
+  onProfileClick?: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ onProfileClick }) => {
   return (
     <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-20">
       <div className="flex items-center space-x-4 w-1/3">
@@ -40,14 +44,19 @@ const Header: React.FC = () => {
         
         <div className="h-6 w-px bg-slate-200 mx-1"></div>
 
-        <div className="flex items-center space-x-3 cursor-pointer">
+        <button
+          type="button"
+          onClick={onProfileClick}
+          className="flex items-center space-x-3 cursor-pointer rounded-lg p-1 -mr-1 hover:bg-slate-50 transition-colors text-left"
+          aria-label="Open user profile"
+        >
           <div className="text-right hidden sm:block">
             <p className="text-sm font-semibold text-slate-700 leading-tight">Acme</p>
           </div>
-          <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200">
+          <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 shrink-0">
             <img src="https://picsum.photos/id/64/100/100" alt="User Profile" />
           </div>
-        </div>
+        </button>
       </div>
     </header>
   );
