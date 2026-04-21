@@ -13,16 +13,6 @@ import {
   Columns, 
   Settings2, 
   ExternalLink,
-  Home,
-  Users,
-  LayoutGrid,
-  Calendar,
-  Shield,
-  Briefcase,
-  Target,
-  Coins,
-  Heart,
-  MessageSquare,
   Settings,
   Layout,
   Send,
@@ -31,6 +21,8 @@ import {
 } from 'lucide-react';
 import TemplatesLibraryView from './TemplatesLibraryView';
 import EnvelopesListView, { type EnvelopeTableRow } from './EnvelopesListView';
+import ToolsSidePanel from './ToolsSidePanel';
+import ToolsMegaMenuPopover from './ToolsMegaMenuPopover';
 
 interface PeopleRow {
   id: string;
@@ -109,6 +101,9 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   const setActiveTab = onHubTabChange ?? setInternalHubTab;
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [toolsSideCollapsed, setToolsSideCollapsed] = useState(false);
+  const [toolsHeaderMenuOpen, setToolsHeaderMenuOpen] = useState(false);
+  const headerToolsRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -122,43 +117,34 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
 
   return (
     <div className="flex h-screen bg-[#F9FAFB] overflow-hidden text-slate-800">
-      {/* Sidebar Navigation */}
-      <aside className="w-14 bg-white border-r border-slate-200 flex flex-col items-center py-4 space-y-6 shrink-0 z-[110] overflow-y-auto no-scrollbar">
-        <div 
-          onClick={onGoHome}
-          className="text-[#7A005D] cursor-pointer hover:opacity-80 transition-opacity mb-2"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M7 6C7 6 4 9 4 12C4 15 7 18 7 18" stroke="#7A005D" strokeWidth="2.5" strokeLinecap="round"/>
-            <path d="M12 6C12 6 9 9 9 12C9 15 12 18 12 18" stroke="#7A005D" strokeWidth="2.5" strokeLinecap="round"/>
-            <path d="M17 6C17 6 14 9 14 12C14 15 17 18 17 18" stroke="#7A005D" strokeWidth="2.5" strokeLinecap="round"/>
-          </svg>
-        </div>
-        <div className="flex flex-col items-center space-y-6">
-          <Home size={20} className="text-slate-400 cursor-pointer" />
-          <Users size={20} className="text-slate-400 cursor-pointer" />
-          <LayoutGrid size={20} className="text-slate-400 cursor-pointer" />
-          <Calendar size={20} className="text-slate-400 cursor-pointer" />
-          <Shield size={20} className="text-slate-400 cursor-pointer" />
-          <Briefcase size={20} className="text-[#7A005D] cursor-pointer" />
-          <Target size={20} className="text-slate-400 cursor-pointer" />
-          <Coins size={20} className="text-slate-400 cursor-pointer" />
-          <Heart size={20} className="text-slate-400 cursor-pointer" />
-          <MessageSquare size={20} className="text-slate-400 cursor-pointer" />
-        </div>
-        <div className="mt-auto flex flex-col items-center space-y-6 pb-2">
-          <Grid size={20} className="text-slate-400 cursor-pointer" />
-          <HelpCircle size={20} className="text-slate-400 cursor-pointer" />
-        </div>
-      </aside>
+      <ToolsSidePanel
+        collapsed={toolsSideCollapsed}
+        onCollapsedChange={setToolsSideCollapsed}
+        onGoHome={onGoHome}
+      />
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-40">
-          <div className="flex items-center space-x-1 cursor-pointer group">
+          <button
+            ref={headerToolsRef}
+            type="button"
+            onClick={() => setToolsHeaderMenuOpen((v) => !v)}
+            className="flex items-center gap-1 cursor-pointer group rounded-md px-1 py-1 -ml-1 hover:bg-slate-50"
+            aria-expanded={toolsHeaderMenuOpen}
+            aria-haspopup="dialog"
+          >
             <span className="text-[14px] font-bold text-slate-700">Tools</span>
-            <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600" />
-          </div>
+            <ChevronDown
+              size={14}
+              className={`text-slate-400 group-hover:text-slate-600 transition-transform ${toolsHeaderMenuOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          <ToolsMegaMenuPopover
+            open={toolsHeaderMenuOpen}
+            onClose={() => setToolsHeaderMenuOpen(false)}
+            anchorRef={headerToolsRef}
+          />
 
           <div className="flex-1 max-w-2xl px-12">
             <div className="relative">
