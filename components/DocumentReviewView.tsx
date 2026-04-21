@@ -1,5 +1,6 @@
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search,
   HelpCircle,
@@ -20,6 +21,7 @@ import {
   LifeBuoy,
   FileCheck,
   Lock,
+  X,
 } from 'lucide-react';
 import type { EnvelopeStatus, DocumentSigningStatus } from './EnvelopesListView';
 import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
@@ -68,8 +70,16 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
   const [fieldValue, setFieldValue] = useState('');
   const [completedInSession, setCompletedInSession] = useState<Record<string, boolean>>({});
 
-  const listMenuRef = useRef<HTMLDivElement>(null);
-  const signMenuRef = useRef<HTMLDivElement>(null);
+  const listMenuBtnRef = useRef<HTMLButtonElement | null>(null);
+  const signMenuBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [listMenuPos, setListMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [signMenuPos, setSignMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [preview, setPreview] = useState<{ name: string } | null>(null);
+  const [docSnack, setDocSnack] = useState<string | null>(null);
+  const [bulkSnack, setBulkSnack] = useState<{ phase: 'loading' | 'done'; count: number } | null>(null);
+  const [rowMoreId, setRowMoreId] = useState<string | null>(null);
+  const [rowMenuPos, setRowMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const rowMoreBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const signableDocs = useMemo(
     () => flow.docs.filter((d) => needsSignerAction(d, flow.envelopeStatus)),
@@ -88,23 +98,91 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
   const isLastSignDoc =
     signableDocs.length > 0 && activeSignIndex === signableDocs.length - 1;
 
+  const placeMenu = (btn: HTMLButtonElement | null, setPos: (p: { top: number; left: number } | null) => void) => {
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const mw = 260;
+    const left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8));
+    setPos({ top: r.bottom + 8, left });
+  };
+
+  useLayoutEffect(() => {
+    if (!listMenuOpen) {
+      setListMenuPos(null);
+      return;
+    }
+    const run = () => placeMenu(listMenuBtnRef.current, setListMenuPos);
+    run();
+    window.addEventListener('scroll', run, true);
+    window.addEventListener('resize', run);
+    return () => {
+      window.removeEventListener('scroll', run, true);
+      window.removeEventListener('resize', run);
+    };
+  }, [listMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!signMenuOpen) {
+      setSignMenuPos(null);
+      return;
+    }
+    const run = () => placeMenu(signMenuBtnRef.current, setSignMenuPos);
+    run();
+    window.addEventListener('scroll', run, true);
+    window.addEventListener('resize', run);
+    return () => {
+      window.removeEventListener('scroll', run, true);
+      window.removeEventListener('resize', run);
+    };
+  }, [signMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!rowMoreId) {
+      setRowMenuPos(null);
+      return;
+    }
+    const run = () => placeMenu(rowMoreBtnRefs.current[rowMoreId] ?? null, setRowMenuPos);
+    run();
+    window.addEventListener('scroll', run, true);
+    window.addEventListener('resize', run);
+    return () => {
+      window.removeEventListener('scroll', run, true);
+      window.removeEventListener('resize', run);
+    };
+  }, [rowMoreId]);
+
   useEffect(() => {
     const down = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (listMenuRef.current?.contains(t)) return;
-      if (signMenuRef.current?.contains(t)) return;
+      if (listMenuBtnRef.current?.contains(t)) return;
+      if (signMenuBtnRef.current?.contains(t)) return;
+      if (rowMoreId && rowMoreBtnRefs.current[rowMoreId]?.contains(t)) return;
+      if (document.getElementById('doc-review-list-more')?.contains(t)) return;
+      if (document.getElementById('doc-review-sign-more')?.contains(t)) return;
+      if (document.getElementById('doc-review-row-more')?.contains(t)) return;
       setListMenuOpen(false);
       setSignMenuOpen(false);
+      setRowMoreId(null);
     };
     document.addEventListener('mousedown', down);
     return () => document.removeEventListener('mousedown', down);
-  }, []);
+  }, [rowMoreId]);
+
+  const runBulkDownload = () => {
+    const n = Math.max(1, flow.docs.length);
+    setBulkSnack({ phase: 'loading', count: n });
+    window.setTimeout(() => {
+      setBulkSnack({ phase: 'done', count: n });
+      window.setTimeout(() => setBulkSnack(null), 9000);
+    }, 1200);
+  };
 
   const openSignForDoc = (docId: string) => {
     setActiveSignDocId(docId);
     setFieldValue('');
     setPhase('sign');
     setListMenuOpen(false);
+    setRowMoreId(null);
   };
 
   const handleSaveAndExitList = () => {
@@ -219,21 +297,16 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                     Review and sign the following documents from Acme to proceed with onboarding.
                   </p>
                 </div>
-                <div className="relative shrink-0" ref={listMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setListMenuOpen((v) => !v)}
-                    className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
-                    aria-label="More"
-                  >
-                    <MoreVertical size={20} strokeWidth={2} />
-                  </button>
-                  {listMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 z-[200] rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-                      <EnvelopeMoreMenu variant={listVariant} onClose={() => setListMenuOpen(false)} />
-                    </div>
-                  )}
-                </div>
+                <button
+                  ref={listMenuBtnRef}
+                  type="button"
+                  onClick={() => setListMenuOpen((v) => !v)}
+                  className="relative shrink-0 p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
+                  aria-label="More"
+                  aria-expanded={listMenuOpen}
+                >
+                  <MoreVertical size={20} strokeWidth={2} />
+                </button>
               </div>
 
               <div className="px-6 py-4 bg-slate-50/80 border-b border-slate-100">
@@ -247,22 +320,48 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                     <div key={doc.id} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50/60">
                       <FileText size={20} className="text-slate-400 shrink-0" />
                       <span className="flex-1 font-semibold text-slate-900 text-[14px] truncate">{doc.name}</span>
-                      <button type="button" className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg" aria-label="View">
+                      <button
+                        type="button"
+                        className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
+                        aria-label="View"
+                        onClick={() => setPreview({ name: doc.name })}
+                      >
                         <Eye size={18} />
                       </button>
-                      <button type="button" className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg" aria-label="Download">
+                      <button
+                        type="button"
+                        className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
+                        aria-label="Download"
+                        onClick={() => {
+                          setDocSnack('Document downloaded');
+                          window.setTimeout(() => setDocSnack(null), 9000);
+                        }}
+                      >
                         <Download size={18} />
                       </button>
                       {showSign ? (
-                        <button
-                          type="button"
-                          onClick={() => openSignForDoc(doc.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-bold text-slate-900 shrink-0"
-                          style={{ backgroundColor: ACCENT_SIGN }}
-                        >
-                          <PenLine size={14} strokeWidth={2} />
-                          Sign
-                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => openSignForDoc(doc.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-bold text-slate-900"
+                            style={{ backgroundColor: ACCENT_SIGN }}
+                          >
+                            <PenLine size={14} strokeWidth={2} />
+                            Sign
+                          </button>
+                          <button
+                            ref={(el) => {
+                              rowMoreBtnRefs.current[doc.id] = el;
+                            }}
+                            type="button"
+                            className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
+                            aria-label="More"
+                            onClick={() => setRowMoreId((id) => (id === doc.id ? null : doc.id))}
+                          >
+                            <MoreVertical size={18} strokeWidth={2} />
+                          </button>
+                        </div>
                       ) : (
                         <span className="w-[72px] shrink-0" />
                       )}
@@ -308,81 +407,16 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                   Complete
                 </button>
               )}
-              <div className="relative" ref={signMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setSignMenuOpen((v) => !v)}
-                  className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
-                  aria-label="More"
-                >
-                  <MoreVertical size={18} strokeWidth={2} />
-                </button>
-                {signMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-[200] py-1 overflow-hidden">
-                    <button
-                      type="button"
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
-                      onClick={() => {
-                        setSignMenuOpen(false);
-                        handleSaveAndExitSign();
-                      }}
-                    >
-                      <LogOut size={16} />
-                      Save and exit
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
-                      onClick={() => setSignMenuOpen(false)}
-                    >
-                      <Download size={16} />
-                      Download
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
-                      onClick={() => setSignMenuOpen(false)}
-                    >
-                      <UserPlus size={16} />
-                      Assign to someone else
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold hover:bg-slate-50"
-                      style={{ color: '#E4633C' }}
-                      onClick={() => setSignMenuOpen(false)}
-                    >
-                      <ClipboardX size={16} style={{ color: '#E4633C' }} />
-                      Refuse to sign
-                    </button>
-                    <div className="border-t border-slate-100 my-1" />
-                    <button
-                      type="button"
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
-                      onClick={() => setSignMenuOpen(false)}
-                    >
-                      <LifeBuoy size={16} />
-                      Help and support
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
-                      onClick={() => setSignMenuOpen(false)}
-                    >
-                      <FileCheck size={16} />
-                      Terms of use
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
-                      onClick={() => setSignMenuOpen(false)}
-                    >
-                      <Lock size={16} />
-                      Privacy policy
-                    </button>
-                  </div>
-                )}
-              </div>
+              <button
+                ref={signMenuBtnRef}
+                type="button"
+                onClick={() => setSignMenuOpen((v) => !v)}
+                className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
+                aria-label="More"
+                aria-expanded={signMenuOpen}
+              >
+                <MoreVertical size={18} strokeWidth={2} />
+              </button>
             </div>
           </div>
 
@@ -444,6 +478,171 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
             </div>
           </div>
         </>
+      )}
+
+      {listMenuOpen &&
+        listMenuPos &&
+        createPortal(
+          <div
+            id="doc-review-list-more"
+            className="fixed rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+            style={{ top: listMenuPos.top, left: listMenuPos.left, zIndex: 2147483647 }}
+            role="presentation"
+          >
+            <EnvelopeMoreMenu
+              variant={listVariant}
+              onClose={() => setListMenuOpen(false)}
+              onDownload={runBulkDownload}
+            />
+          </div>,
+          document.body
+        )}
+
+      {rowMoreId &&
+        rowMenuPos &&
+        createPortal(
+          <div
+            id="doc-review-row-more"
+            className="fixed rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+            style={{ top: rowMenuPos.top, left: rowMenuPos.left, zIndex: 2147483647 }}
+            role="presentation"
+          >
+            <EnvelopeMoreMenu
+              variant={listVariant}
+              onClose={() => setRowMoreId(null)}
+              onDownload={runBulkDownload}
+            />
+          </div>,
+          document.body
+        )}
+
+      {signMenuOpen &&
+        signMenuPos &&
+        createPortal(
+          <div
+            id="doc-review-sign-more"
+            className="fixed w-64 rounded-xl border border-slate-200 bg-white shadow-2xl py-1 overflow-hidden"
+            style={{ top: signMenuPos.top, left: signMenuPos.left, zIndex: 2147483647 }}
+            role="menu"
+          >
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+              onClick={() => {
+                setSignMenuOpen(false);
+                handleSaveAndExitSign();
+              }}
+            >
+              <LogOut size={16} />
+              Save and exit
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+              onClick={() => setSignMenuOpen(false)}
+            >
+              <Download size={16} />
+              Download
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+              onClick={() => setSignMenuOpen(false)}
+            >
+              <UserPlus size={16} />
+              Assign to someone else
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold hover:bg-slate-50"
+              style={{ color: '#E4633C' }}
+              onClick={() => setSignMenuOpen(false)}
+            >
+              <ClipboardX size={16} style={{ color: '#E4633C' }} />
+              Refuse to sign
+            </button>
+            <div className="border-t border-slate-100 my-1" />
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+              onClick={() => setSignMenuOpen(false)}
+            >
+              <LifeBuoy size={16} />
+              Help and support
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+              onClick={() => setSignMenuOpen(false)}
+            >
+              <FileCheck size={16} />
+              Terms of use
+            </button>
+            <button
+              type="button"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+              onClick={() => setSignMenuOpen(false)}
+            >
+              <Lock size={16} />
+              Privacy policy
+            </button>
+          </div>,
+          document.body
+        )}
+
+      {preview && (
+        <div className="fixed inset-0 z-[400000] flex flex-col bg-white" role="dialog" aria-modal="true">
+          <div className="h-14 border-b border-slate-200 flex items-center justify-between px-4 shrink-0">
+            <h2 className="text-sm font-bold text-slate-900 truncate pr-4">{preview.name}</h2>
+            <button
+              type="button"
+              className="px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 rounded-lg"
+              onClick={() => setPreview(null)}
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto bg-slate-100 p-8 flex justify-center">
+            <div className="w-full max-w-3xl bg-white shadow-xl rounded-lg border border-slate-200 p-10 min-h-[480px] text-slate-700 text-sm leading-relaxed">
+              <p className="font-bold text-slate-900 mb-4">Static preview</p>
+              <p>
+                Prototype preview of <strong>{preview.name}</strong>. The received document would display here.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {docSnack && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[400000] pointer-events-none px-4 w-full max-w-md">
+          <div className="pointer-events-auto bg-[#C6F6F1] border border-[#A5F3E9] rounded-lg shadow-lg flex items-center px-4 py-3 gap-3">
+            <span className="text-[13px] font-bold text-[#134E4A] flex-1">{docSnack}</span>
+            <button type="button" className="text-[#134E4A]/70 p-1" onClick={() => setDocSnack(null)} aria-label="Dismiss">
+              <X size={18} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {bulkSnack && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[400000] pointer-events-none px-4 w-full max-w-md">
+          <div
+            className={`pointer-events-auto rounded-lg shadow-lg flex items-center px-4 py-3 gap-3 border ${
+              bulkSnack.phase === 'loading'
+                ? 'bg-[#E0F2FE] border-[#BAE6FD]'
+                : 'bg-[#C6F6F1] border-[#A5F3E9]'
+            }`}
+          >
+            <span className="text-[13px] font-bold text-slate-900 flex-1">
+              {bulkSnack.phase === 'loading'
+                ? `${bulkSnack.count} documents downloading`
+                : `${bulkSnack.count} documents downloaded`}
+            </span>
+            <button type="button" className="text-slate-600 p-1" onClick={() => setBulkSnack(null)} aria-label="Dismiss">
+              <X size={18} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

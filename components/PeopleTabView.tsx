@@ -84,6 +84,7 @@ interface PeopleTabViewProps {
   onViewDocumentPacket?: (packetId: string) => void;
   onEditDocumentPacket?: (packetId: string) => void;
   onSignDocumentPacket?: (packetId: string) => void;
+  onResendEnvelope?: (packetId: string) => void;
   hubTab?: string;
   onHubTabChange?: (tab: string) => void;
 }
@@ -99,6 +100,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   onViewDocumentPacket,
   onEditDocumentPacket,
   onSignDocumentPacket,
+  onResendEnvelope,
   hubTab: hubTabProp,
   onHubTabChange,
 }) => {
@@ -287,12 +289,6 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                           <ChevronDown size={14} className="text-slate-300" />
                         </div>
                       </th>
-                    <th className="px-6 py-3">
-                      <div className="flex items-center space-x-1 cursor-pointer">
-                        <span>Documents</span>
-                        <ChevronDown size={14} className="text-slate-300" />
-                      </div>
-                    </th>
                       <th className="px-6 py-3">
                         <div className="flex items-center space-x-1 cursor-pointer">
                           <span>Notices</span>
@@ -324,13 +320,6 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                             <span className="text-slate-400 font-medium">{row.documents}</span>
                           ) : (
                             <ProgressBar completed={row.documents.completed} total={row.documents.total} />
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          {typeof row.envelopes === 'string' ? (
-                            <span className="text-slate-400 font-medium">{row.envelopes}</span>
-                          ) : (
-                            <ProgressBar completed={row.envelopes.completed} total={row.envelopes.total} />
                           )}
                         </td>
                         <td className="px-6 py-4">
@@ -398,6 +387,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                 onViewEnvelope={onViewDocumentPacket}
                 onEditEnvelope={onEditDocumentPacket}
                 onSignEnvelope={onSignDocumentPacket}
+                onResendEnvelope={onResendEnvelope}
               />
             </div>
           )}

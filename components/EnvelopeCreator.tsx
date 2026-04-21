@@ -47,6 +47,7 @@ import {
   Trash2,
   Copy,
   FileInput,
+  Folder,
 } from 'lucide-react';
 import type { UploadedFileItem } from '../types';
 
@@ -64,6 +65,8 @@ interface EnvelopeCreatorProps {
   /** When true (e.g. editing a draft PDF packet), jump to placement with demo fields once uploads exist. */
   seedPdfPlacementDemo?: boolean;
   onSeedPdfPlacementConsumed?: () => void;
+  /** When editing an envelope in "correcting" status, primary actions read "Resend". */
+  correctingFlow?: boolean;
 }
 
 const HR_UPLOAD_SAMPLES: Omit<UploadedFileItem, 'id'>[] = [
@@ -205,7 +208,144 @@ interface FolderNode {
   id: string;
   name: string;
   children?: FolderNode[];
+  /** System-generated folder — show Default badge and tooltip. */
+  isSystemDefault?: boolean;
+  /** Folder (and descendants) cannot receive documents until operation completes. */
+  moveInProgress?: boolean;
 }
+
+const ALL_DOCUMENTS_FOLDER_ID = 'all';
+
+const FOLDER_TREE_ROOTS: FolderNode[] = [
+  {
+    id: ALL_DOCUMENTS_FOLDER_ID,
+    name: 'All documents',
+    children: [
+      { id: 'folder-confidential', name: 'Confidential', isSystemDefault: true },
+      {
+        id: 'folder-performance',
+        name: 'Performance Records',
+        moveInProgress: true,
+        children: [
+          { id: 'folder-perf-2023', name: '2023' },
+          { id: 'folder-perf-2022', name: '2022' },
+          { id: 'folder-perf-2021', name: '2021' },
+        ],
+      },
+      {
+        id: 'folder-company-policies',
+        name: 'Company policies',
+        children: [
+          { id: 'folder-office-policies', name: 'Office policies' },
+          { id: 'folder-other-policies', name: 'Other policies' },
+        ],
+      },
+    ],
+  },
+];
+
+function filterFolderTree(nodes: FolderNode[], q: string): FolderNode[] {
+  const term = q.trim().toLowerCase();
+  if (!term) return nodes;
+  const walk = (n: FolderNode): FolderNode | null => {
+    const kids = n.children?.map(walk).filter((x): x is FolderNode => x != null) ?? [];
+    const selfHit = n.name.toLowerCase().includes(term);
+    if (kids.length > 0) return { ...n, children: kids };
+    if (selfHit) return n.children?.length ? { ...n, children: n.children } : { ...n };
+    return null;
+  };
+  return nodes.map(walk).filter((x): x is FolderNode => x != null);
+}
+
+function findFolderMeta(
+  nodes: FolderNode[],
+  id: string,
+  trail: string[] = []
+): { node: FolderNode; path: string[] } | null {
+  for (const n of nodes) {
+    const nextTrail = [...trail, n.name];
+    if (n.id === id) return { node: n, path: nextTrail };
+    if (n.children?.length) {
+      const hit = findFolderMeta(n.children, id, nextTrail);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+function folderFieldLabel(folderId: string): string {
+  if (!folderId || folderId === ALL_DOCUMENTS_FOLDER_ID) return 'All documents';
+  const hit = findFolderMeta(FOLDER_TREE_ROOTS, folderId);
+  return hit ? hit.node.name : 'All documents';
+}
+
+function folderBreadcrumb(folderId: string): string {
+  if (!folderId || folderId === ALL_DOCUMENTS_FOLDER_ID) return 'All documents';
+  const hit = findFolderMeta(FOLDER_TREE_ROOTS, folderId);
+  return hit ? hit.path.join(' / ') : 'All documents';
+}
+
+const FolderTreeList: React.FC<{
+  nodes: FolderNode[];
+  depth: number;
+  selectedFolderId: string;
+  parentDisabled: boolean;
+  onSelect: (id: string) => void;
+}> = ({ nodes, depth, selectedFolderId, parentDisabled, onSelect }) => (
+  <>
+    {nodes.map((node) => {
+      const disabled = parentDisabled || !!node.moveInProgress;
+      const selected = selectedFolderId === node.id;
+      const pad = 8 + depth * 14;
+      return (
+        <React.Fragment key={node.id}>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              if (!disabled) onSelect(node.id);
+            }}
+            className={`w-full text-left py-2.5 pr-3 flex items-start gap-2 border-b border-slate-50 last:border-0 ${
+              disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50'
+            } ${selected ? 'bg-sky-50' : ''}`}
+            style={{ paddingLeft: pad }}
+          >
+            <Folder size={16} className={`shrink-0 mt-0.5 ${disabled ? 'text-slate-300' : 'text-slate-500'}`} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-slate-900 text-[13px]">{node.name}</span>
+                {node.isSystemDefault && (
+                  <span
+                    title="system generate folder"
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/90 text-slate-800 cursor-help"
+                  >
+                    Default
+                  </span>
+                )}
+                {node.moveInProgress && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-amber-950">
+                    Move in progress
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 truncate mt-0.5">{folderBreadcrumb(node.id)}</p>
+            </div>
+            {selected ? <Check size={16} className="text-sky-600 shrink-0 mt-0.5" strokeWidth={2.5} /> : null}
+          </button>
+          {node.children?.length ? (
+            <FolderTreeList
+              nodes={node.children}
+              depth={depth + 1}
+              selectedFolderId={selectedFolderId}
+              parentDisabled={disabled}
+              onSelect={onSelect}
+            />
+          ) : null}
+        </React.Fragment>
+      );
+    })}
+  </>
+);
 
 const TAG_OPTIONS = ['HR', 'Legal', 'Onboarding', 'Contractor', 'Confidential', 'Payroll'];
 
@@ -223,44 +363,6 @@ interface PlacementField {
   recipientSlotId: string;
   required: boolean;
 }
-
-function flattenFolderLeaves(nodes: FolderNode[], trail: string[] = []): { id: string; name: string; path: string }[] {
-  const rows: { id: string; name: string; path: string }[] = [];
-  for (const n of nodes) {
-    const nextTrail = [...trail, n.name];
-    if (n.children?.length) rows.push(...flattenFolderLeaves(n.children, nextTrail));
-    else rows.push({ id: n.id, name: n.name, path: nextTrail.join(' / ') });
-  }
-  return rows;
-}
-
-const FOLDER_STRUCTURE: FolderNode[] = [
-  {
-    id: 'root',
-    name: 'All documents',
-    children: [
-      { 
-        id: 'f1', 
-        name: 'Other agreements', 
-        children: [
-          { id: 'f2', name: 'NDA' },
-          { id: 'f3', name: 'Offer letter' },
-        ] 
-      },
-      { 
-        id: 'f4', 
-        name: 'Notices', 
-        children: [
-          { id: 'f4-1', name: 'Health & Safety' },
-          { id: 'f4-2', name: 'Employment Policy' }
-        ] 
-      },
-      { id: 'f5', name: 'Handbooks' },
-    ]
-  }
-];
-
-const FOLDER_LEAVES = flattenFolderLeaves(FOLDER_STRUCTURE);
 
 /** Focus / highlight ring for text inputs (per design #5AA5E7). */
 const INPUT_FOCUS =
@@ -388,6 +490,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   onUpdateState,
   seedPdfPlacementDemo = false,
   onSeedPdfPlacementConsumed,
+  correctingFlow = false,
 }) => {
   const exitSavingDraft = () => {
     if (onSaveAndExit) onSaveAndExit();
@@ -416,7 +519,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       isActionDropdownOpen: r.isActionDropdownOpen ?? false,
     }));
   }, [persistentState?.recipients]);
-  const selectedFolder = persistentState?.selectedFolder ?? '';
+  const selectedFolder =
+    persistentState?.selectedFolder && String(persistentState.selectedFolder).trim() !== ''
+      ? String(persistentState.selectedFolder)
+      : ALL_DOCUMENTS_FOLDER_ID;
   const signingOrderEnabled = persistentState?.signingOrderEnabled ?? false;
   const signingOrderGroups: string[][] = persistentState?.signingOrderGroups ?? [];
   const customTemplates: Array<{ name: string; body: string }> = persistentState?.customTemplates ?? [];
@@ -518,11 +624,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     return allTemplateNames.filter((t) => t.toLowerCase().includes(q));
   }, [allTemplateNames, templateFilter]);
 
-  const filteredFolderLeaves = useMemo(() => {
-    const q = locationFilter.trim().toLowerCase();
-    if (!q) return FOLDER_LEAVES;
-    return FOLDER_LEAVES.filter((r) => r.path.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
-  }, [locationFilter]);
+  const filteredFolderTree = useMemo(
+    () => filterFolderTree(FOLDER_TREE_ROOTS, locationFilter),
+    [locationFilter]
+  );
 
   const filteredTagOptions = useMemo(() => {
     const q = tagFilter.trim().toLowerCase();
@@ -942,36 +1047,37 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => setRecipientPickerOpenId(open ? null : recipient.id)}
-            className={`w-full flex items-center rounded-xl px-4 py-2 bg-white h-12 border text-left gap-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5AA5E7]/45 ${triggerErr} ${!err ? 'border-slate-200 hover:border-slate-300' : ''}`}
+          <div
+            className={`w-full flex items-center rounded-xl px-2 py-2 bg-white h-12 border gap-2 transition-colors ${triggerErr} ${!err ? 'border-slate-200 hover:border-slate-300' : ''}`}
           >
             {opts.variant === 'parallel' ? (
-              <Search className="text-slate-400 shrink-0" size={16} aria-hidden />
+              <Search className="text-slate-400 shrink-0 ml-1" size={16} aria-hidden />
             ) : (
-              <User className="text-slate-400 shrink-0" size={16} aria-hidden />
+              <User className="text-slate-400 shrink-0 ml-1" size={16} aria-hidden />
             )}
-            <span className="text-sm text-slate-400 truncate flex-1 text-left">{opts.placeholder}</span>
-            <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-          </button>
+            <input
+              type="text"
+              value={recipient.searchTerm}
+              onChange={(e) => {
+                updateRecipient(recipient.id, { searchTerm: e.target.value });
+                setRecipientPickerOpenId(recipient.id);
+              }}
+              onFocus={() => setRecipientPickerOpenId(recipient.id)}
+              placeholder={opts.placeholder}
+              className="flex-1 min-w-0 text-sm text-slate-900 placeholder:text-slate-400 outline-none bg-transparent"
+            />
+            <button
+              type="button"
+              className="p-1 text-slate-400 hover:text-slate-600 shrink-0 rounded"
+              aria-label={open ? 'Close list' : 'Open list'}
+              onClick={() => setRecipientPickerOpenId(open ? null : recipient.id)}
+            >
+              <ChevronDown size={16} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
         )}
         {open && (
           <div className="absolute z-[400] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
-            <div className="p-2 border-b border-slate-100 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                <input
-                  type="text"
-                  autoFocus
-                  value={recipient.searchTerm}
-                  onChange={(e) => updateRecipient(recipient.id, { searchTerm: e.target.value })}
-                  placeholder={opts.placeholder}
-                  className={`w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg ${INPUT_FOCUS}`}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </div>
-            </div>
             <div className="max-h-60 overflow-y-auto custom-scrollbar">{list}</div>
           </div>
         )}
@@ -1559,7 +1665,9 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             <ChevronLeft size={16} />
             <span>Back</span>
           </button>
-          <button onClick={() => handleContinue()} className="font-bold px-10 py-3 rounded-xl bg-[#7A005D] text-white hover:opacity-90 shadow-lg transition-all">Send</button>
+          <button onClick={() => handleContinue()} className="font-bold px-10 py-3 rounded-xl bg-[#7A005D] text-white hover:opacity-90 shadow-lg transition-all">
+            {correctingFlow ? 'Resend' : 'Send'}
+          </button>
         </footer>
       </div>
       {activeCoachmark === 1 && (
@@ -1677,17 +1785,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     </DisabledWithTooltip>
                   ) : (
                     <>
-                      <div
-                        onClick={() => {
-                          if (uploadedFiles.length > 0) return;
-                          setTemplateFilter('');
-                          setIsTemplateMenuOpen(!isTemplateMenuOpen);
-                        }}
-                        className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex items-center gap-2 cursor-pointer bg-white"
-                      >
-                        <div className="flex flex-wrap gap-1.5 flex-1 min-w-0 max-h-[96px] overflow-y-auto">
-                          {selectedTemplates.length > 0 ? (
-                            selectedTemplates.map((t) => (
+                      <div className="w-full border border-slate-200 rounded-lg bg-white">
+                        {selectedTemplates.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 p-2 border-b border-slate-100 max-h-[96px] overflow-y-auto">
+                            {selectedTemplates.map((t) => (
                               <span
                                 key={t}
                                 className="inline-flex items-center gap-1 max-w-full bg-slate-100 text-slate-800 text-[11px] pl-2 pr-1 py-0.5 rounded border border-slate-200/80"
@@ -1705,12 +1806,22 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                   <X size={12} strokeWidth={2.5} />
                                 </button>
                               </span>
-                            ))
-                          ) : (
-                            <span className="text-slate-400 text-sm py-1">Search</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0 self-stretch">
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 px-3 py-2.5">
+                          <Search className="text-slate-400 shrink-0" size={16} />
+                          <input
+                            type="text"
+                            value={templateFilter}
+                            onChange={(e) => {
+                              setTemplateFilter(e.target.value);
+                              setIsTemplateMenuOpen(true);
+                            }}
+                            onFocus={() => setIsTemplateMenuOpen(true)}
+                            placeholder="Search"
+                            className={`flex-1 min-w-0 text-sm outline-none bg-transparent py-0.5 ${INPUT_FOCUS}`}
+                          />
                           {selectedTemplates.length > 0 && (
                             <button
                               type="button"
@@ -1718,32 +1829,27 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                 e.stopPropagation();
                                 clearTemplates(e);
                               }}
-                              className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+                              className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors shrink-0"
                               aria-label="Clear all selected templates"
                             >
                               <X size={10} strokeWidth={2.5} className="shrink-0" aria-hidden />
                             </button>
                           )}
-                          <div className="flex h-8 w-8 items-center justify-center text-slate-400">
-                            <ChevronDown size={14} />
-                          </div>
+                          <button
+                            type="button"
+                            className="p-1 text-slate-400 hover:text-slate-600 shrink-0 rounded"
+                            aria-label="Toggle template list"
+                            onClick={() => {
+                              if (!isTemplateMenuOpen) setTemplateFilter('');
+                              setIsTemplateMenuOpen((o) => !o);
+                            }}
+                          >
+                            <ChevronDown size={14} className={isTemplateMenuOpen ? 'rotate-180' : ''} />
+                          </button>
                         </div>
                       </div>
                       {isTemplateMenuOpen && (
                         <div className="absolute z-[300] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-[360px] overflow-hidden">
-                          <div className="p-2 border-b border-slate-100 shrink-0">
-                            <div className="relative">
-                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                              <input
-                                type="text"
-                                value={templateFilter}
-                                onChange={(e) => setTemplateFilter(e.target.value)}
-                                onClick={(e) => e.stopPropagation()}
-                                placeholder="Search templates..."
-                                className={`w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg ${INPUT_FOCUS}`}
-                              />
-                            </div>
-                          </div>
                           <div className="py-1 overflow-y-auto custom-scrollbar min-h-0 flex-1">
                             {filteredTemplatesList.map((tpl) => (
                               <div
@@ -2160,90 +2266,94 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                 <div className="space-y-2 relative" ref={locationRef}>
                   <label className="text-sm font-bold text-slate-900">Location<span className="text-red-500">*</span></label>
                   <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                     <input
                       type="text"
-                      readOnly
-                      onClick={() => {
-                        setLocationFilter('');
-                        setIsLocationMenuOpen(!isLocationMenuOpen);
+                      value={isLocationMenuOpen ? locationFilter : folderFieldLabel(selectedFolder)}
+                      onChange={(e) => {
+                        setLocationFilter(e.target.value);
+                        if (!isLocationMenuOpen) setIsLocationMenuOpen(true);
                       }}
-                      value={selectedFolder}
+                      onFocus={() => {
+                        setIsLocationMenuOpen(true);
+                        setLocationFilter((prev) => (isLocationMenuOpen ? prev : ''));
+                      }}
                       placeholder="Choose folder"
-                      className={`w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 cursor-pointer placeholder:text-slate-400 ${!selectedFolder ? 'text-slate-400' : 'text-slate-900'}`}
+                      className={`w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 placeholder:text-slate-400 ${INPUT_FOCUS} ${
+                        !isLocationMenuOpen && selectedFolder === ALL_DOCUMENTS_FOLDER_ID ? 'text-slate-500' : 'text-slate-900'
+                      }`}
                     />
-                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                      aria-label="Toggle folder list"
+                      onClick={() => {
+                        if (!isLocationMenuOpen) setLocationFilter('');
+                        setIsLocationMenuOpen((o) => !o);
+                      }}
+                    >
+                      <ChevronDown size={16} className={isLocationMenuOpen ? 'rotate-180' : ''} />
+                    </button>
                   </div>
                   {isLocationMenuOpen && (
-                    <div className="absolute z-[400] top-full mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col max-h-[320px] overflow-hidden">
-                      <div className="p-2 border-b border-slate-100 shrink-0">
-                        <div className="relative">
-                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                          <input
-                            type="text"
-                            value={locationFilter}
-                            onChange={(e) => setLocationFilter(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            placeholder="Search folders..."
-                            className={`w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg ${INPUT_FOCUS}`}
-                          />
-                        </div>
-                      </div>
-                      <div className="py-1 max-h-[260px] overflow-y-auto custom-scrollbar">
-                        {filteredFolderLeaves.map((row) => (
-                          <button
-                            key={row.id}
-                            type="button"
-                            onClick={() => {
-                              updateState({ selectedFolder: row.name });
-                              setIsLocationMenuOpen(false);
-                              setLocationFilter('');
-                            }}
-                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex flex-col ${selectedFolder === row.name ? 'bg-slate-50' : ''}`}
-                          >
-                            <span className="font-medium text-slate-900">{row.name}</span>
-                            <span className="text-xs text-slate-500 truncate">{row.path}</span>
-                          </button>
-                        ))}
-                        {filteredFolderLeaves.length === 0 && (
-                          <p className="px-4 py-6 text-sm text-slate-500 text-center">No folders match</p>
-                        )}
-                      </div>
+                    <div className="absolute z-[400] top-full mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col max-h-[320px] overflow-y-auto custom-scrollbar">
+                      <FolderTreeList
+                        nodes={filteredFolderTree}
+                        depth={0}
+                        selectedFolderId={selectedFolder}
+                        parentDisabled={false}
+                        onSelect={(id) => {
+                          updateState({ selectedFolder: id });
+                          setIsLocationMenuOpen(false);
+                          setLocationFilter('');
+                        }}
+                      />
+                      {filteredFolderTree.length === 0 && (
+                        <p className="px-4 py-6 text-sm text-slate-500 text-center">No folders match</p>
+                      )}
                     </div>
                   )}
                 </div>
                 <div className="space-y-2 relative" ref={tagsRef}>
-                  <label className="text-sm font-bold text-slate-900">Tags<span className="text-red-500">*</span></label>
+                  <label className="text-sm font-bold text-slate-900">Tags</label>
                   <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                     <input
                       type="text"
-                      readOnly
-                      onClick={() => {
-                        setTagFilter('');
-                        setIsTagsMenuOpen(!isTagsMenuOpen);
+                      value={
+                        isTagsMenuOpen
+                          ? tagFilter
+                          : advancedTags.length
+                            ? advancedTags.join(', ')
+                            : ''
+                      }
+                      onChange={(e) => {
+                        setTagFilter(e.target.value);
+                        if (!isTagsMenuOpen) setIsTagsMenuOpen(true);
                       }}
-                      value={advancedTags.length ? advancedTags.join(', ') : ''}
+                      onFocus={() => {
+                        setIsTagsMenuOpen(true);
+                        setTagFilter((prev) => (isTagsMenuOpen ? prev : ''));
+                      }}
                       placeholder="Choose or add tags"
-                      className={`w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 cursor-pointer placeholder:text-slate-400 ${advancedTags.length === 0 ? 'text-slate-400' : 'text-slate-900'}`}
+                      className={`w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 placeholder:text-slate-400 ${INPUT_FOCUS} ${
+                        !isTagsMenuOpen && advancedTags.length === 0 ? 'text-slate-400' : 'text-slate-900'
+                      }`}
                     />
-                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                      aria-label="Toggle tags"
+                      onClick={() => {
+                        if (!isTagsMenuOpen) setTagFilter('');
+                        setIsTagsMenuOpen((o) => !o);
+                      }}
+                    >
+                      <ChevronDown size={16} className={isTagsMenuOpen ? 'rotate-180' : ''} />
+                    </button>
                   </div>
                   {isTagsMenuOpen && (
                     <div className="absolute z-[400] top-full mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col max-h-80 overflow-hidden">
-                      <div className="p-2 border-b border-slate-100 shrink-0">
-                        <div className="relative">
-                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                          <input
-                            type="text"
-                            value={tagFilter}
-                            onChange={(e) => setTagFilter(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            placeholder="Search tags..."
-                            className={`w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg ${INPUT_FOCUS}`}
-                          />
-                        </div>
-                      </div>
                       <div className="overflow-y-auto flex-1 min-h-0 max-h-52">
                         {filteredTagOptions.map((tag) => (
                           <button
@@ -2432,7 +2542,11 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
       <footer className="h-16 border-t border-slate-200 px-8 flex items-center justify-end shrink-0 bg-white z-[100]">
         <button onClick={handleContinue} disabled={!canContinue} className={`font-bold px-10 py-3 rounded-xl border transition-all ${canContinue ? 'bg-[#7A005D] text-white border-[#7A005D] hover:opacity-90 shadow-lg' : 'bg-[#f8fafc] text-slate-300 border-slate-100 cursor-not-allowed'}`}>
-          {currentStep === 'setup' && uploadedFiles.length > 0 ? 'Continue' : 'Send'}
+          {currentStep === 'setup' && uploadedFiles.length > 0
+            ? 'Continue'
+            : correctingFlow
+              ? 'Resend'
+              : 'Send'}
         </button>
       </footer>
     </div>

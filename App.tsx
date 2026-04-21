@@ -23,6 +23,7 @@ interface EnvelopeState {
   selectedTemplates: string[];
   uploadedFiles: UploadedFileItem[];
   recipients: any[];
+  /** Folder id: `'all'` = All documents root; otherwise matches `FolderNode.id` in EnvelopeCreator. */
   selectedFolder: string | null;
   /** When false, all recipients are treated as the same signing step (parallel). */
   signingOrderEnabled: boolean;
@@ -92,7 +93,7 @@ const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   selectedTemplates: [],
   uploadedFiles: [],
   recipients: [{ id: '1', user: null, action: 'Needs to complete', searchTerm: '', isActionDropdownOpen: false }],
-  selectedFolder: '',
+  selectedFolder: 'all',
   signingOrderEnabled: false,
   signingOrderGroups: [],
   customTemplates: [],
@@ -128,6 +129,31 @@ const DraftSavedSnackbar: React.FC<{
           type="button"
           onClick={onDismiss}
           className="p-1.5 text-[#134E4A]/70 hover:text-[#134E4A] shrink-0 rounded-full hover:bg-[#A5F3E9]/40"
+          aria-label="Dismiss"
+        >
+          <X size={18} strokeWidth={2} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const CorrectionSavedSnackbar: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  useEffect(() => {
+    const t = setTimeout(onClose, 10000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+  return (
+    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[260] animate-in fade-in slide-in-from-bottom-4 duration-300 px-4 w-full max-w-lg pointer-events-none">
+      <div className="pointer-events-auto rounded-lg bg-[#E0F2FE] border border-[#BAE6FD] shadow-lg flex items-center gap-3 px-4 py-3 min-h-[48px]">
+        <div className="w-8 h-8 rounded-full bg-[#0369A1] flex items-center justify-center text-white shrink-0 text-[13px] font-bold">
+          i
+        </div>
+        <span className="text-[13px] font-bold text-slate-900 flex-1">Correction saved</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 text-slate-600 hover:text-slate-900 shrink-0 rounded-full hover:bg-[#BAE6FD]/50"
           aria-label="Dismiss"
         >
           <X size={18} strokeWidth={2} />
@@ -176,6 +202,8 @@ const App: React.FC = () => {
   const [documentsHubTab, setDocumentsHubTab] = useState('People');
   const [draftSavedSnackOpen, setDraftSavedSnackOpen] = useState(false);
   const [draftSavedPacketId, setDraftSavedPacketId] = useState<string | null>(null);
+  const [correctionSavedSnackOpen, setCorrectionSavedSnackOpen] = useState(false);
+  const [creatorCorrectingFlow, setCreatorCorrectingFlow] = useState(false);
   const [signFlow, setSignFlow] = useState<DocumentReviewFlow | null>(null);
   const [pdfPlacementSeed, setPdfPlacementSeed] = useState(false);
   const envelopeEntryRef = useRef<ViewType>('landing');
@@ -216,12 +244,14 @@ const App: React.FC = () => {
     const children = childrenFromEnvelopeState(st);
     const editId = editingPacketIdRef.current;
     const rowId = editId ?? `draft-${Date.now()}`;
+    const prevRow = editId ? packetRows.find((r) => r.id === editId) : undefined;
+    const keepCorrecting = prevRow?.status === 'correcting';
     const row: EnvelopeTableRow = {
       id: rowId,
       name: displayTitle,
-      status: 'draft',
+      status: keepCorrecting ? 'correcting' : 'draft',
       lastModified: new Date().toISOString(),
-      adminIsSigner: true,
+      adminIsSigner: prevRow?.adminIsSigner ?? true,
       children: children.length > 0 ? children : undefined,
     };
     setPacketRows((prev) => {
@@ -235,21 +265,66 @@ const App: React.FC = () => {
     });
     setDraftSavedPacketId(rowId);
     editingPacketIdRef.current = null;
+    setCreatorCorrectingFlow(false);
     setPdfPlacementSeed(false);
     setViewHistory((prev) => {
       const i = prev.lastIndexOf('envelope');
       if (i < 0) return prev;
       return [...prev.slice(0, i), envelopeEntryRef.current];
     });
-    setDraftSavedSnackOpen(true);
-  }, [envelopeState]);
+    if (keepCorrecting) {
+      setCorrectionSavedSnackOpen(true);
+    } else {
+      setDraftSavedSnackOpen(true);
+    }
+  }, [envelopeState, packetRows]);
+
+  const applyResendToInProgress = useCallback((packetId: string, nameFallback?: string) => {
+    const ts = new Date().toISOString();
+    setPacketRows((rows) =>
+      rows.map((r) => {
+        if (r.id !== packetId) return r;
+        return {
+          ...r,
+          name: nameFallback && nameFallback.trim() ? nameFallback : r.name,
+          status: 'in progress' as EnvelopeStatus,
+          lastModified: ts,
+          children: r.children?.map((c) => ({
+            ...c,
+            status:
+              c.status === 'correcting' || c.status === 'yet to sign'
+                ? ('yet to sign' as const)
+                : c.status,
+            lastModified: ts,
+          })),
+        };
+      })
+    );
+  }, []);
 
   const handleEnvelopeContinue = (name: string) => {
+    const editId = editingPacketIdRef.current;
+    const prevRow = editId ? packetRows.find((r) => r.id === editId) : undefined;
+    if (prevRow?.status === 'correcting') {
+      applyResendToInProgress(editId!, name);
+      editingPacketIdRef.current = null;
+      setCreatorCorrectingFlow(false);
+      setEnvelopeState(INITIAL_ENVELOPE_STATE);
+      setViewHistory((prev) => {
+        const envelopeIndex = prev.indexOf('envelope');
+        if (envelopeIndex > 0) return prev.slice(0, envelopeIndex);
+        return ['people_tab'];
+      });
+      setSentEnvelopeName(name);
+      setShowSuccessToast(true);
+      return;
+    }
     setSentEnvelopeName(name);
     setShowSuccessToast(true);
-    // Reset state after completion
     setEnvelopeState(INITIAL_ENVELOPE_STATE);
-    setViewHistory(prev => {
+    editingPacketIdRef.current = null;
+    setCreatorCorrectingFlow(false);
+    setViewHistory((prev) => {
       const envelopeIndex = prev.indexOf('envelope');
       if (envelopeIndex > 0) {
         return prev.slice(0, envelopeIndex);
@@ -372,6 +447,7 @@ const App: React.FC = () => {
       selectedTemplates: [],
       uploadedFiles,
       recipients: DEMO_EDIT_RECIPIENTS,
+      selectedFolder: 'all',
     };
   };
 
@@ -382,6 +458,7 @@ const App: React.FC = () => {
       selectedTemplates: names,
       uploadedFiles: [],
       recipients: DEMO_EDIT_RECIPIENTS,
+      selectedFolder: 'all',
     };
   };
 
@@ -392,12 +469,15 @@ const App: React.FC = () => {
       editingPacketIdRef.current = packetId;
       if (row.status === 'draft') {
         setEnvelopeState(prefillStateFromDraftRow(row));
-        setPdfPlacementSeed(true);
+        setPdfPlacementSeed(false);
+        setCreatorCorrectingFlow(false);
       } else if (row.status === 'correcting') {
         setEnvelopeState(prefillStateFromCorrectingRow(row));
         setPdfPlacementSeed(false);
+        setCreatorCorrectingFlow(true);
       } else {
         editingPacketIdRef.current = null;
+        setCreatorCorrectingFlow(false);
         return;
       }
       goToEnvelopeCreator('people_tab');
@@ -425,6 +505,7 @@ const App: React.FC = () => {
           onSendDocument={() => {
             editingPacketIdRef.current = null;
             setPdfPlacementSeed(false);
+            setCreatorCorrectingFlow(false);
             setEnvelopeState(INITIAL_ENVELOPE_STATE);
             goToEnvelopeCreator('people_tab');
           }}
@@ -437,6 +518,7 @@ const App: React.FC = () => {
           onSendDocuments={() => {
             editingPacketIdRef.current = null;
             setPdfPlacementSeed(false);
+            setCreatorCorrectingFlow(false);
             setEnvelopeState(INITIAL_ENVELOPE_STATE);
             goToEnvelopeCreator('people_tab');
           }}
@@ -445,6 +527,10 @@ const App: React.FC = () => {
           onViewDocumentPacket={handleOpenEnvelopeDetails}
           onEditDocumentPacket={handleEditEnvelope}
           onSignDocumentPacket={startSignFlow}
+          onResendEnvelope={(packetId) => {
+            applyResendToInProgress(packetId);
+            setShowSuccessToast(true);
+          }}
           hubTab={documentsHubTab}
           onHubTabChange={setDocumentsHubTab}
         />
@@ -485,6 +571,7 @@ const App: React.FC = () => {
                       onSend={() => {
                         editingPacketIdRef.current = null;
                         setPdfPlacementSeed(false);
+                        setCreatorCorrectingFlow(false);
                         setEnvelopeState(INITIAL_ENVELOPE_STATE);
                         goToEnvelopeCreator('profile');
                       }} 
@@ -520,17 +607,25 @@ const App: React.FC = () => {
       {currentView === 'envelope_details' && selectedPacket && (
         <div className="fixed inset-0 z-[130] overflow-y-auto bg-[#F9FAFB]">
           <EnvelopeDetailsView
+            packetId={selectedPacket.id}
             envelopeName={selectedPacket.name}
             packetStatus={selectedPacket.status}
+            adminIsSigner={selectedPacket.adminIsSigner}
             sentOn="03/01/2026 9:00 AM"
             sentBy="Harry Porter"
             documents={(selectedPacket.children ?? []).map((c) => ({
+              id: c.id,
               name: c.name,
               status: selectedPacket.status === 'voided' ? ('voided' as DocumentSigningStatus) : c.status,
             }))}
             isVoided={selectedPacket.status === 'voided'}
             onExit={handleExitEnvelopeDetails}
             onSign={() => startSignFlow(selectedPacket.id)}
+            onEdit={() => handleEditEnvelope(selectedPacket.id)}
+            onResend={() => {
+              applyResendToInProgress(selectedPacket.id, selectedPacket.name);
+              setShowSuccessToast(true);
+            }}
           />
         </div>
       )}
@@ -541,6 +636,7 @@ const App: React.FC = () => {
           <EnvelopeCreator 
             onExit={goBack}
             onSaveAndExit={handleSaveAndExitEnvelope}
+            correctingFlow={creatorCorrectingFlow}
             onEditDocument={(detail) => {
               setTemplateEditorSeed(detail ?? null);
               setTemplateEditorMode('edit');
@@ -633,6 +729,10 @@ const App: React.FC = () => {
           onViewDetails={handleDraftViewDetails}
           onDismiss={() => setDraftSavedSnackOpen(false)}
         />
+      )}
+
+      {correctionSavedSnackOpen && (
+        <CorrectionSavedSnackbar onClose={() => setCorrectionSavedSnackOpen(false)} />
       )}
     </div>
   );

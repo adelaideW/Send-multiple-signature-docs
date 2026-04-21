@@ -21,6 +21,7 @@ import {
   UserRound,
   Trash2,
   XCircle,
+  X,
 } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
 
@@ -234,19 +235,24 @@ export function moreMenuVariantForEnvelope(status: EnvelopeStatus): MoreMenuVari
 interface EnvelopeMoreMenuProps {
   variant: MoreMenuVariant;
   onClose: () => void;
+  onDownload?: () => void;
 }
 
-export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onClose }) => {
+export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onClose, onDownload }) => {
   const itemClass = 'w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50';
   const dangerItemClass = `w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold hover:bg-slate-50`;
   const IconWrap: React.FC<{ children: React.ReactNode; danger?: boolean }> = ({ children, danger }) => (
     <span className={`shrink-0 ${danger ? '' : 'text-slate-800'}`}>{children}</span>
   );
+  const dl = () => {
+    onDownload?.();
+    onClose();
+  };
 
   if (variant === 'yet_to_sign') {
     return (
       <div className="py-1 min-w-[220px]" role="menu">
-        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+        <button type="button" className={itemClass} role="menuitem" onClick={dl}>
           <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
           Download
         </button>
@@ -277,7 +283,7 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onC
   if (variant === 'in_progress') {
     return (
       <div className="py-1 min-w-[200px]" role="menu">
-        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+        <button type="button" className={itemClass} role="menuitem" onClick={dl}>
           <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
           Download
         </button>
@@ -300,7 +306,7 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onC
   if (variant === 'draft') {
     return (
       <div className="py-1 min-w-[180px]" role="menu">
-        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+        <button type="button" className={itemClass} role="menuitem" onClick={dl}>
           <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
           Download
         </button>
@@ -330,7 +336,7 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onC
   /* completed / voided */
   return (
     <div className="py-1 min-w-[180px]" role="menu">
-      <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+      <button type="button" className={itemClass} role="menuitem" onClick={dl}>
         <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
         Download
       </button>
@@ -350,6 +356,7 @@ interface EnvelopesListViewProps {
   onViewEnvelope?: (packetId: string) => void;
   onEditEnvelope?: (packetId: string) => void;
   onSignEnvelope?: (packetId: string) => void;
+  onResendEnvelope?: (packetId: string) => void;
 }
 
 const btnOutline =
@@ -368,6 +375,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
   onViewEnvelope,
   onEditEnvelope,
   onSignEnvelope,
+  onResendEnvelope,
 }) => {
   const [fallbackRows, setFallbackRows] = useState<EnvelopeTableRow[]>(() => structuredClone(MOCK_ENVELOPES));
   const rows = rowsProp ?? fallbackRows;
@@ -379,6 +387,20 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
   const [openMoreId, setOpenMoreId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const moreTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [previewDoc, setPreviewDoc] = useState<{ name: string } | null>(null);
+  const [docSnack, setDocSnack] = useState<string | null>(null);
+  const [bulkSnack, setBulkSnack] = useState<{ phase: 'loading' | 'done'; count: number } | null>(null);
+
+  const childCount = (row: EnvelopeTableRow) => row.children?.length ?? 0;
+
+  const runBulkDownload = (row: EnvelopeTableRow) => {
+    const n = Math.max(1, childCount(row));
+    setBulkSnack({ phase: 'loading', count: n });
+    window.setTimeout(() => {
+      setBulkSnack({ phase: 'done', count: n });
+      window.setTimeout(() => setBulkSnack(null), 9000);
+    }, 1200);
+  };
 
   useLayoutEffect(() => {
     if (!openMoreId) {
@@ -504,7 +526,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
             <PenLine size={14} strokeWidth={2} />
             Edit
           </button>
-          <button type="button" className={btnResend}>
+          <button type="button" className={btnResend} onClick={() => onResendEnvelope?.(row.id)}>
             <Send size={14} strokeWidth={2} />
             Resend
           </button>
@@ -680,9 +702,21 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                       )}
                       <Mail size={18} className="text-slate-500 shrink-0" strokeWidth={2} />
                       <span
-                        className="font-bold truncate max-w-[min(280px,100%)] min-w-0"
+                        role="button"
+                        tabIndex={0}
+                        className="font-bold truncate max-w-[min(280px,100%)] min-w-0 cursor-pointer text-left bg-transparent border-none p-0"
                         style={{ color: PRIMARY_PURPLE }}
                         title={row.name}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditEnvelope?.(row.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onEditEnvelope?.(row.id);
+                          }
+                        }}
                       >
                         {row.name}
                       </span>
@@ -738,6 +772,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                               type="button"
                               className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
                               aria-label="View document"
+                              onClick={() => setPreviewDoc({ name: child.name })}
                             >
                               <Eye size={18} strokeWidth={2} />
                             </button>
@@ -745,6 +780,10 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                               type="button"
                               className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
                               aria-label="Download document"
+                              onClick={() => {
+                                setDocSnack('Document downloaded');
+                                window.setTimeout(() => setDocSnack(null), 9000);
+                              }}
                             >
                               <Download size={18} strokeWidth={2} />
                             </button>
@@ -778,11 +817,83 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
               }}
               role="presentation"
             >
-              <EnvelopeMoreMenu variant={moreMenuVariantForEnvelope(openRow.status)} onClose={() => setOpenMoreId(null)} />
+              <EnvelopeMoreMenu
+                variant={moreMenuVariantForEnvelope(openRow.status)}
+                onClose={() => setOpenMoreId(null)}
+                onDownload={() => runBulkDownload(openRow)}
+              />
             </div>,
             document.body
           );
         })()}
+      {previewDoc && (
+        <div
+          className="fixed inset-0 z-[300000] flex flex-col bg-white"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Document preview"
+        >
+          <div className="h-14 border-b border-slate-200 flex items-center justify-between px-4 shrink-0 bg-white">
+            <h2 className="text-sm font-bold text-slate-900 truncate pr-4">{previewDoc.name}</h2>
+            <button
+              type="button"
+              className="px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 rounded-lg"
+              onClick={() => setPreviewDoc(null)}
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto bg-slate-100 p-8 flex justify-center">
+            <div className="w-full max-w-3xl bg-white shadow-xl rounded-lg border border-slate-200 p-10 min-h-[480px] text-slate-700 text-sm leading-relaxed">
+              <p className="font-bold text-slate-900 mb-4">Static preview</p>
+              <p>
+                This is a prototype preview of <strong>{previewDoc.name}</strong>. In production, the received PDF
+                would render here.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {docSnack && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[300000] pointer-events-none px-4 w-full max-w-md">
+          <div className="pointer-events-auto bg-[#C6F6F1] border border-[#A5F3E9] rounded-lg shadow-lg flex items-center px-4 py-3 gap-3">
+            <span className="text-[13px] font-bold text-[#134E4A] flex-1">{docSnack}</span>
+            <button
+              type="button"
+              className="text-[#134E4A]/70 hover:text-[#134E4A] p-1"
+              onClick={() => setDocSnack(null)}
+              aria-label="Dismiss"
+            >
+              <X size={18} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
+      )}
+      {bulkSnack && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[300000] pointer-events-none px-4 w-full max-w-md">
+          <div
+            className={`pointer-events-auto rounded-lg shadow-lg flex items-center px-4 py-3 gap-3 border ${
+              bulkSnack.phase === 'loading'
+                ? 'bg-[#E0F2FE] border-[#BAE6FD]'
+                : 'bg-[#C6F6F1] border-[#A5F3E9]'
+            }`}
+          >
+            <span className="text-[13px] font-bold text-slate-900 flex-1">
+              {bulkSnack.phase === 'loading'
+                ? `${bulkSnack.count} documents downloading`
+                : `${bulkSnack.count} documents downloaded`}
+            </span>
+            <button
+              type="button"
+              className="text-slate-600 hover:text-slate-900 p-1"
+              onClick={() => setBulkSnack(null)}
+              aria-label="Dismiss"
+            >
+              <X size={18} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

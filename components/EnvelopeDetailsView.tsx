@@ -1,5 +1,6 @@
 
-import React from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ChevronLeft,
   Search,
@@ -14,8 +15,10 @@ import {
   ChevronDown,
   PenLine,
   Share2,
+  X,
 } from 'lucide-react';
 import type { EnvelopeStatus, DocumentSigningStatus } from './EnvelopesListView';
+import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
 
 export interface DetailRecipientRow {
   id: string;
@@ -30,7 +33,6 @@ export interface DetailRecipientRow {
   completedOn: string;
 }
 
-/** Recipients table aligned with design reference (signing order + sent-on dashes). */
 const DEFAULT_RECIPIENTS: DetailRecipientRow[] = [
   {
     id: 'r1',
@@ -79,37 +81,20 @@ const DEFAULT_RECIPIENTS: DetailRecipientRow[] = [
 ];
 
 function headerBadgeForStatus(status: EnvelopeStatus): { label: string; className: string } | null {
+  const base = 'text-[10px] font-bold px-2 py-0.5 rounded-full border';
   switch (status) {
     case 'yet to sign':
-      return {
-        label: 'Yet to sign',
-        className: 'text-[11px] font-semibold text-white px-3 py-1 rounded-full bg-[#E4633C]',
-      };
+      return { label: 'Yet to sign', className: `${base} bg-rose-50 text-slate-900 border-rose-100` };
     case 'in progress':
-      return {
-        label: 'In progress',
-        className: 'text-[11px] font-semibold text-white px-3 py-1 rounded-full bg-amber-500',
-      };
+      return { label: 'In progress', className: `${base} bg-amber-50 text-slate-900 border-amber-100` };
     case 'draft':
-      return {
-        label: 'Draft',
-        className: 'text-[11px] font-semibold text-white px-3 py-1 rounded-full bg-slate-500',
-      };
+      return { label: 'Draft', className: `${base} bg-slate-100 text-slate-800 border-slate-200/80` };
     case 'correcting':
-      return {
-        label: 'Correcting',
-        className: 'text-[11px] font-semibold text-white px-3 py-1 rounded-full bg-amber-600',
-      };
+      return { label: 'Correcting', className: `${base} bg-amber-50 text-slate-900 border-amber-100` };
     case 'completed':
-      return {
-        label: 'Completed',
-        className: 'text-[11px] font-semibold text-white px-3 py-1 rounded-full bg-emerald-600',
-      };
+      return { label: 'Completed', className: `${base} bg-emerald-50 text-slate-900 border-emerald-100` };
     case 'voided':
-      return {
-        label: 'Voided',
-        className: 'text-[11px] font-semibold text-white px-3 py-1 rounded-full bg-slate-500',
-      };
+      return { label: 'Voided', className: `${base} bg-slate-100 text-slate-800 border-slate-200/80` };
     default:
       return null;
   }
@@ -136,20 +121,33 @@ function documentDotClass(status: DocumentSigningStatus): string {
 }
 
 interface EnvelopeDetailsViewProps {
+  packetId: string;
   envelopeName: string;
   packetStatus: EnvelopeStatus;
+  adminIsSigner: boolean;
   sentOn: string;
   sentBy: string;
-  documents: { name: string; status: DocumentSigningStatus }[];
+  documents: { id: string; name: string; status: DocumentSigningStatus }[];
   recipients?: DetailRecipientRow[];
   isVoided?: boolean;
   onExit: () => void;
   onSign?: () => void;
+  onEdit?: () => void;
+  onResend?: () => void;
 }
 
+const btnOutline =
+  'inline-flex items-center gap-2 px-5 py-2 rounded-[8px] border border-slate-200 text-sm font-bold text-slate-900 bg-white hover:bg-slate-50 shadow-sm';
+const btnOrange =
+  'inline-flex items-center gap-2 px-5 py-2 rounded-[8px] text-sm font-bold text-slate-900 bg-[#FDB71C] hover:opacity-95 shadow-sm';
+const btnResend =
+  'inline-flex items-center gap-2 px-5 py-2 rounded-[8px] text-sm font-bold text-white bg-[#7A005D] hover:opacity-95 shadow-sm';
+
 const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
+  packetId: _packetId,
   envelopeName,
   packetStatus,
+  adminIsSigner,
   sentOn,
   sentBy,
   documents,
@@ -157,11 +155,136 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
   isVoided = false,
   onExit,
   onSign,
+  onEdit,
+  onResend,
 }) => {
   const badge = headerBadgeForStatus(packetStatus);
   const recipientRows = isVoided ? recipients.map((r) => ({ ...r, action: '—' as const })) : recipients;
 
-  const showSign = packetStatus !== 'voided' && packetStatus !== 'completed' && packetStatus !== 'draft';
+  const showSign = packetStatus !== 'voided' && packetStatus !== 'completed' && packetStatus !== 'draft' && packetStatus !== 'correcting';
+  const canSign = showSign && adminIsSigner;
+
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [preview, setPreview] = useState<{ name: string } | null>(null);
+  const [docSnack, setDocSnack] = useState<string | null>(null);
+  const [bulkSnack, setBulkSnack] = useState<{ phase: 'loading' | 'done'; count: number } | null>(null);
+
+  const runBulkDownload = () => {
+    const n = Math.max(1, documents.length);
+    setBulkSnack({ phase: 'loading', count: n });
+    window.setTimeout(() => {
+      setBulkSnack({ phase: 'done', count: n });
+      window.setTimeout(() => setBulkSnack(null), 9000);
+    }, 1200);
+  };
+
+  useLayoutEffect(() => {
+    if (!moreOpen) {
+      setMenuPos(null);
+      return;
+    }
+    const place = () => {
+      const btn = moreBtnRef.current;
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const mw = 260;
+      const left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8));
+      setMenuPos({ top: r.bottom + 8, left });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [moreOpen]);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const down = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (moreBtnRef.current?.contains(t)) return;
+      const root = document.getElementById('envelope-details-more-root');
+      if (root?.contains(t)) return;
+      setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', down);
+    return () => document.removeEventListener('mousedown', down);
+  }, [moreOpen]);
+
+  const moreBtn = (
+    <button
+      ref={moreBtnRef}
+      type="button"
+      className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
+      aria-label="More actions"
+      aria-expanded={moreOpen}
+      onClick={() => setMoreOpen((v) => !v)}
+    >
+      <MoreVertical size={18} strokeWidth={2} />
+    </button>
+  );
+
+  const renderPrimaryCluster = () => {
+    if (packetStatus === 'draft') {
+      return (
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" className={btnOutline} onClick={onEdit}>
+            <PenLine size={18} strokeWidth={2} />
+            Edit
+          </button>
+          {moreBtn}
+        </div>
+      );
+    }
+    if (packetStatus === 'correcting') {
+      return (
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" className={btnOutline} onClick={onEdit}>
+            <PenLine size={18} strokeWidth={2} />
+            Edit
+          </button>
+          <button type="button" className={btnResend} onClick={onResend}>
+            Resend
+          </button>
+          {moreBtn}
+        </div>
+      );
+    }
+    if (packetStatus === 'completed' || packetStatus === 'voided') {
+      return (
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            className={btnOutline}
+            onClick={() => documents[0] && setPreview({ name: documents[0].name })}
+          >
+            <Eye size={18} strokeWidth={2} />
+            View
+          </button>
+          {moreBtn}
+        </div>
+      );
+    }
+    if (packetStatus === 'yet to sign' || packetStatus === 'in progress') {
+      if (canSign) {
+        return (
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" onClick={onSign} className={btnOrange}>
+              <PenLine size={18} strokeWidth={2} className="text-slate-900" />
+              Sign
+            </button>
+            {moreBtn}
+          </div>
+        );
+      }
+      return <div className="flex items-center gap-2 shrink-0">{moreBtn}</div>;
+    }
+    return null;
+  };
 
   return (
     <div className="flex flex-col h-screen bg-[#F9FAFB] overflow-hidden">
@@ -183,25 +306,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
                 {badge && <span className={badge.className}>{badge.label}</span>}
               </div>
             </div>
-            {showSign && (
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={onSign}
-                  className="inline-flex items-center gap-2 px-5 py-2 bg-[#FDB71C] text-slate-900 rounded-[8px] text-sm font-bold hover:opacity-95 transition-opacity"
-                >
-                  <PenLine size={18} strokeWidth={2} className="text-slate-900" />
-                  Sign
-                </button>
-                <button
-                  type="button"
-                  className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
-                  aria-label="More actions"
-                >
-                  <MoreVertical size={18} strokeWidth={2} />
-                </button>
-              </div>
-            )}
+            {renderPrimaryCluster()}
           </div>
 
           <div className="flex items-center space-x-12 mt-6">
@@ -223,7 +328,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
           <div className="p-2">
             {documents.map((doc) => (
               <div
-                key={doc.name}
+                key={doc.id}
                 className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 rounded-lg group transition-colors gap-4"
               >
                 <div className="flex items-center space-x-3 min-w-0 flex-1">
@@ -245,6 +350,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
                         type="button"
                         className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md"
                         aria-label={`View ${doc.name}`}
+                        onClick={() => setPreview({ name: doc.name })}
                       >
                         <Eye size={20} />
                       </button>
@@ -252,6 +358,10 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
                         type="button"
                         className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md"
                         aria-label={`Download ${doc.name}`}
+                        onClick={() => {
+                          setDocSnack('Document downloaded');
+                          window.setTimeout(() => setDocSnack(null), 9000);
+                        }}
                       >
                         <Download size={20} />
                       </button>
@@ -396,6 +506,79 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
           </div>
         </div>
       </div>
+
+      {moreOpen &&
+        menuPos &&
+        createPortal(
+          <div
+            id="envelope-details-more-root"
+            className="fixed rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+            style={{ top: menuPos.top, left: menuPos.left, zIndex: 2147483647 }}
+            role="presentation"
+          >
+            <EnvelopeMoreMenu
+              variant={moreMenuVariantForEnvelope(packetStatus)}
+              onClose={() => setMoreOpen(false)}
+              onDownload={runBulkDownload}
+            />
+          </div>,
+          document.body
+        )}
+
+      {preview && (
+        <div className="fixed inset-0 z-[400000] flex flex-col bg-white" role="dialog" aria-modal="true">
+          <div className="h-14 border-b border-slate-200 flex items-center justify-between px-4 shrink-0">
+            <h2 className="text-sm font-bold text-slate-900 truncate pr-4">{preview.name}</h2>
+            <button
+              type="button"
+              className="px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 rounded-lg"
+              onClick={() => setPreview(null)}
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto bg-slate-100 p-8 flex justify-center">
+            <div className="w-full max-w-3xl bg-white shadow-xl rounded-lg border border-slate-200 p-10 min-h-[480px] text-slate-700 text-sm leading-relaxed">
+              <p className="font-bold text-slate-900 mb-4">Static preview</p>
+              <p>
+                Prototype preview of <strong>{preview.name}</strong>. The received document would display here.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {docSnack && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[400000] pointer-events-none px-4 w-full max-w-md">
+          <div className="pointer-events-auto bg-[#C6F6F1] border border-[#A5F3E9] rounded-lg shadow-lg flex items-center px-4 py-3 gap-3">
+            <span className="text-[13px] font-bold text-[#134E4A] flex-1">{docSnack}</span>
+            <button type="button" className="text-[#134E4A]/70 p-1" onClick={() => setDocSnack(null)} aria-label="Dismiss">
+              <X size={18} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {bulkSnack && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[400000] pointer-events-none px-4 w-full max-w-md">
+          <div
+            className={`pointer-events-auto rounded-lg shadow-lg flex items-center px-4 py-3 gap-3 border ${
+              bulkSnack.phase === 'loading'
+                ? 'bg-[#E0F2FE] border-[#BAE6FD]'
+                : 'bg-[#C6F6F1] border-[#A5F3E9]'
+            }`}
+          >
+            <span className="text-[13px] font-bold text-slate-900 flex-1">
+              {bulkSnack.phase === 'loading'
+                ? `${bulkSnack.count} documents downloading`
+                : `${bulkSnack.count} documents downloaded`}
+            </span>
+            <button type="button" className="text-slate-600 p-1" onClick={() => setBulkSnack(null)} aria-label="Dismiss">
+              <X size={18} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
