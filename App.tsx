@@ -11,6 +11,7 @@ import LandingPage from './components/LandingPage';
 import PeopleTabView from './components/PeopleTabView';
 import GeminiAssistant from './components/GeminiAssistant';
 import { MOCK_EMPLOYEE } from './constants';
+import { SNACKBAR_AUTO_DISMISS_MS } from './constants/snackbar';
 import type { UploadedFileItem } from './types';
 import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus } from './components/EnvelopesListView';
 import { cloneInitialEnvelopeRows } from './components/EnvelopesListView';
@@ -107,7 +108,7 @@ const DraftSavedSnackbar: React.FC<{
   onDismiss: () => void;
 }> = ({ onViewDetails, onDismiss }) => {
   useEffect(() => {
-    const t = setTimeout(onDismiss, 12000);
+    const t = setTimeout(onDismiss, SNACKBAR_AUTO_DISMISS_MS);
     return () => clearTimeout(t);
   }, [onDismiss]);
 
@@ -140,7 +141,7 @@ const DraftSavedSnackbar: React.FC<{
 
 const CorrectionSavedSnackbar: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   useEffect(() => {
-    const t = setTimeout(onClose, 10000);
+    const t = setTimeout(onClose, SNACKBAR_AUTO_DISMISS_MS);
     return () => clearTimeout(t);
   }, [onClose]);
   return (
@@ -165,7 +166,7 @@ const CorrectionSavedSnackbar: React.FC<{ onClose: () => void }> = ({ onClose })
 
 const SuccessSnackbar: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {
   useEffect(() => {
-    const timer = setTimeout(onClose, 10000);
+    const timer = setTimeout(onClose, SNACKBAR_AUTO_DISMISS_MS);
     return () => clearTimeout(timer);
   }, [onClose]);
 

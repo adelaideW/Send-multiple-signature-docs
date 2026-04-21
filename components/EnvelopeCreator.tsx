@@ -50,6 +50,7 @@ import {
   Folder,
 } from 'lucide-react';
 import type { UploadedFileItem } from '../types';
+import { PROFILE_DOCUMENT_FOLDER_LOCATIONS } from '../constants';
 
 interface EnvelopeCreatorProps {
   onExit: () => void;
@@ -220,27 +221,11 @@ const FOLDER_TREE_ROOTS: FolderNode[] = [
   {
     id: ALL_DOCUMENTS_FOLDER_ID,
     name: 'All documents',
-    children: [
-      { id: 'folder-confidential', name: 'Confidential', isSystemDefault: true },
-      {
-        id: 'folder-performance',
-        name: 'Performance Records',
-        moveInProgress: true,
-        children: [
-          { id: 'folder-perf-2023', name: '2023' },
-          { id: 'folder-perf-2022', name: '2022' },
-          { id: 'folder-perf-2021', name: '2021' },
-        ],
-      },
-      {
-        id: 'folder-company-policies',
-        name: 'Company policies',
-        children: [
-          { id: 'folder-office-policies', name: 'Office policies' },
-          { id: 'folder-other-policies', name: 'Other policies' },
-        ],
-      },
-    ],
+    children: PROFILE_DOCUMENT_FOLDER_LOCATIONS.map((f) => ({
+      id: f.id,
+      name: f.name,
+      isSystemDefault: f.isDefault,
+    })),
   },
 ];
 
@@ -1769,48 +1754,47 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   {uploadedFiles.length > 0 ? (
                     <DisabledWithTooltip message="Remove uploaded documents to allow selecting documents">
                       <div className="rounded-lg">
-                        <div className="w-full border border-slate-200 rounded-lg min-h-[44px] p-2.5 flex items-center gap-2 bg-slate-50 opacity-50">
-                          {selectedTemplates.length > 0 ? (
-                            <div className="flex flex-wrap gap-1.5 flex-1 max-h-[96px] overflow-hidden">
-                              {selectedTemplates.map(t => (
-                                <span key={t} className="bg-slate-100 text-slate-700 text-[11px] px-2 py-0.5 rounded flex items-center max-w-full truncate">{t}</span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-slate-400 text-sm flex-1">Search</span>
-                          )}
+                        <div className="w-full border border-slate-200 rounded-lg min-h-[44px] px-3 py-2 flex items-center gap-2 bg-slate-50 opacity-50 overflow-hidden">
+                          <Search className="text-slate-400 shrink-0" size={16} />
+                          <div className="flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto">
+                            {selectedTemplates.map((t) => (
+                              <span
+                                key={t}
+                                className="bg-slate-100 text-slate-700 text-[11px] px-2 py-0.5 rounded shrink-0 max-w-[200px] truncate"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                            <span className="text-slate-400 text-sm shrink-0">Search</span>
+                          </div>
                           <ChevronDown size={14} className="text-slate-400 shrink-0" />
                         </div>
                       </div>
                     </DisabledWithTooltip>
                   ) : (
                     <>
-                      <div className="w-full border border-slate-200 rounded-lg bg-white">
-                        {selectedTemplates.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 p-2 border-b border-slate-100 max-h-[96px] overflow-y-auto">
-                            {selectedTemplates.map((t) => (
-                              <span
-                                key={t}
-                                className="inline-flex items-center gap-1 max-w-full bg-slate-100 text-slate-800 text-[11px] pl-2 pr-1 py-0.5 rounded border border-slate-200/80"
+                      <div className="w-full border border-slate-200 rounded-lg bg-white flex items-center gap-2 px-3 py-2 min-h-[44px]">
+                        <Search className="text-slate-400 shrink-0" size={16} />
+                        <div className="flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto custom-scrollbar">
+                          {selectedTemplates.map((t) => (
+                            <span
+                              key={t}
+                              className="inline-flex items-center gap-1 shrink-0 max-w-[min(200px,100%)] bg-slate-100 text-slate-800 text-[11px] pl-2 pr-1 py-0.5 rounded border border-slate-200/80"
+                            >
+                              <span className="truncate">{t}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeOneTemplate(t);
+                                }}
+                                className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                                aria-label={`Remove ${t}`}
                               >
-                                <span className="truncate max-w-[200px]">{t}</span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    removeOneTemplate(t);
-                                  }}
-                                  className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-                                  aria-label={`Remove ${t}`}
-                                >
-                                  <X size={12} strokeWidth={2.5} />
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 px-3 py-2.5">
-                          <Search className="text-slate-400 shrink-0" size={16} />
+                                <X size={12} strokeWidth={2.5} />
+                              </button>
+                            </span>
+                          ))}
                           <input
                             type="text"
                             value={templateFilter}
@@ -1820,33 +1804,33 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             }}
                             onFocus={() => setIsTemplateMenuOpen(true)}
                             placeholder="Search"
-                            className={`flex-1 min-w-0 text-sm outline-none bg-transparent py-0.5 ${INPUT_FOCUS}`}
+                            className={`min-w-[6rem] flex-1 shrink-0 text-sm outline-none bg-transparent py-0.5 ${INPUT_FOCUS}`}
                           />
-                          {selectedTemplates.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                clearTemplates(e);
-                              }}
-                              className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors shrink-0"
-                              aria-label="Clear all selected templates"
-                            >
-                              <X size={10} strokeWidth={2.5} className="shrink-0" aria-hidden />
-                            </button>
-                          )}
+                        </div>
+                        {selectedTemplates.length > 0 && (
                           <button
                             type="button"
-                            className="p-1 text-slate-400 hover:text-slate-600 shrink-0 rounded"
-                            aria-label="Toggle template list"
-                            onClick={() => {
-                              if (!isTemplateMenuOpen) setTemplateFilter('');
-                              setIsTemplateMenuOpen((o) => !o);
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              clearTemplates(e);
                             }}
+                            className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors shrink-0"
+                            aria-label="Clear all selected templates"
                           >
-                            <ChevronDown size={14} className={isTemplateMenuOpen ? 'rotate-180' : ''} />
+                            <X size={10} strokeWidth={2.5} className="shrink-0" aria-hidden />
                           </button>
-                        </div>
+                        )}
+                        <button
+                          type="button"
+                          className="p-1 text-slate-400 hover:text-slate-600 shrink-0 rounded"
+                          aria-label="Toggle template list"
+                          onClick={() => {
+                            if (!isTemplateMenuOpen) setTemplateFilter('');
+                            setIsTemplateMenuOpen((o) => !o);
+                          }}
+                        >
+                          <ChevronDown size={14} className={isTemplateMenuOpen ? 'rotate-180' : ''} />
+                        </button>
                       </div>
                       {isTemplateMenuOpen && (
                         <div className="absolute z-[300] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-[360px] overflow-hidden">

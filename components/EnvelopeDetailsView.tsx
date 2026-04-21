@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import type { EnvelopeStatus, DocumentSigningStatus } from './EnvelopesListView';
 import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
+import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
+import SendReminderModal from './SendReminderModal';
 
 export interface DetailRecipientRow {
   id: string;
@@ -170,15 +172,27 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
   const [preview, setPreview] = useState<{ name: string } | null>(null);
   const [docSnack, setDocSnack] = useState<string | null>(null);
   const [bulkSnack, setBulkSnack] = useState<{ phase: 'loading' | 'done'; count: number } | null>(null);
+  const [sendReminderOpen, setSendReminderOpen] = useState(false);
 
   const runBulkDownload = () => {
     const n = Math.max(1, documents.length);
     setBulkSnack({ phase: 'loading', count: n });
     window.setTimeout(() => {
       setBulkSnack({ phase: 'done', count: n });
-      window.setTimeout(() => setBulkSnack(null), 9000);
     }, 1200);
   };
+
+  useEffect(() => {
+    if (!docSnack) return;
+    const t = window.setTimeout(() => setDocSnack(null), SNACKBAR_AUTO_DISMISS_MS);
+    return () => clearTimeout(t);
+  }, [docSnack]);
+
+  useEffect(() => {
+    if (bulkSnack?.phase !== 'done') return;
+    const t = window.setTimeout(() => setBulkSnack(null), SNACKBAR_AUTO_DISMISS_MS);
+    return () => clearTimeout(t);
+  }, [bulkSnack]);
 
   useLayoutEffect(() => {
     if (!moreOpen) {
@@ -358,10 +372,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
                         type="button"
                         className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md"
                         aria-label={`Download ${doc.name}`}
-                        onClick={() => {
-                          setDocSnack('Document downloaded');
-                          window.setTimeout(() => setDocSnack(null), 9000);
-                        }}
+                        onClick={() => setDocSnack('Document downloaded')}
                       >
                         <Download size={20} />
                       </button>
@@ -520,6 +531,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
               variant={moreMenuVariantForEnvelope(packetStatus)}
               onClose={() => setMoreOpen(false)}
               onDownload={runBulkDownload}
+              onSendReminder={() => setSendReminderOpen(true)}
             />
           </div>,
           document.body
@@ -579,6 +591,11 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
           </div>
         </div>
       )}
+      <SendReminderModal
+        open={sendReminderOpen}
+        onClose={() => setSendReminderOpen(false)}
+        onConfirm={() => {}}
+      />
     </div>
   );
 };

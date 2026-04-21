@@ -10,6 +10,16 @@ import {
 
 export const PRIMARY_PURPLE = '#7A005D';
 
+/** Folders under “All documents” — shared by the send-flow location picker and the employee profile Documents tab. */
+export type ProfileFolderLocation = { id: string; name: string; isDefault: boolean };
+
+export const PROFILE_DOCUMENT_FOLDER_LOCATIONS: ProfileFolderLocation[] = [
+  { id: 'folder-confidential', name: 'Confidential', isDefault: true },
+  { id: 'folder-notice', name: 'Notice', isDefault: true },
+  { id: 'folder-ee-performance', name: 'EE Performance Record', isDefault: false },
+  { id: 'folder-company-policies', name: 'Company policies', isDefault: false },
+];
+
 export const SIDEBAR_ITEMS = [
   { id: 'employee-info', label: 'Employee information' },
   { id: 'personal', label: 'Personal information' },

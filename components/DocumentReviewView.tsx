@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import type { EnvelopeStatus, DocumentSigningStatus } from './EnvelopesListView';
 import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
+import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
+import SendReminderModal from './SendReminderModal';
 
 export interface SignFlowDoc {
   id: string;
@@ -77,9 +79,7 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
   const [preview, setPreview] = useState<{ name: string } | null>(null);
   const [docSnack, setDocSnack] = useState<string | null>(null);
   const [bulkSnack, setBulkSnack] = useState<{ phase: 'loading' | 'done'; count: number } | null>(null);
-  const [rowMoreId, setRowMoreId] = useState<string | null>(null);
-  const [rowMenuPos, setRowMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const rowMoreBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [sendReminderOpen, setSendReminderOpen] = useState(false);
 
   const signableDocs = useMemo(
     () => flow.docs.filter((d) => needsSignerAction(d, flow.envelopeStatus)),
@@ -136,44 +136,37 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
     };
   }, [signMenuOpen]);
 
-  useLayoutEffect(() => {
-    if (!rowMoreId) {
-      setRowMenuPos(null);
-      return;
-    }
-    const run = () => placeMenu(rowMoreBtnRefs.current[rowMoreId] ?? null, setRowMenuPos);
-    run();
-    window.addEventListener('scroll', run, true);
-    window.addEventListener('resize', run);
-    return () => {
-      window.removeEventListener('scroll', run, true);
-      window.removeEventListener('resize', run);
-    };
-  }, [rowMoreId]);
-
   useEffect(() => {
     const down = (e: MouseEvent) => {
       const t = e.target as Node;
       if (listMenuBtnRef.current?.contains(t)) return;
       if (signMenuBtnRef.current?.contains(t)) return;
-      if (rowMoreId && rowMoreBtnRefs.current[rowMoreId]?.contains(t)) return;
       if (document.getElementById('doc-review-list-more')?.contains(t)) return;
       if (document.getElementById('doc-review-sign-more')?.contains(t)) return;
-      if (document.getElementById('doc-review-row-more')?.contains(t)) return;
       setListMenuOpen(false);
       setSignMenuOpen(false);
-      setRowMoreId(null);
     };
     document.addEventListener('mousedown', down);
     return () => document.removeEventListener('mousedown', down);
-  }, [rowMoreId]);
+  }, []);
+
+  useEffect(() => {
+    if (!docSnack) return;
+    const timer = window.setTimeout(() => setDocSnack(null), SNACKBAR_AUTO_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [docSnack]);
+
+  useEffect(() => {
+    if (bulkSnack?.phase !== 'done') return;
+    const timer = window.setTimeout(() => setBulkSnack(null), SNACKBAR_AUTO_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [bulkSnack]);
 
   const runBulkDownload = () => {
     const n = Math.max(1, flow.docs.length);
     setBulkSnack({ phase: 'loading', count: n });
     window.setTimeout(() => {
       setBulkSnack({ phase: 'done', count: n });
-      window.setTimeout(() => setBulkSnack(null), 9000);
     }, 1200);
   };
 
@@ -182,7 +175,6 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
     setFieldValue('');
     setPhase('sign');
     setListMenuOpen(false);
-    setRowMoreId(null);
   };
 
   const handleSaveAndExitList = () => {
@@ -317,30 +309,27 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                 {flow.docs.map((doc) => {
                   const showSign = needsSignerAction(doc, flow.envelopeStatus);
                   return (
-                    <div key={doc.id} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50/60">
+                    <div key={doc.id} className="px-6 py-4 flex items-center gap-3 hover:bg-slate-50/60">
                       <FileText size={20} className="text-slate-400 shrink-0" />
-                      <span className="flex-1 font-semibold text-slate-900 text-[14px] truncate">{doc.name}</span>
-                      <button
-                        type="button"
-                        className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
-                        aria-label="View"
-                        onClick={() => setPreview({ name: doc.name })}
-                      >
-                        <Eye size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
-                        aria-label="Download"
-                        onClick={() => {
-                          setDocSnack('Document downloaded');
-                          window.setTimeout(() => setDocSnack(null), 9000);
-                        }}
-                      >
-                        <Download size={18} />
-                      </button>
-                      {showSign ? (
-                        <div className="flex items-center gap-1 shrink-0">
+                      <span className="min-w-0 flex-1 font-semibold text-slate-900 text-[14px] truncate">{doc.name}</span>
+                      <div className="flex items-center justify-end gap-1 shrink-0">
+                        <button
+                          type="button"
+                          className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
+                          aria-label="View"
+                          onClick={() => setPreview({ name: doc.name })}
+                        >
+                          <Eye size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
+                          aria-label="Download"
+                          onClick={() => setDocSnack('Document downloaded')}
+                        >
+                          <Download size={18} />
+                        </button>
+                        {showSign ? (
                           <button
                             type="button"
                             onClick={() => openSignForDoc(doc.id)}
@@ -350,21 +339,8 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                             <PenLine size={14} strokeWidth={2} />
                             Sign
                           </button>
-                          <button
-                            ref={(el) => {
-                              rowMoreBtnRefs.current[doc.id] = el;
-                            }}
-                            type="button"
-                            className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
-                            aria-label="More"
-                            onClick={() => setRowMoreId((id) => (id === doc.id ? null : doc.id))}
-                          >
-                            <MoreVertical size={18} strokeWidth={2} />
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="w-[72px] shrink-0" />
-                      )}
+                        ) : null}
+                      </div>
                     </div>
                   );
                 })}
@@ -493,24 +469,7 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
               variant={listVariant}
               onClose={() => setListMenuOpen(false)}
               onDownload={runBulkDownload}
-            />
-          </div>,
-          document.body
-        )}
-
-      {rowMoreId &&
-        rowMenuPos &&
-        createPortal(
-          <div
-            id="doc-review-row-more"
-            className="fixed rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
-            style={{ top: rowMenuPos.top, left: rowMenuPos.left, zIndex: 2147483647 }}
-            role="presentation"
-          >
-            <EnvelopeMoreMenu
-              variant={listVariant}
-              onClose={() => setRowMoreId(null)}
-              onDownload={runBulkDownload}
+              onSendReminder={() => setSendReminderOpen(true)}
             />
           </div>,
           document.body
@@ -644,6 +603,11 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
           </div>
         </div>
       )}
+      <SendReminderModal
+        open={sendReminderOpen}
+        onClose={() => setSendReminderOpen(false)}
+        onConfirm={() => {}}
+      />
     </div>
   );
 };

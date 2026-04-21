@@ -23,6 +23,7 @@ import TemplatesLibraryView from './TemplatesLibraryView';
 import EnvelopesListView, { type EnvelopeTableRow } from './EnvelopesListView';
 import ToolsSidePanel from './ToolsSidePanel';
 import ToolsMegaMenuPopover from './ToolsMegaMenuPopover';
+import SendReminderModal from './SendReminderModal';
 
 interface PeopleRow {
   id: string;
@@ -104,6 +105,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   const [toolsSideCollapsed, setToolsSideCollapsed] = useState(false);
   const [toolsHeaderMenuOpen, setToolsHeaderMenuOpen] = useState(false);
   const headerToolsRef = useRef<HTMLButtonElement | null>(null);
+  const [sendReminderOpen, setSendReminderOpen] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -226,7 +228,11 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                   <span className="text-slate-400 font-medium text-[14px]">· 14</span>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <button className="flex items-center space-x-2 px-4 py-1.5 border border-slate-200 rounded-lg text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => setSendReminderOpen(true)}
+                    className="flex items-center space-x-2 px-4 py-1.5 border border-slate-200 rounded-lg text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
                     <Bell size={14} />
                     <span>Send reminder</span>
                   </button>
@@ -386,6 +392,11 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
           </div>
         </main>
       </div>
+      <SendReminderModal
+        open={sendReminderOpen}
+        onClose={() => setSendReminderOpen(false)}
+        onConfirm={() => {}}
+      />
     </div>
   );
 };

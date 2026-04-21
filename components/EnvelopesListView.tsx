@@ -24,6 +24,8 @@ import {
   X,
 } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
+import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
+import SendReminderModal from './SendReminderModal';
 
 export type EnvelopeStatus =
   | 'draft'
@@ -236,9 +238,15 @@ interface EnvelopeMoreMenuProps {
   variant: MoreMenuVariant;
   onClose: () => void;
   onDownload?: () => void;
+  onSendReminder?: () => void;
 }
 
-export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onClose, onDownload }) => {
+export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
+  variant,
+  onClose,
+  onDownload,
+  onSendReminder,
+}) => {
   const itemClass = 'w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50';
   const dangerItemClass = `w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold hover:bg-slate-50`;
   const IconWrap: React.FC<{ children: React.ReactNode; danger?: boolean }> = ({ children, danger }) => (
@@ -264,7 +272,15 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onC
           <IconWrap><ClipboardX size={16} strokeWidth={2} /></IconWrap>
           Decline to sign
         </button>
-        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+        <button
+          type="button"
+          className={itemClass}
+          role="menuitem"
+          onClick={() => {
+            onSendReminder?.();
+            onClose();
+          }}
+        >
           <IconWrap><Bell size={16} strokeWidth={2} /></IconWrap>
           Send reminder
         </button>
@@ -287,7 +303,15 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onC
           <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
           Download
         </button>
-        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+        <button
+          type="button"
+          className={itemClass}
+          role="menuitem"
+          onClick={() => {
+            onSendReminder?.();
+            onClose();
+          }}
+        >
           <IconWrap><Bell size={16} strokeWidth={2} /></IconWrap>
           Send reminder
         </button>
@@ -390,6 +414,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
   const [previewDoc, setPreviewDoc] = useState<{ name: string } | null>(null);
   const [docSnack, setDocSnack] = useState<string | null>(null);
   const [bulkSnack, setBulkSnack] = useState<{ phase: 'loading' | 'done'; count: number } | null>(null);
+  const [sendReminderOpen, setSendReminderOpen] = useState(false);
 
   const childCount = (row: EnvelopeTableRow) => row.children?.length ?? 0;
 
@@ -398,9 +423,20 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
     setBulkSnack({ phase: 'loading', count: n });
     window.setTimeout(() => {
       setBulkSnack({ phase: 'done', count: n });
-      window.setTimeout(() => setBulkSnack(null), 9000);
     }, 1200);
   };
+
+  useEffect(() => {
+    if (!docSnack) return;
+    const t = window.setTimeout(() => setDocSnack(null), SNACKBAR_AUTO_DISMISS_MS);
+    return () => clearTimeout(t);
+  }, [docSnack]);
+
+  useEffect(() => {
+    if (bulkSnack?.phase !== 'done') return;
+    const t = window.setTimeout(() => setBulkSnack(null), SNACKBAR_AUTO_DISMISS_MS);
+    return () => clearTimeout(t);
+  }, [bulkSnack]);
 
   useLayoutEffect(() => {
     if (!openMoreId) {
@@ -597,6 +633,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={() => setSendReminderOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-1.5 border border-slate-200 rounded-lg text-[13px] font-bold text-slate-800 bg-white hover:bg-slate-50 shadow-sm"
           >
             <Bell size={14} />
@@ -780,10 +817,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                               type="button"
                               className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
                               aria-label="Download document"
-                              onClick={() => {
-                                setDocSnack('Document downloaded');
-                                window.setTimeout(() => setDocSnack(null), 9000);
-                              }}
+                              onClick={() => setDocSnack('Document downloaded')}
                             >
                               <Download size={18} strokeWidth={2} />
                             </button>
@@ -821,6 +855,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                 variant={moreMenuVariantForEnvelope(openRow.status)}
                 onClose={() => setOpenMoreId(null)}
                 onDownload={() => runBulkDownload(openRow)}
+                onSendReminder={() => setSendReminderOpen(true)}
               />
             </div>,
             document.body
@@ -894,6 +929,11 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
           </div>
         </div>
       )}
+      <SendReminderModal
+        open={sendReminderOpen}
+        onClose={() => setSendReminderOpen(false)}
+        onConfirm={() => {}}
+      />
     </div>
   );
 };
