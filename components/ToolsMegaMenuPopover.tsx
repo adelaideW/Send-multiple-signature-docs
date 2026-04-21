@@ -63,7 +63,7 @@ const ToolsMegaMenuPopover: React.FC<ToolsMegaMenuPopoverProps> = ({ open, onClo
         className="flex rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
         onMouseLeave={() => setFlyoutOpen(false)}
       >
-        <div className="w-80 py-2 max-h-[min(560px,85vh)] overflow-y-auto custom-scrollbar border-r border-slate-100">
+        <div className="w-80 py-2 max-h-[min(900px,85vh)] overflow-y-auto custom-scrollbar border-r border-slate-100">
           <div className="px-1">
             {MEGA_MENU_TOP.map((item) => {
               const Icon = item.icon;
@@ -149,7 +149,7 @@ const ToolsMegaMenuPopover: React.FC<ToolsMegaMenuPopoverProps> = ({ open, onClo
 
         {flyoutOpen && (
           <div
-            className="w-56 py-2 max-h-[min(560px,85vh)] overflow-y-auto bg-white shrink-0"
+            className="w-56 py-2 max-h-[min(900px,85vh)] overflow-y-auto bg-white shrink-0"
             onMouseEnter={() => setFlyoutOpen(true)}
           >
             {TOOLS_FLYOUT_ITEMS.map((item) => {

@@ -343,7 +343,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
 
           {activeTab === 'Templates' && (
             <div className="mb-8">
-              <TemplatesLibraryView onNewTemplate={onNewTemplate} />
+              <TemplatesLibraryView onNewTemplate={onNewTemplate} onCreateFolder={() => {}} />
             </div>
           )}
 

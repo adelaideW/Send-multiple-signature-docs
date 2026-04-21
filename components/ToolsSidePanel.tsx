@@ -19,7 +19,7 @@ interface ToolsSidePanelProps {
 }
 
 const ToolsSidePanel: React.FC<ToolsSidePanelProps> = ({ collapsed, onCollapsedChange, onGoHome }) => {
-  const [activeId, setActiveId] = useState('inbox');
+  const [activeId, setActiveId] = useState('documents');
   const [megaMenuOpen, setMegaMenuOpen] = useState(false);
   const headerBtnRef = useRef<HTMLButtonElement>(null);
 

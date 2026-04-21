@@ -848,6 +848,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     if (uploadedFiles.length > 0) return;
     const next = selectedTemplates.includes(tpl) ? selectedTemplates.filter(t => t !== tpl) : [...selectedTemplates, tpl];
     updateState({ selectedTemplates: next });
+    setTemplateFilter('');
     if (currentPreviewPage > next.length && next.length > 0) {
       setCurrentPreviewPage(next.length);
     } else if (next.length === 1) {
@@ -1754,47 +1755,51 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   {uploadedFiles.length > 0 ? (
                     <DisabledWithTooltip message="Remove uploaded documents to allow selecting documents">
                       <div className="rounded-lg">
-                        <div className="w-full border border-slate-200 rounded-lg min-h-[44px] px-3 py-2 flex items-center gap-2 bg-slate-50 opacity-50 overflow-hidden">
-                          <Search className="text-slate-400 shrink-0" size={16} />
-                          <div className="flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto">
-                            {selectedTemplates.map((t) => (
-                              <span
-                                key={t}
-                                className="bg-slate-100 text-slate-700 text-[11px] px-2 py-0.5 rounded shrink-0 max-w-[200px] truncate"
-                              >
-                                {t}
-                              </span>
-                            ))}
-                            <span className="text-slate-400 text-sm shrink-0">Search</span>
+                        <div className="w-full border border-slate-200 rounded-lg min-h-[44px] px-3 py-2 flex items-start gap-2 bg-slate-50 opacity-50 overflow-hidden">
+                          <Search className="text-slate-400 shrink-0 mt-1" size={16} />
+                          <div className="flex flex-1 min-w-0 items-start gap-2 min-h-[28px]">
+                            <div className="flex-1 min-h-0 max-h-[3.25rem] overflow-y-auto overflow-x-hidden flex flex-wrap gap-1.5 content-start custom-scrollbar">
+                              {selectedTemplates.map((t) => (
+                                <span
+                                  key={t}
+                                  className="bg-slate-100 text-slate-700 text-[11px] px-2 py-0.5 rounded shrink-0 max-w-[200px] truncate"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                            <span className="text-slate-400 text-sm shrink-0 self-center">Search</span>
                           </div>
-                          <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                          <ChevronDown size={14} className="text-slate-400 shrink-0 mt-1" />
                         </div>
                       </div>
                     </DisabledWithTooltip>
                   ) : (
                     <>
-                      <div className="w-full border border-slate-200 rounded-lg bg-white flex items-center gap-2 px-3 py-2 min-h-[44px]">
-                        <Search className="text-slate-400 shrink-0" size={16} />
-                        <div className="flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto custom-scrollbar">
-                          {selectedTemplates.map((t) => (
-                            <span
-                              key={t}
-                              className="inline-flex items-center gap-1 shrink-0 max-w-[min(200px,100%)] bg-slate-100 text-slate-800 text-[11px] pl-2 pr-1 py-0.5 rounded border border-slate-200/80"
-                            >
-                              <span className="truncate">{t}</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeOneTemplate(t);
-                                }}
-                                className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-                                aria-label={`Remove ${t}`}
+                      <div className="w-full border border-slate-200 rounded-lg bg-white flex items-start gap-2 px-3 py-2 min-h-[44px]">
+                        <Search className="text-slate-400 shrink-0 mt-1" size={16} />
+                        <div className="flex flex-1 min-w-0 items-start gap-2">
+                          <div className="flex-1 min-h-0 max-h-[3.25rem] overflow-y-auto overflow-x-hidden flex flex-wrap gap-1.5 content-start custom-scrollbar">
+                            {selectedTemplates.map((t) => (
+                              <span
+                                key={t}
+                                className="inline-flex items-center gap-1 shrink-0 max-w-[min(200px,100%)] bg-slate-100 text-slate-800 text-[11px] pl-2 pr-1 py-0.5 rounded border border-slate-200/80"
                               >
-                                <X size={12} strokeWidth={2.5} />
-                              </button>
-                            </span>
-                          ))}
+                                <span className="truncate">{t}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeOneTemplate(t);
+                                  }}
+                                  className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                                  aria-label={`Remove ${t}`}
+                                >
+                                  <X size={12} strokeWidth={2.5} />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
                           <input
                             type="text"
                             value={templateFilter}
@@ -1804,7 +1809,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             }}
                             onFocus={() => setIsTemplateMenuOpen(true)}
                             placeholder="Search"
-                            className={`min-w-[6rem] flex-1 shrink-0 text-sm outline-none bg-transparent py-0.5 ${INPUT_FOCUS}`}
+                            className={`w-[7rem] sm:w-32 shrink-0 self-center text-sm outline-none bg-transparent py-0.5 ${INPUT_FOCUS}`}
                           />
                         </div>
                         {selectedTemplates.length > 0 && (
@@ -1814,7 +1819,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                               e.stopPropagation();
                               clearTemplates(e);
                             }}
-                            className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors shrink-0"
+                            className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors shrink-0 self-start mt-1"
                             aria-label="Clear all selected templates"
                           >
                             <X size={10} strokeWidth={2.5} className="shrink-0" aria-hidden />
@@ -1822,7 +1827,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                         )}
                         <button
                           type="button"
-                          className="p-1 text-slate-400 hover:text-slate-600 shrink-0 rounded"
+                          className="p-1 text-slate-400 hover:text-slate-600 shrink-0 rounded mt-0.5"
                           aria-label="Toggle template list"
                           onClick={() => {
                             if (!isTemplateMenuOpen) setTemplateFilter('');

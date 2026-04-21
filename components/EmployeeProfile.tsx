@@ -5,7 +5,6 @@ import {
   Search,
   MoreVertical,
   ChevronDown,
-  ChevronUp,
   Maximize2,
   Filter,
   Columns,
@@ -23,9 +22,11 @@ import {
   ArrowRightLeft,
   Eye,
   PenLine,
+  Mail,
+  ChevronRight,
 } from 'lucide-react';
 import { Employee } from '../types';
-import { PRIMARY_PURPLE, PROFILE_DOCUMENT_FOLDER_LOCATIONS } from '../constants';
+import { PRIMARY_PURPLE } from '../constants';
 
 interface EmployeeProfileProps {
   employee: Employee;
@@ -114,15 +115,13 @@ interface DocumentsSectionProps {
 
 type ProfileDocTab = 'action_required' | 'documents';
 
-const ACTION_REQUIRED_BADGE = 4;
-const DOCUMENTS_TAB_TOTAL = 8;
-
 interface ActionChildRow {
   id: string;
   name: string;
   status: string;
   dotClass: string;
-  showSign?: boolean;
+  /** Kale George (prototype signer) still needs to complete this document. */
+  needsKaleSignature: boolean;
 }
 
 interface ActionPacketRow {
@@ -137,72 +136,298 @@ interface ActionPacketRow {
 const ACTION_REQUIRED_PACKETS: ActionPacketRow[] = [
   {
     id: 'ap1',
-    name: 'Employee onboarding packet',
+    name: 'Employee onboarding packet — Engineering',
     status: 'In progress',
     dotClass: 'bg-amber-500',
-    lastModified: '01/13/25 14:47:21 PST',
+    lastModified: '2026-04-21T18:30:00.000Z',
     children: [
-      { id: 'ap1c1', name: 'Offer letter', status: 'Not started', dotClass: 'bg-slate-400' },
-      { id: 'ap1c2', name: 'Cryptography Policy', status: 'Not started', dotClass: 'bg-slate-400', showSign: true },
-      { id: 'ap1c3', name: 'Office Policy', status: 'In progress', dotClass: 'bg-amber-500', showSign: true },
+      { id: 'ap1c1', name: 'Offer letter.pdf', status: 'Completed', dotClass: 'bg-teal-500', needsKaleSignature: false },
+      { id: 'ap1c2', name: 'Mutual NDA.pdf', status: 'Completed', dotClass: 'bg-teal-500', needsKaleSignature: false },
       {
-        id: 'ap1c4',
-        name: 'Sales commission - OPTIONAL APPENDIXES',
-        status: 'In progress',
-        dotClass: 'bg-amber-500',
-        showSign: true,
+        id: 'ap1c3',
+        name: 'Equity grant acknowledgment.pdf',
+        status: 'Yet to sign',
+        dotClass: 'bg-slate-400',
+        needsKaleSignature: true,
       },
-      { id: 'ap1c5', name: 'SOC2-GAP-REPORT', status: 'Not started', dotClass: 'bg-slate-400', showSign: true },
+    ],
+  },
+  {
+    id: 'ap2',
+    name: 'Q2 IT access & security attestation',
+    status: 'Yet to sign',
+    dotClass: 'bg-slate-400',
+    lastModified: '2026-04-21T08:45:00.000Z',
+    children: [
+      {
+        id: 'ap2c1',
+        name: 'SOC2 subprocessor acknowledgment.pdf',
+        status: 'Yet to sign',
+        dotClass: 'bg-slate-400',
+        needsKaleSignature: true,
+      },
+      {
+        id: 'ap2c2',
+        name: 'Laptop return policy.pdf',
+        status: 'Yet to sign',
+        dotClass: 'bg-slate-400',
+        needsKaleSignature: true,
+      },
     ],
   },
 ];
 
-type DocumentsTabRow =
-  | {
-      id: string;
-      kind: 'folder';
-      name: string;
-      isDefault: boolean;
-      folderId: string;
-      lastModified: string;
-      archived?: boolean;
-    }
-  | {
-      id: string;
-      kind: 'file';
-      name: string;
-      folderId: string;
-      lastModified: string;
-      archived?: boolean;
-    };
+const ACTION_REQUIRED_BADGE = ACTION_REQUIRED_PACKETS.reduce(
+  (n, p) => n + p.children.filter((c) => c.needsKaleSignature).length,
+  0
+);
 
-const COMPLETED_FILE_ROWS: Array<{ id: string; name: string; folderId: string }> = [
-  { id: 'ff-crypto', name: 'Cryptography Policy', folderId: 'folder-company-policies' },
-  { id: 'ff-office', name: 'Office Policy', folderId: 'folder-company-policies' },
-  { id: 'ff-sales', name: 'Sales commission - OPTIONAL APPENDIXES', folderId: 'folder-company-policies' },
-  { id: 'ff-soc2', name: 'SOC2-GAP-REPORT', folderId: 'folder-company-policies' },
+type ProfileFile = { id: string; name: string; lastModified: string; archived: boolean };
+type ProfileSubfolder = { id: string; name: string; files: ProfileFile[] };
+type ProfileRootFolder = {
+  id: string;
+  name: string;
+  isDefault?: boolean;
+  subfolders: ProfileSubfolder[];
+  files: ProfileFile[];
+};
+
+const PROFILE_DOCS_TREE: ProfileRootFolder[] = [
+  {
+    id: 'folder-confidential',
+    name: 'Confidential',
+    isDefault: true,
+    subfolders: [
+      {
+        id: 'folder-confidential/hr-audits',
+        name: 'HR audit worksheets',
+        files: [
+          {
+            id: 'pf-c1',
+            name: '2025 I-9 reverification tracker.xlsx',
+            lastModified: '2026-01-13T22:47:21.000Z',
+            archived: false,
+          },
+          {
+            id: 'pf-c2',
+            name: 'Compensation band calibration — working.xlsx',
+            lastModified: '2026-01-12T15:30:00.000Z',
+            archived: false,
+          },
+        ],
+      },
+    ],
+    files: [
+      {
+        id: 'pf-c3',
+        name: 'Executive compensation policy — superseded.pdf',
+        lastModified: '2026-01-10T09:00:00.000Z',
+        archived: true,
+      },
+    ],
+  },
+  {
+    id: 'folder-notice',
+    name: 'Notice',
+    isDefault: true,
+    subfolders: [],
+    files: [
+      {
+        id: 'pf-n1',
+        name: 'COBRA qualifying event letter template.pdf',
+        lastModified: '2026-01-08T11:20:00.000Z',
+        archived: false,
+      },
+      {
+        id: 'pf-n2',
+        name: '2024 benefits premium change notice.pdf',
+        lastModified: '2025-06-01T10:00:00.000Z',
+        archived: true,
+      },
+    ],
+  },
+  {
+    id: 'folder-ee-performance',
+    name: 'EE Performance Record',
+    subfolders: [
+      {
+        id: 'folder-ee-performance/2025',
+        name: '2025 cycles',
+        files: [
+          {
+            id: 'pf-e1',
+            name: 'Self-review — Kale George.pdf',
+            lastModified: '2026-01-14T18:00:00.000Z',
+            archived: false,
+          },
+        ],
+      },
+    ],
+    files: [],
+  },
+  {
+    id: 'folder-company-policies',
+    name: 'Company policies',
+    subfolders: [
+      {
+        id: 'folder-company-policies/handbook',
+        name: 'Handbook & codes of conduct',
+        files: [
+          {
+            id: 'pf-h1',
+            name: 'Anti-harassment acknowledgment — v3.pdf',
+            lastModified: '2026-01-05T08:00:00.000Z',
+            archived: false,
+          },
+          {
+            id: 'pf-h2',
+            name: 'Archived employee handbook 2023.pdf',
+            lastModified: '2024-01-01T08:00:00.000Z',
+            archived: true,
+          },
+        ],
+      },
+    ],
+    files: [
+      {
+        id: 'pf-p1',
+        name: 'Cryptography Policy.pdf',
+        lastModified: '2026-01-13T22:47:21.000Z',
+        archived: false,
+      },
+      {
+        id: 'pf-p2',
+        name: 'Office attendance & hybrid policy.pdf',
+        lastModified: '2026-01-13T22:47:21.000Z',
+        archived: false,
+      },
+    ],
+  },
 ];
 
-function buildDocumentsTabRows(): DocumentsTabRow[] {
-  const folders: DocumentsTabRow[] = PROFILE_DOCUMENT_FOLDER_LOCATIONS.map((f) => ({
-    id: `row-folder-${f.id}`,
-    kind: 'folder',
-    name: f.name,
-    isDefault: f.isDefault,
-    folderId: f.id,
-    lastModified: '01/13/25 14:47:21 PST',
-  }));
-  const files: DocumentsTabRow[] = COMPLETED_FILE_ROWS.map((r) => ({
-    id: r.id,
-    kind: 'file',
-    name: r.name,
-    folderId: r.folderId,
-    lastModified: '01/13/25 14:47:21 PST',
-  }));
-  return [...folders, ...files];
+function countListedDocuments(tree: ProfileRootFolder[], includeArchived: boolean): number {
+  let n = 0;
+  for (const root of tree) {
+    n += root.files.filter((f) => includeArchived || !f.archived).length;
+    for (const sub of root.subfolders) {
+      n += sub.files.filter((f) => includeArchived || !f.archived).length;
+    }
+  }
+  return n;
 }
 
-const DOCUMENTS_TAB_ROWS = buildDocumentsTabRows();
+const DOCUMENTS_TAB_TOTAL = countListedDocuments(PROFILE_DOCS_TREE, false);
+
+type DocumentsListRow =
+  | { id: string; kind: 'folder'; name: string; isDefault?: boolean; dateLabel: string; navPath: string[] }
+  | { id: string; kind: 'file'; name: string; dateLabel: string; archived: boolean };
+
+function formatProfileTs(iso: string): string {
+  try {
+    const s = new Date(iso).toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZone: 'America/Los_Angeles',
+    });
+    return `${s} PST`;
+  } catch {
+    return iso;
+  }
+}
+
+function buildDocumentsListRows(
+  tree: ProfileRootFolder[],
+  navPath: string[],
+  showArchive: boolean,
+  search: string
+): DocumentsListRow[] {
+  const q = search.trim().toLowerCase();
+  const match = (name: string) => !q || name.toLowerCase().includes(q);
+
+  if (navPath.length === 0) {
+    const rows: DocumentsListRow[] = tree.map((root) => {
+      const dates: string[] = [
+        ...root.files.map((f) => f.lastModified),
+        ...root.subfolders.flatMap((s) => s.files.map((f) => f.lastModified)),
+      ].sort();
+      const latest = dates.length ? formatProfileTs(dates[dates.length - 1]) : '—';
+      return {
+        id: root.id,
+        kind: 'folder',
+        name: root.name,
+        isDefault: root.isDefault,
+        dateLabel: latest,
+        navPath: [root.id],
+      };
+    });
+    return rows.filter((r) => match(r.name));
+  }
+
+  const root = tree.find((t) => t.id === navPath[0]);
+  if (!root) return [];
+
+  if (navPath.length === 1) {
+    const rows: DocumentsListRow[] = [];
+    for (const sub of root.subfolders) {
+      const dates = sub.files.map((f) => f.lastModified).sort();
+      const latest = dates.length ? formatProfileTs(dates[dates.length - 1]) : '—';
+      rows.push({
+        id: sub.id,
+        kind: 'folder',
+        name: sub.name,
+        dateLabel: latest,
+        navPath: [root.id, sub.id],
+      });
+    }
+    for (const f of root.files) {
+      if (!showArchive && f.archived) continue;
+      if (!match(f.name)) continue;
+      rows.push({
+        id: f.id,
+        kind: 'file',
+        name: f.name,
+        dateLabel: formatProfileTs(f.lastModified),
+        archived: f.archived,
+      });
+    }
+    return rows.filter((r) => r.kind === 'file' || match(r.name));
+  }
+
+  const sub = root.subfolders.find((s) => s.id === navPath[1]);
+  if (!sub) return [];
+  const rows: DocumentsListRow[] = [];
+  for (const f of sub.files) {
+    if (!showArchive && f.archived) continue;
+    if (!match(f.name)) continue;
+    rows.push({
+      id: f.id,
+      kind: 'file',
+      name: f.name,
+      dateLabel: formatProfileTs(f.lastModified),
+      archived: f.archived,
+    });
+  }
+  return rows;
+}
+
+function breadcrumbForPath(navPath: string[]): { label: string; path: string[] }[] {
+  const crumbs: { label: string; path: string[] }[] = [{ label: 'Documents', path: [] }];
+  if (navPath.length >= 1) {
+    const root = PROFILE_DOCS_TREE.find((t) => t.id === navPath[0]);
+    if (root) crumbs.push({ label: root.name, path: [root.id] });
+  }
+  if (navPath.length >= 2) {
+    const root = PROFILE_DOCS_TREE.find((t) => t.id === navPath[0]);
+    const sub = root?.subfolders.find((s) => s.id === navPath[1]);
+    if (sub) crumbs.push({ label: sub.name, path: [navPath[0], navPath[1]] });
+  }
+  return crumbs;
+}
 
 const ACCENT_SIGN = '#FDB71C';
 
@@ -226,6 +451,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [showArchive, setShowArchive] = useState(false);
   const [listSearch, setListSearch] = useState('');
+  const [docNavPath, setDocNavPath] = useState<string[]>([]);
   const addMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -238,14 +464,18 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const visibleDocumentRows = useMemo(() => {
-    const q = listSearch.trim().toLowerCase();
-    return DOCUMENTS_TAB_ROWS.filter((row) => {
-      if (!showArchive && row.archived) return false;
-      if (!q) return true;
-      return row.name.toLowerCase().includes(q);
-    });
-  }, [listSearch, showArchive]);
+  useEffect(() => {
+    if (profileTab === 'documents') {
+      setDocNavPath([]);
+    }
+  }, [profileTab]);
+
+  const visibleDocumentRows = useMemo(
+    () => buildDocumentsListRows(PROFILE_DOCS_TREE, docNavPath, showArchive, listSearch),
+    [docNavPath, showArchive, listSearch]
+  );
+
+  const docCrumbs = useMemo(() => breadcrumbForPath(docNavPath), [docNavPath]);
 
   const selectedCount = useMemo(
     () => visibleDocumentRows.reduce((n, r) => (selectedIds[r.id] ? n + 1 : n), 0),
@@ -418,6 +648,29 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
         </div>
 
         <div className="overflow-x-auto pb-24">
+          {profileTab === 'documents' && (
+            <div className="px-6 py-3 bg-white border-b border-slate-100 flex flex-wrap items-center gap-2 text-[13px]">
+              {docCrumbs.map((c, i) => {
+                const isLast = i === docCrumbs.length - 1;
+                return (
+                  <React.Fragment key={`${c.path.join('/')}-${i}`}>
+                    {i > 0 && <span className="text-slate-300 font-medium px-0.5">›</span>}
+                    {isLast ? (
+                      <span className="font-bold text-slate-900">{c.label}</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setDocNavPath(c.path)}
+                        className="font-bold text-[#2563eb] hover:underline bg-transparent border-none p-0 cursor-pointer"
+                      >
+                        {c.label}
+                      </button>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          )}
           {profileTab === 'action_required' ? (
             <table className="w-full text-left border-collapse min-w-[720px]">
               <thead>
@@ -445,11 +698,13 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
               </thead>
               <tbody className="text-[13px] text-slate-700">
                 {ACTION_REQUIRED_PACKETS.map((packet) => {
+                  const pending = packet.children.filter((c) => c.needsKaleSignature);
+                  if (pending.length === 0) return null;
                   const open = expandedPackets[packet.id] ?? true;
                   return (
                     <React.Fragment key={packet.id}>
-                      <tr className="border-b border-slate-100 bg-white hover:bg-slate-50/50">
-                        <td className="px-6 py-3.5">
+                      <tr className="border-b border-slate-100 bg-white hover:bg-slate-50/60 transition-colors">
+                        <td className="px-6 py-4 align-middle">
                           <div className="flex items-center gap-2 min-w-0">
                             <button
                               type="button"
@@ -459,30 +714,37 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                                   [packet.id]: !(p[packet.id] ?? true),
                                 }))
                               }
-                              className="p-0.5 text-slate-500 hover:bg-slate-100 rounded"
+                              className="p-0.5 text-slate-400 hover:text-slate-700 rounded shrink-0"
                               aria-expanded={open}
                               aria-label={open ? 'Collapse' : 'Expand'}
                             >
-                              {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                              {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                             </button>
-                            <FileText size={18} className="text-slate-400 shrink-0" />
-                            <span className="font-bold text-slate-900 truncate">{packet.name}</span>
+                            <Mail size={18} className="text-slate-500 shrink-0" strokeWidth={2} />
+                            <button
+                              type="button"
+                              onClick={() => onOpenEnvelope?.(packet.name)}
+                              className="font-bold truncate max-w-[min(280px,100%)] min-w-0 text-left bg-transparent border-none p-0 cursor-pointer hover:underline"
+                              style={{ color: PRIMARY_PURPLE }}
+                            >
+                              {packet.name}
+                            </button>
                           </div>
                         </td>
-                        <td className="px-4 py-3.5">
+                        <td className="px-4 py-4 align-middle">
                           <div className="flex items-center gap-2">
                             <span className={`w-2 h-2 rounded-full shrink-0 ${packet.dotClass}`} />
-                            <span className="font-bold text-slate-800">{packet.status}</span>
+                            <span className="font-semibold capitalize text-slate-800">{packet.status}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3.5 text-slate-500 font-medium tabular-nums">
-                          {packet.lastModified}
+                        <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
+                          {formatProfileTs(packet.lastModified)}
                         </td>
-                        <td className="px-4 py-3.5">
+                        <td className="px-4 py-4 align-middle text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-2 flex-nowrap">
                             <button
                               type="button"
-                              onClick={() => onOpenEnvelope?.('{Envelope Name}')}
+                              onClick={() => onOpenEnvelope?.(packet.name)}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-900 bg-white hover:bg-slate-50"
                             >
                               <Eye size={14} />
@@ -508,50 +770,48 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                         </td>
                       </tr>
                       {open &&
-                        packet.children.map((child) => (
-                          <tr key={child.id} className="border-b border-slate-100 bg-slate-50/40 hover:bg-slate-50/80">
-                            <td className="px-6 py-3 pl-14">
+                        pending.map((child) => (
+                          <tr key={child.id} className="border-b border-slate-100 bg-slate-50/50 hover:bg-slate-50/90">
+                            <td className="px-6 py-4 pl-14 align-middle">
                               <div className="flex items-center gap-2 min-w-0">
-                                <FileText size={18} className="text-slate-400 shrink-0" />
-                                <span className="font-semibold text-slate-900 truncate">{child.name}</span>
+                                <FileText size={16} className="text-slate-400 shrink-0" />
+                                <span className="font-bold text-slate-900 truncate">{child.name}</span>
                               </div>
                             </td>
-                            <td className="px-4 py-3.5">
+                            <td className="px-4 py-4 align-middle">
                               <div className="flex items-center gap-2">
                                 <span className={`w-2 h-2 rounded-full shrink-0 ${child.dotClass}`} />
-                                <span className="font-bold text-slate-800">{child.status}</span>
+                                <span className="font-semibold text-slate-800">{child.status}</span>
                               </div>
                             </td>
-                            <td className="px-4 py-3.5 text-slate-500 font-medium tabular-nums">
-                              {packet.lastModified}
+                            <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
+                              {formatProfileTs(packet.lastModified)}
                             </td>
-                            <td className="px-4 py-3.5">
+                            <td className="px-4 py-4 align-middle text-right whitespace-nowrap">
                               <div className="flex items-center justify-end gap-1">
                                 <button
                                   type="button"
-                                  className="p-2 text-slate-500 hover:bg-white rounded-lg"
+                                  className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
                                   aria-label="View"
                                 >
                                   <Eye size={18} />
                                 </button>
                                 <button
                                   type="button"
-                                  className="p-2 text-slate-500 hover:bg-white rounded-lg"
+                                  className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
                                   aria-label="Download"
                                 >
                                   <Download size={18} />
                                 </button>
-                                {child.showSign ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => onReviewDocument?.()}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-slate-900"
-                                    style={{ backgroundColor: ACCENT_SIGN }}
-                                  >
-                                    <PenLine size={14} />
-                                    Sign
-                                  </button>
-                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => onReviewDocument?.()}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-slate-900"
+                                  style={{ backgroundColor: ACCENT_SIGN }}
+                                >
+                                  <PenLine size={14} />
+                                  Sign
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -608,24 +868,32 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                         ) : (
                           <FileText size={18} className="text-slate-400 shrink-0" />
                         )}
-                        <span
-                          className="text-[#2563eb] font-bold cursor-pointer hover:underline truncate"
+                        <button
+                          type="button"
+                          className="text-[#2563eb] font-bold cursor-pointer hover:underline truncate text-left bg-transparent border-none p-0"
                           onClick={() => {
-                            if (row.kind === 'file' && row.name === 'Cryptography Policy') {
+                            if (row.kind === 'folder') {
+                              setDocNavPath(row.navPath);
+                            } else {
                               onReviewDocument?.();
                             }
                           }}
                         >
                           {row.name}
-                        </span>
+                        </button>
                         {row.kind === 'folder' && row.isDefault && (
                           <span className="text-[10px] font-black text-slate-800 bg-slate-100 px-1 py-0.5 rounded leading-none uppercase shrink-0">
                             Default
                           </span>
                         )}
+                        {row.kind === 'file' && row.archived && (
+                          <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                            Archived
+                          </span>
+                        )}
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 text-slate-500 font-medium tabular-nums">{row.lastModified}</td>
+                    <td className="px-4 py-3.5 text-slate-500 font-medium tabular-nums">{row.dateLabel}</td>
                     <td className="px-4 py-3.5 text-right">
                       <button
                         type="button"
