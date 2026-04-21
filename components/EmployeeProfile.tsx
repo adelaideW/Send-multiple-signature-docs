@@ -24,9 +24,12 @@ import {
   PenLine,
   Mail,
   ChevronRight,
+  X,
 } from 'lucide-react';
 import { Employee } from '../types';
 import { PRIMARY_PURPLE } from '../constants';
+import DocumentPreviewModal from './DocumentPreviewModal';
+import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
 
 interface EmployeeProfileProps {
   employee: Employee;
@@ -452,6 +455,8 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   const [showArchive, setShowArchive] = useState(false);
   const [listSearch, setListSearch] = useState('');
   const [docNavPath, setDocNavPath] = useState<string[]>([]);
+  const [profilePreviewName, setProfilePreviewName] = useState<string | null>(null);
+  const [profileDocSnack, setProfileDocSnack] = useState<string | null>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -469,6 +474,12 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
       setDocNavPath([]);
     }
   }, [profileTab]);
+
+  useEffect(() => {
+    if (!profileDocSnack) return;
+    const t = setTimeout(() => setProfileDocSnack(null), SNACKBAR_AUTO_DISMISS_MS);
+    return () => clearTimeout(t);
+  }, [profileDocSnack]);
 
   const visibleDocumentRows = useMemo(
     () => buildDocumentsListRows(PROFILE_DOCS_TREE, docNavPath, showArchive, listSearch),
@@ -503,21 +514,21 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   return (
     <div className="pr-8 pb-8 pl-4 pt-0">
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm min-h-[500px] overflow-hidden relative">
-        <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100 gap-4 flex-wrap">
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50/80 shrink-0">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm min-h-[500px] overflow-hidden relative flex">
+        <aside className="w-52 shrink-0 border-r border-slate-100 bg-slate-50/60 py-4 px-2">
+          <nav className="space-y-1" aria-label="Employee documents">
             <button
               type="button"
               onClick={() => setProfileTab('action_required')}
-              className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors inline-flex items-center gap-2 ${
+              className={`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-[13px] font-bold transition-colors ${
                 profileTab === 'action_required'
                   ? 'bg-[#7A005D] text-white shadow-sm'
-                  : 'text-slate-700 hover:bg-white'
+                  : 'text-slate-800 hover:bg-white border border-transparent hover:border-slate-200'
               }`}
             >
-              Action required
+              <span>Action required</span>
               <span
-                className={`min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                className={`min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center tabular-nums ${
                   profileTab === 'action_required' ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
                 }`}
               >
@@ -527,13 +538,13 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
             <button
               type="button"
               onClick={() => setProfileTab('documents')}
-              className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors inline-flex items-center gap-2 ${
+              className={`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-[13px] font-bold transition-colors ${
                 profileTab === 'documents'
                   ? 'bg-[#7A005D] text-white shadow-sm'
-                  : 'text-slate-700 hover:bg-white'
+                  : 'text-slate-800 hover:bg-white border border-transparent hover:border-slate-200'
               }`}
             >
-              Documents
+              <span>Documents</span>
               <span
                 className={`text-[11px] font-bold tabular-nums ${
                   profileTab === 'documents' ? 'text-white/90' : 'text-slate-500'
@@ -542,7 +553,12 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                 {DOCUMENTS_TAB_TOTAL}
               </span>
             </button>
-          </div>
+          </nav>
+        </aside>
+
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
+        <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100 gap-4 flex-wrap">
+          <div className="min-w-[120px] shrink-0" aria-hidden />
 
           <div className="flex items-center space-x-3">
             <button
@@ -803,15 +819,6 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                                 >
                                   <Download size={18} />
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => onReviewDocument?.()}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-slate-900"
-                                  style={{ backgroundColor: ACCENT_SIGN }}
-                                >
-                                  <PenLine size={14} />
-                                  Sign
-                                </button>
                               </div>
                             </td>
                           </tr>
@@ -875,7 +882,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                             if (row.kind === 'folder') {
                               setDocNavPath(row.navPath);
                             } else {
-                              onReviewDocument?.();
+                              setProfilePreviewName(row.name);
                             }
                           }}
                         >
@@ -951,7 +958,32 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
             </div>
           </div>
         )}
+        </div>
       </div>
+
+      {profilePreviewName && (
+        <DocumentPreviewModal
+          name={profilePreviewName}
+          onClose={() => setProfilePreviewName(null)}
+          onDownload={() => setProfileDocSnack('Document downloaded')}
+          zIndexClass="z-[450000]"
+        />
+      )}
+      {profileDocSnack && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[460000] pointer-events-none px-4 w-full max-w-md">
+          <div className="pointer-events-auto bg-[#C6F6F1] border border-[#A5F3E9] rounded-lg shadow-lg flex items-center px-4 py-3 gap-3">
+            <span className="text-[13px] font-bold text-[#134E4A] flex-1">{profileDocSnack}</span>
+            <button
+              type="button"
+              className="text-[#134E4A]/70 hover:text-[#134E4A] p-1"
+              onClick={() => setProfileDocSnack(null)}
+              aria-label="Dismiss"
+            >
+              <X size={18} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

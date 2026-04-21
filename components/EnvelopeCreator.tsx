@@ -1755,10 +1755,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   {uploadedFiles.length > 0 ? (
                     <DisabledWithTooltip message="Remove uploaded documents to allow selecting documents">
                       <div className="rounded-lg">
-                        <div className="w-full border border-slate-200 rounded-lg min-h-[44px] px-3 py-2 flex items-start gap-2 bg-slate-50 opacity-50 overflow-hidden">
-                          <Search className="text-slate-400 shrink-0 mt-1" size={16} />
-                          <div className="flex flex-1 min-w-0 items-start gap-2 min-h-[28px]">
-                            <div className="flex-1 min-h-0 max-h-[3.25rem] overflow-y-auto overflow-x-hidden flex flex-wrap gap-1.5 content-start custom-scrollbar">
+                        <div className="w-full border border-slate-200 rounded-lg min-h-[44px] px-3 py-2 flex items-stretch gap-2 bg-slate-50 opacity-50 overflow-hidden">
+                          <Search className="text-slate-400 shrink-0 mt-1.5" size={16} />
+                          <div className="flex flex-1 min-w-0 flex-col gap-1.5 py-0.5 min-h-0">
+                            <div className="max-h-[3.25rem] min-h-0 overflow-y-auto overflow-x-hidden flex flex-wrap gap-1.5 content-start custom-scrollbar">
                               {selectedTemplates.map((t) => (
                                 <span
                                   key={t}
@@ -1768,18 +1768,20 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                 </span>
                               ))}
                             </div>
-                            <span className="text-slate-400 text-sm shrink-0 self-center">Search</span>
+                            <span className="text-slate-400 text-[13px] leading-tight">Search</span>
                           </div>
-                          <ChevronDown size={14} className="text-slate-400 shrink-0 mt-1" />
+                          <ChevronDown size={14} className="text-slate-400 shrink-0 self-end mb-0.5" />
                         </div>
                       </div>
                     </DisabledWithTooltip>
                   ) : (
                     <>
-                      <div className="w-full border border-slate-200 rounded-lg bg-white flex items-start gap-2 px-3 py-2 min-h-[44px]">
-                        <Search className="text-slate-400 shrink-0 mt-1" size={16} />
-                        <div className="flex flex-1 min-w-0 items-start gap-2">
-                          <div className="flex-1 min-h-0 max-h-[3.25rem] overflow-y-auto overflow-x-hidden flex flex-wrap gap-1.5 content-start custom-scrollbar">
+                      <div
+                        className={`w-full border border-slate-200 rounded-lg bg-white flex items-stretch gap-2 px-3 py-2 min-h-[44px] focus-within:ring-2 focus-within:ring-[#5AA5E7]/45 focus-within:border-[#5AA5E7]`}
+                      >
+                        <Search className="text-slate-400 shrink-0 mt-1.5" size={16} />
+                        <div className="flex flex-1 min-w-0 flex-col gap-1.5 min-h-0 py-0.5">
+                          <div className="max-h-[3.25rem] min-h-0 overflow-y-auto overflow-x-hidden flex flex-wrap gap-1.5 content-start custom-scrollbar">
                             {selectedTemplates.map((t) => (
                               <span
                                 key={t}
@@ -1809,33 +1811,36 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             }}
                             onFocus={() => setIsTemplateMenuOpen(true)}
                             placeholder="Search"
-                            className={`w-[7rem] sm:w-32 shrink-0 self-center text-sm outline-none bg-transparent py-0.5 ${INPUT_FOCUS}`}
+                            className="w-full text-[13px] outline-none bg-transparent border-none p-0 min-h-[1.125rem] placeholder:text-slate-400"
+                            aria-label="Search templates"
                           />
                         </div>
-                        {selectedTemplates.length > 0 && (
+                        <div className="flex flex-col items-end justify-end gap-0.5 shrink-0 self-stretch pb-0.5">
+                          {selectedTemplates.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearTemplates(e);
+                              }}
+                              className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+                              aria-label="Clear all selected templates"
+                            >
+                              <X size={10} strokeWidth={2.5} className="shrink-0" aria-hidden />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              clearTemplates(e);
+                            className="p-1 text-slate-400 hover:text-slate-600 rounded mt-auto"
+                            aria-label="Toggle template list"
+                            onClick={() => {
+                              if (!isTemplateMenuOpen) setTemplateFilter('');
+                              setIsTemplateMenuOpen((o) => !o);
                             }}
-                            className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors shrink-0 self-start mt-1"
-                            aria-label="Clear all selected templates"
                           >
-                            <X size={10} strokeWidth={2.5} className="shrink-0" aria-hidden />
+                            <ChevronDown size={14} className={isTemplateMenuOpen ? 'rotate-180' : ''} />
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          className="p-1 text-slate-400 hover:text-slate-600 shrink-0 rounded mt-0.5"
-                          aria-label="Toggle template list"
-                          onClick={() => {
-                            if (!isTemplateMenuOpen) setTemplateFilter('');
-                            setIsTemplateMenuOpen((o) => !o);
-                          }}
-                        >
-                          <ChevronDown size={14} className={isTemplateMenuOpen ? 'rotate-180' : ''} />
-                        </button>
+                        </div>
                       </div>
                       {isTemplateMenuOpen && (
                         <div className="absolute z-[300] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-[360px] overflow-hidden">

@@ -26,6 +26,7 @@ import {
 import { PRIMARY_PURPLE } from '../constants';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
 import SendReminderModal from './SendReminderModal';
+import DocumentPreviewModal from './DocumentPreviewModal';
 
 export type EnvelopeStatus =
   | 'draft'
@@ -862,32 +863,12 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
           );
         })()}
       {previewDoc && (
-        <div
-          className="fixed inset-0 z-[300000] flex flex-col bg-white"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Document preview"
-        >
-          <div className="h-14 border-b border-slate-200 flex items-center justify-between px-4 shrink-0 bg-white">
-            <h2 className="text-sm font-bold text-slate-900 truncate pr-4">{previewDoc.name}</h2>
-            <button
-              type="button"
-              className="px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 rounded-lg"
-              onClick={() => setPreviewDoc(null)}
-            >
-              Close
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto bg-slate-100 p-8 flex justify-center">
-            <div className="w-full max-w-3xl bg-white shadow-xl rounded-lg border border-slate-200 p-10 min-h-[480px] text-slate-700 text-sm leading-relaxed">
-              <p className="font-bold text-slate-900 mb-4">Static preview</p>
-              <p>
-                This is a prototype preview of <strong>{previewDoc.name}</strong>. In production, the received PDF
-                would render here.
-              </p>
-            </div>
-          </div>
-        </div>
+        <DocumentPreviewModal
+          name={previewDoc.name}
+          onClose={() => setPreviewDoc(null)}
+          onDownload={() => setDocSnack('Document downloaded')}
+          zIndexClass="z-[300000]"
+        />
       )}
       {docSnack && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[300000] pointer-events-none px-4 w-full max-w-md">

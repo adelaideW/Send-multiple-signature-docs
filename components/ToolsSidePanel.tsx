@@ -16,9 +16,16 @@ interface ToolsSidePanelProps {
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   onGoHome: () => void;
+  /** Documents hub → People tab (main Documents workspace). */
+  onOpenDocumentsPeopleTab?: () => void;
 }
 
-const ToolsSidePanel: React.FC<ToolsSidePanelProps> = ({ collapsed, onCollapsedChange, onGoHome }) => {
+const ToolsSidePanel: React.FC<ToolsSidePanelProps> = ({
+  collapsed,
+  onCollapsedChange,
+  onGoHome,
+  onOpenDocumentsPeopleTab,
+}) => {
   const [activeId, setActiveId] = useState('documents');
   const [megaMenuOpen, setMegaMenuOpen] = useState(false);
   const headerBtnRef = useRef<HTMLButtonElement>(null);
@@ -63,6 +70,7 @@ const ToolsSidePanel: React.FC<ToolsSidePanelProps> = ({ collapsed, onCollapsedC
           onClose={() => setMegaMenuOpen(false)}
           anchorRef={headerBtnRef}
           onHome={onGoHome}
+          onOpenDocumentsPeopleTab={onOpenDocumentsPeopleTab}
         />
       </div>
 
@@ -76,7 +84,10 @@ const ToolsSidePanel: React.FC<ToolsSidePanelProps> = ({ collapsed, onCollapsedC
               <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => setActiveId(item.id)}
+                  onClick={() => {
+                    setActiveId(item.id);
+                    if (item.id === 'documents') onOpenDocumentsPeopleTab?.();
+                  }}
                   title={collapsed ? item.label : undefined}
                   className={`w-full flex items-center gap-3 rounded-lg text-left transition-colors ${
                     collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5'

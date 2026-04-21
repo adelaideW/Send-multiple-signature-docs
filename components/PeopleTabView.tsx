@@ -79,6 +79,7 @@ interface PeopleTabViewProps {
   onResendEnvelope?: (packetId: string) => void;
   hubTab?: string;
   onHubTabChange?: (tab: string) => void;
+  onOpenDocumentsPeopleTab?: () => void;
 }
 
 const PeopleTabView: React.FC<PeopleTabViewProps> = ({
@@ -95,6 +96,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   onResendEnvelope,
   hubTab: hubTabProp,
   onHubTabChange,
+  onOpenDocumentsPeopleTab,
 }) => {
   const [internalHubTab, setInternalHubTab] = useState('People');
   const activeTab = hubTabProp ?? internalHubTab;
@@ -120,6 +122,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
         collapsed={toolsSideCollapsed}
         onCollapsedChange={setToolsSideCollapsed}
         onGoHome={onGoHome}
+        onOpenDocumentsPeopleTab={onOpenDocumentsPeopleTab}
       />
 
       <div className="flex-1 flex flex-col min-w-0">

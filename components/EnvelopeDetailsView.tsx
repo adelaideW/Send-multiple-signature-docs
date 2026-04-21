@@ -21,6 +21,7 @@ import type { EnvelopeStatus, DocumentSigningStatus } from './EnvelopesListView'
 import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
 import SendReminderModal from './SendReminderModal';
+import DocumentPreviewModal from './DocumentPreviewModal';
 
 export interface DetailRecipientRow {
   id: string;
@@ -538,26 +539,12 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
         )}
 
       {preview && (
-        <div className="fixed inset-0 z-[400000] flex flex-col bg-white" role="dialog" aria-modal="true">
-          <div className="h-14 border-b border-slate-200 flex items-center justify-between px-4 shrink-0">
-            <h2 className="text-sm font-bold text-slate-900 truncate pr-4">{preview.name}</h2>
-            <button
-              type="button"
-              className="px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 rounded-lg"
-              onClick={() => setPreview(null)}
-            >
-              Close
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto bg-slate-100 p-8 flex justify-center">
-            <div className="w-full max-w-3xl bg-white shadow-xl rounded-lg border border-slate-200 p-10 min-h-[480px] text-slate-700 text-sm leading-relaxed">
-              <p className="font-bold text-slate-900 mb-4">Static preview</p>
-              <p>
-                Prototype preview of <strong>{preview.name}</strong>. The received document would display here.
-              </p>
-            </div>
-          </div>
-        </div>
+        <DocumentPreviewModal
+          name={preview.name}
+          onClose={() => setPreview(null)}
+          onDownload={() => setDocSnack('Document downloaded')}
+          zIndexClass="z-[400000]"
+        />
       )}
 
       {docSnack && (

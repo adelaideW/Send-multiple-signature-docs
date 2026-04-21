@@ -380,6 +380,11 @@ const App: React.FC = () => {
     });
   }, []);
 
+  const openDocumentsPeopleHub = useCallback(() => {
+    setDocumentsHubTab('People');
+    setViewHistory(['people_tab']);
+  }, []);
+
   const handleSignComplete = useCallback(
     (packetId: string) => {
       const ts = new Date().toISOString();
@@ -504,6 +509,7 @@ const App: React.FC = () => {
       {currentView === 'people_tab' && (
         <PeopleTabView 
           onGoHome={() => setViewHistory(['landing'])} 
+          onOpenDocumentsPeopleTab={openDocumentsPeopleHub}
           onSendDocument={() => {
             editingPacketIdRef.current = null;
             setPdfPlacementSeed(false);
@@ -545,6 +551,7 @@ const App: React.FC = () => {
             collapsed={profileToolsCollapsed}
             onCollapsedChange={setProfileToolsCollapsed}
             onGoHome={() => setViewHistory(['landing'])}
+            onOpenDocumentsPeopleTab={openDocumentsPeopleHub}
           />
           <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
             <Header onProfileClick={() => navigateTo('profile')} />
