@@ -46,7 +46,7 @@ const Header: React.FC<HeaderProps> = ({ onProfileClick }) => {
 
         <button
           type="button"
-          onClick={onProfileClick}
+          onClick={() => onProfileClick?.()}
           className="flex items-center space-x-3 cursor-pointer rounded-lg p-1 -mr-1 hover:bg-slate-50 transition-colors text-left"
           aria-label="Open user profile"
         >

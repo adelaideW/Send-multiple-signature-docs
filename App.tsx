@@ -142,6 +142,13 @@ const App: React.FC = () => {
         <PeopleTabView 
           onGoHome={() => setViewHistory(['landing'])} 
           onSendDocument={() => navigateTo('envelope')}
+          onProfileClick={() => navigateTo('profile')}
+          onNewTemplate={() => {
+            setTemplateEditorSeed(null);
+            setTemplateEditorMode('create');
+            navigateTo('template_editor');
+          }}
+          onSendEnvelope={() => navigateTo('envelope')}
         />
       )}
 

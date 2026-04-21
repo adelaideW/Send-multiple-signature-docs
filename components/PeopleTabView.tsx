@@ -29,6 +29,8 @@ import {
   Upload,
   FileText
 } from 'lucide-react';
+import TemplatesLibraryView from './TemplatesLibraryView';
+import EnvelopesListView from './EnvelopesListView';
 
 interface PeopleRow {
   id: string;
@@ -74,9 +76,18 @@ const ProgressBar: React.FC<{ completed: number; total: number }> = ({ completed
 interface PeopleTabViewProps {
   onGoHome: () => void;
   onSendDocument?: () => void;
+  onProfileClick?: () => void;
+  onNewTemplate?: () => void;
+  onSendEnvelope?: () => void;
 }
 
-const PeopleTabView: React.FC<PeopleTabViewProps> = ({ onGoHome, onSendDocument }) => {
+const PeopleTabView: React.FC<PeopleTabViewProps> = ({
+  onGoHome,
+  onSendDocument,
+  onProfileClick,
+  onNewTemplate,
+  onSendEnvelope,
+}) => {
   const [activeTab, setActiveTab] = useState('People');
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -157,12 +168,17 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({ onGoHome, onSendDocument 
               <Grid size={20} className="cursor-pointer" />
             </div>
             <div className="h-6 w-px bg-slate-200"></div>
-            <div className="flex items-center space-x-3 cursor-pointer">
+            <button
+              type="button"
+              onClick={() => onProfileClick?.()}
+              className="flex items-center space-x-3 cursor-pointer rounded-lg p-1 -mr-1 hover:bg-slate-50 transition-colors text-left"
+              aria-label="Open user profile"
+            >
               <span className="text-[13px] font-bold text-slate-700">Acme</span>
-              <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200">
+              <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 shrink-0">
                 <img src="https://picsum.photos/id/64/100/100" alt="Profile" />
               </div>
-            </div>
+            </button>
           </div>
         </header>
 
@@ -197,157 +213,176 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({ onGoHome, onSendDocument 
             ))}
           </div>
 
-          {/* Action Bar Container */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-8">
-            <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100">
-              <div className="flex items-center space-x-2">
-                <span className="text-[14px] font-bold text-slate-900">People</span>
-                <span className="text-slate-400 font-medium text-[14px]">· 14</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <button className="flex items-center space-x-2 px-4 py-1.5 border border-slate-200 rounded-lg text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors">
-                  <Bell size={14} />
-                  <span>Send reminder</span>
-                </button>
-                <div className="flex items-center space-x-1 pl-2 border-l border-slate-100">
-                  <button className="p-1.5 text-slate-400 hover:text-slate-600"><Settings2 size={18} /></button>
-                  <button className="p-1.5 text-slate-400 hover:text-slate-600"><Columns size={18} /></button>
-                  <button className="p-1.5 text-slate-400 hover:text-slate-600"><Maximize2 size={18} /></button>
+          {activeTab === 'People' && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-8">
+              <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100">
+                <div className="flex items-center space-x-2">
+                  <span className="text-[14px] font-bold text-slate-900">People</span>
+                  <span className="text-slate-400 font-medium text-[14px]">· 14</span>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <button className="flex items-center space-x-2 px-4 py-1.5 border border-slate-200 rounded-lg text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors">
+                    <Bell size={14} />
+                    <span>Send reminder</span>
+                  </button>
+                  <div className="flex items-center space-x-1 pl-2 border-l border-slate-100">
+                    <button className="p-1.5 text-slate-400 hover:text-slate-600"><Settings2 size={18} /></button>
+                    <button className="p-1.5 text-slate-400 hover:text-slate-600"><Columns size={18} /></button>
+                    <button className="p-1.5 text-slate-400 hover:text-slate-600"><Maximize2 size={18} /></button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="px-6 py-3 flex items-center justify-between border-b border-slate-100 bg-white">
-              <div className="relative w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                <input 
-                  type="text" 
-                  placeholder="Search" 
-                  className="w-full border border-slate-200 rounded-lg py-1.5 pl-9 pr-4 text-[12px] outline-none"
-                />
+              <div className="px-6 py-3 flex items-center justify-between border-b border-slate-100 bg-white">
+                <div className="relative w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <input 
+                    type="text" 
+                    placeholder="Search" 
+                    className="w-full border border-slate-200 rounded-lg py-1.5 pl-9 pr-4 text-[12px] outline-none"
+                  />
+                </div>
+                <button className="flex items-center space-x-2 text-[13px] font-bold text-slate-700">
+                  <Filter size={16} />
+                  <span>Filter</span>
+                </button>
               </div>
-              <button className="flex items-center space-x-2 text-[13px] font-bold text-slate-700">
-                <Filter size={16} />
-                <span>Filter</span>
-              </button>
-            </div>
 
-            <div className="overflow-x-auto overflow-visible">
-              <table className="w-full text-left border-collapse min-w-[1000px]">
-                <thead>
-                  <tr className="bg-white border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase tracking-wider">
-                    <th className="px-6 py-3">
-                      <div className="flex items-center space-x-1 cursor-pointer">
-                        <span>Name</span>
-                        <ChevronDown size={14} className="text-slate-300" />
-                      </div>
-                    </th>
-                    <th className="px-6 py-3">
-                      <div className="flex items-center space-x-1 cursor-pointer">
-                        <span>Employee status</span>
-                        <ChevronDown size={14} className="text-slate-300" />
-                      </div>
-                    </th>
-                    <th className="px-6 py-3">
-                      <div className="flex items-center space-x-1 cursor-pointer">
-                        <span>Documents</span>
-                        <ChevronDown size={14} className="text-slate-300" />
-                      </div>
-                    </th>
-                    <th className="px-6 py-3">
-                      <div className="flex items-center space-x-1 cursor-pointer">
-                        <span>Envelopes</span>
-                        <ChevronDown size={14} className="text-slate-300" />
-                      </div>
-                    </th>
-                    <th className="px-6 py-3">
-                      <div className="flex items-center space-x-1 cursor-pointer">
-                        <span>Notices</span>
-                        <ChevronDown size={14} className="text-slate-300" />
-                      </div>
-                    </th>
-                    <th className="px-6 py-3 w-12"></th>
-                  </tr>
-                </thead>
-                <tbody className="text-[13px] text-slate-700">
-                  {PEOPLE_DATA.map((row) => (
-                    <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-9 h-9 rounded-full overflow-hidden border border-slate-100 bg-slate-50 shrink-0 shadow-sm">
-                            <img src={row.avatar} alt="" className="w-full h-full object-cover" />
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="font-bold text-slate-900 leading-tight">{row.name}</span>
-                            <span className="text-slate-400 text-[11px] font-medium leading-tight mt-0.5">{row.department}</span>
-                          </div>
+              <div className="overflow-x-auto overflow-visible">
+                <table className="w-full text-left border-collapse min-w-[1000px]">
+                  <thead>
+                    <tr className="bg-white border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase tracking-wider">
+                      <th className="px-6 py-3">
+                        <div className="flex items-center space-x-1 cursor-pointer">
+                          <span>Name</span>
+                          <ChevronDown size={14} className="text-slate-300" />
                         </div>
-                      </td>
-                      <td className="px-6 py-4 font-bold text-slate-800">
-                        {row.status}
-                      </td>
-                      <td className="px-6 py-4">
-                        {typeof row.documents === 'string' ? (
-                          <span className="text-slate-400 font-medium">{row.documents}</span>
-                        ) : (
-                          <ProgressBar completed={row.documents.completed} total={row.documents.total} />
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        {typeof row.envelopes === 'string' ? (
-                          <span className="text-slate-400 font-medium">{row.envelopes}</span>
-                        ) : (
-                          <ProgressBar completed={row.envelopes.completed} total={row.envelopes.total} />
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        {row.notices === '0 received' ? (
-                          <span className="text-slate-400 font-medium">{row.notices}</span>
-                        ) : (
-                          <span className="text-[#2563eb] font-bold hover:underline cursor-pointer">{row.notices}</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right overflow-visible">
-                        <div className="relative inline-block text-left" ref={activeMenuId === row.id ? menuRef : null}>
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveMenuId(activeMenuId === row.id ? null : row.id);
-                            }}
-                            className="p-1 hover:bg-slate-200 rounded text-slate-400 transition-colors"
-                          >
-                            <MoreVertical size={18} />
-                          </button>
-                          
-                          {activeMenuId === row.id && (
-                            <div className="absolute right-0 top-full mt-1 w-60 bg-white border border-slate-200 rounded-xl shadow-xl z-[120] py-2 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                              <button 
-                                onClick={() => { 
-                                  onSendDocument?.(); 
-                                  setActiveMenuId(null); 
-                                }} 
-                                className="w-full flex items-center space-x-4 px-5 py-3 text-slate-900 hover:bg-slate-50 transition-colors text-left"
-                              >
-                                <Send size={18} className="text-slate-800" />
-                                <span className="text-[14px] font-medium">Send document</span>
-                              </button>
-                              <button 
-                                onClick={() => setActiveMenuId(null)}
-                                className="w-full flex items-center space-x-4 px-5 py-3 text-slate-900 hover:bg-slate-50 transition-colors text-left"
-                              >
-                                <Upload size={18} className="text-slate-800" />
-                                <span className="text-[14px] font-medium">Upload document</span>
-                              </button>
-                            </div>
-                          )}
+                      </th>
+                      <th className="px-6 py-3">
+                        <div className="flex items-center space-x-1 cursor-pointer">
+                          <span>Employee status</span>
+                          <ChevronDown size={14} className="text-slate-300" />
                         </div>
-                      </td>
+                      </th>
+                      <th className="px-6 py-3">
+                        <div className="flex items-center space-x-1 cursor-pointer">
+                          <span>Documents</span>
+                          <ChevronDown size={14} className="text-slate-300" />
+                        </div>
+                      </th>
+                      <th className="px-6 py-3">
+                        <div className="flex items-center space-x-1 cursor-pointer">
+                          <span>Envelopes</span>
+                          <ChevronDown size={14} className="text-slate-300" />
+                        </div>
+                      </th>
+                      <th className="px-6 py-3">
+                        <div className="flex items-center space-x-1 cursor-pointer">
+                          <span>Notices</span>
+                          <ChevronDown size={14} className="text-slate-300" />
+                        </div>
+                      </th>
+                      <th className="px-6 py-3 w-12"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="text-[13px] text-slate-700">
+                    {PEOPLE_DATA.map((row) => (
+                      <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-9 h-9 rounded-full overflow-hidden border border-slate-100 bg-slate-50 shrink-0 shadow-sm">
+                              <img src={row.avatar} alt="" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="font-bold text-slate-900 leading-tight">{row.name}</span>
+                              <span className="text-slate-400 text-[11px] font-medium leading-tight mt-0.5">{row.department}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 font-bold text-slate-800">
+                          {row.status}
+                        </td>
+                        <td className="px-6 py-4">
+                          {typeof row.documents === 'string' ? (
+                            <span className="text-slate-400 font-medium">{row.documents}</span>
+                          ) : (
+                            <ProgressBar completed={row.documents.completed} total={row.documents.total} />
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {typeof row.envelopes === 'string' ? (
+                            <span className="text-slate-400 font-medium">{row.envelopes}</span>
+                          ) : (
+                            <ProgressBar completed={row.envelopes.completed} total={row.envelopes.total} />
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {row.notices === '0 received' ? (
+                            <span className="text-slate-400 font-medium">{row.notices}</span>
+                          ) : (
+                            <span className="text-[#2563eb] font-bold hover:underline cursor-pointer">{row.notices}</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-right overflow-visible">
+                          <div className="relative inline-block text-left" ref={activeMenuId === row.id ? menuRef : null}>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMenuId(activeMenuId === row.id ? null : row.id);
+                              }}
+                              className="p-1 hover:bg-slate-200 rounded text-slate-400 transition-colors"
+                            >
+                              <MoreVertical size={18} />
+                            </button>
+                            
+                            {activeMenuId === row.id && (
+                              <div className="absolute right-0 top-full mt-1 w-60 bg-white border border-slate-200 rounded-xl shadow-xl z-[120] py-2 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                                <button 
+                                  onClick={() => { 
+                                    onSendDocument?.(); 
+                                    setActiveMenuId(null); 
+                                  }} 
+                                  className="w-full flex items-center space-x-4 px-5 py-3 text-slate-900 hover:bg-slate-50 transition-colors text-left"
+                                >
+                                  <Send size={18} className="text-slate-800" />
+                                  <span className="text-[14px] font-medium">Send document</span>
+                                </button>
+                                <button 
+                                  onClick={() => setActiveMenuId(null)}
+                                  className="w-full flex items-center space-x-4 px-5 py-3 text-slate-900 hover:bg-slate-50 transition-colors text-left"
+                                >
+                                  <Upload size={18} className="text-slate-800" />
+                                  <span className="text-[14px] font-medium">Upload document</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
+
+          {activeTab === 'Templates' && (
+            <div className="mb-8">
+              <TemplatesLibraryView onNewTemplate={onNewTemplate} />
+            </div>
+          )}
+
+          {activeTab === 'Envelopes' && (
+            <div className="mb-8">
+              <EnvelopesListView onSendEnvelope={onSendEnvelope} />
+            </div>
+          )}
+
+          {(activeTab === 'Rules' || activeTab === 'Settings') && (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 py-16 text-center text-slate-500 text-sm font-medium mb-8">
+              {activeTab} view is not available in this demo.
+            </div>
+          )}
         </main>
       </div>
     </div>
