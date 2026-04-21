@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
   Search,
   Filter,
@@ -9,10 +9,17 @@ import {
   Columns,
   Maximize2,
   MoreVertical,
+  Mail,
   FileText,
   Eye,
   PenLine,
   Download,
+  Send,
+  RefreshCw,
+  ClipboardX,
+  UserRound,
+  Trash2,
+  XCircle,
 } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
 
@@ -24,73 +31,124 @@ export type EnvelopeStatus =
   | 'completed'
   | 'voided';
 
+/** Per-document signing state inside an envelope */
+export type DocumentSigningStatus = 'draft' | 'yet to sign' | 'completed' | 'correcting';
+
+export interface EnvelopeDocumentRow {
+  id: string;
+  name: string;
+  status: DocumentSigningStatus;
+  lastModified: string;
+}
+
 export interface EnvelopeTableRow {
   id: string;
   name: string;
   status: EnvelopeStatus;
-  /** ISO timestamp for sorting */
   lastModified: string;
-  archived: boolean;
-  children?: EnvelopeTableRow[];
+  /** When false, "voided" envelopes are hidden unless "Show voided" is on */
+  adminIsSigner: boolean;
+  children?: EnvelopeDocumentRow[];
 }
+
+const DANGER = '#B03E1E';
 
 const MOCK_ENVELOPES: EnvelopeTableRow[] = [
   {
-    id: 'p1',
-    name: 'Employee onboarding packet',
+    id: 'e1',
+    name: 'Employee onboarding packet — Engineering',
     status: 'in progress',
     lastModified: '2026-04-21T18:30:00.000Z',
-    archived: false,
+    adminIsSigner: true,
     children: [
-      { id: 'c1', name: 'Offer letter', status: 'completed', lastModified: '2026-04-20T10:00:00.000Z', archived: false },
-      { id: 'c2', name: 'NDA', status: 'yet to sign', lastModified: '2026-04-21T17:00:00.000Z', archived: false },
-      { id: 'c3', name: 'I-9', status: 'draft', lastModified: '2026-04-19T09:15:00.000Z', archived: false },
+      { id: 'e1d1', name: 'Offer letter', status: 'completed', lastModified: '2026-04-20T10:00:00.000Z' },
+      { id: 'e1d2', name: 'Mutual NDA', status: 'completed', lastModified: '2026-04-20T11:30:00.000Z' },
+      { id: 'e1d3', name: 'Equity grant acknowledgment', status: 'yet to sign', lastModified: '2026-04-21T17:00:00.000Z' },
     ],
   },
   {
-    id: 'p2',
-    name: 'Finance compliance bundle Q1',
-    status: 'correcting',
-    lastModified: '2026-04-20T22:10:00.000Z',
-    archived: false,
-    children: [
-      { id: 'c4', name: 'SOX attestation', status: 'correcting', lastModified: '2026-04-20T22:10:00.000Z', archived: false },
-    ],
-  },
-  {
-    id: 'p3',
-    name: 'Untitled packet',
-    status: 'draft',
-    lastModified: '2026-04-18T12:00:00.000Z',
-    archived: false,
-  },
-  {
-    id: 'p4',
-    name: 'Testing Adelaide handoff',
+    id: 'e2',
+    name: 'Q2 IT access & security attestation',
     status: 'yet to sign',
     lastModified: '2026-04-21T08:45:00.000Z',
-    archived: false,
+    adminIsSigner: true,
+    children: [
+      { id: 'e2d1', name: 'SOC2 subprocessor acknowledgment', status: 'yet to sign', lastModified: '2026-04-21T08:45:00.000Z' },
+      { id: 'e2d2', name: 'Laptop return policy', status: 'yet to sign', lastModified: '2026-04-21T08:45:00.000Z' },
+    ],
   },
   {
-    id: 'p5',
-    name: 'Archived — Old vendor packet',
-    status: 'voided',
-    lastModified: '2025-11-01T15:00:00.000Z',
-    archived: true,
+    id: 'e3',
+    name: 'HR policy rollout — remote work',
+    status: 'yet to sign',
+    lastModified: '2026-04-19T14:20:00.000Z',
+    adminIsSigner: false,
+    children: [
+      { id: 'e3d1', name: 'Remote work agreement', status: 'yet to sign', lastModified: '2026-04-19T14:20:00.000Z' },
+      { id: 'e3d2', name: 'Equipment stipend form', status: 'yet to sign', lastModified: '2026-04-19T14:20:00.000Z' },
+    ],
   },
   {
-    id: 'p6',
-    name: 'Completed policy rollout',
+    id: 'e4',
+    name: 'Finance contractor SOW bundle',
+    status: 'in progress',
+    lastModified: '2026-04-20T16:00:00.000Z',
+    adminIsSigner: false,
+    children: [
+      { id: 'e4d1', name: 'Statement of work', status: 'completed', lastModified: '2026-04-18T09:00:00.000Z' },
+      { id: 'e4d2', name: 'MSA amendment', status: 'completed', lastModified: '2026-04-19T10:00:00.000Z' },
+      { id: 'e4d3', name: 'Invoice authorization', status: 'yet to sign', lastModified: '2026-04-20T16:00:00.000Z' },
+    ],
+  },
+  {
+    id: 'e5',
+    name: 'Draft: Open enrollment benefits packet',
+    status: 'draft',
+    lastModified: '2026-04-17T11:00:00.000Z',
+    adminIsSigner: true,
+    children: [
+      { id: 'e5d1', name: 'Medical plan election', status: 'draft', lastModified: '2026-04-17T11:00:00.000Z' },
+      { id: 'e5d2', name: 'HSA enrollment', status: 'draft', lastModified: '2026-04-17T11:00:00.000Z' },
+    ],
+  },
+  {
+    id: 'e6',
+    name: 'Offer letter correction — Product Design',
+    status: 'correcting',
+    lastModified: '2026-04-20T22:10:00.000Z',
+    adminIsSigner: true,
+    children: [
+      { id: 'e6d1', name: 'Revised offer letter', status: 'correcting', lastModified: '2026-04-20T22:10:00.000Z' },
+    ],
+  },
+  {
+    id: 'e7',
+    name: 'Executive compensation acknowledgment',
     status: 'completed',
-    lastModified: '2026-03-10T11:20:00.000Z',
-    archived: true,
+    lastModified: '2026-03-28T09:15:00.000Z',
+    adminIsSigner: false,
+    children: [
+      { id: 'e7d1', name: 'Compensation summary', status: 'completed', lastModified: '2026-03-28T09:15:00.000Z' },
+      { id: 'e7d2', name: 'Clawback policy', status: 'completed', lastModified: '2026-03-27T16:00:00.000Z' },
+    ],
+  },
+  {
+    id: 'e8',
+    name: 'Terminated — vendor NDA (voided)',
+    status: 'voided',
+    lastModified: '2026-02-14T13:45:00.000Z',
+    adminIsSigner: true,
+    children: [
+      { id: 'e8d1', name: 'Vendor NDA', status: 'completed', lastModified: '2026-02-10T12:00:00.000Z' },
+      { id: 'e8d2', name: 'Data handling addendum', status: 'yet to sign', lastModified: '2026-02-14T13:45:00.000Z' },
+    ],
   },
 ];
 
 type SortKey = 'name' | 'status' | 'lastModified';
 type SortDir = 'asc' | 'desc';
 
-function statusDotClass(status: EnvelopeStatus): string {
+function envelopeStatusDotClass(status: EnvelopeStatus): string {
   switch (status) {
     case 'draft':
     case 'voided':
@@ -107,7 +165,22 @@ function statusDotClass(status: EnvelopeStatus): string {
   }
 }
 
-function statusLabel(status: EnvelopeStatus): string {
+function documentStatusDotClass(status: DocumentSigningStatus): string {
+  switch (status) {
+    case 'draft':
+      return 'bg-slate-400';
+    case 'yet to sign':
+      return 'bg-red-500';
+    case 'correcting':
+      return 'bg-amber-500';
+    case 'completed':
+      return 'bg-emerald-500';
+    default:
+      return 'bg-slate-400';
+  }
+}
+
+function statusLabelText(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
@@ -134,16 +207,161 @@ function compareRows(a: EnvelopeTableRow, b: EnvelopeTableRow, key: SortKey, dir
   return dir === 'asc' ? cmp : -cmp;
 }
 
+type MoreMenuVariant = 'yet_to_sign' | 'in_progress' | 'draft' | 'correcting' | 'completed_voided';
+
+function moreMenuVariantForEnvelope(status: EnvelopeStatus): MoreMenuVariant {
+  switch (status) {
+    case 'yet to sign':
+      return 'yet_to_sign';
+    case 'in progress':
+      return 'in_progress';
+    case 'draft':
+      return 'draft';
+    case 'correcting':
+      return 'correcting';
+    case 'completed':
+    case 'voided':
+      return 'completed_voided';
+    default:
+      return 'completed_voided';
+  }
+}
+
+interface EnvelopeMoreMenuProps {
+  variant: MoreMenuVariant;
+  onClose: () => void;
+}
+
+const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onClose }) => {
+  const itemClass = 'w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50';
+  const dangerItemClass = `w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold hover:bg-slate-50`;
+  const IconWrap: React.FC<{ children: React.ReactNode; danger?: boolean }> = ({ children, danger }) => (
+    <span className={`shrink-0 ${danger ? '' : 'text-slate-800'}`}>{children}</span>
+  );
+
+  if (variant === 'yet_to_sign') {
+    return (
+      <div className="py-1 min-w-[220px]" role="menu">
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
+          Download
+        </button>
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><UserRound size={16} strokeWidth={2} /></IconWrap>
+          Reassign
+        </button>
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><ClipboardX size={16} strokeWidth={2} /></IconWrap>
+          Decline to sign
+        </button>
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><Bell size={16} strokeWidth={2} /></IconWrap>
+          Send reminder
+        </button>
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><RefreshCw size={16} strokeWidth={2} /></IconWrap>
+          Make correction
+        </button>
+        <button type="button" className={`${dangerItemClass}`} style={{ color: DANGER }} role="menuitem" onClick={onClose}>
+          <IconWrap danger><XCircle size={16} strokeWidth={2} style={{ color: DANGER }} /></IconWrap>
+          Void
+        </button>
+      </div>
+    );
+  }
+
+  if (variant === 'in_progress') {
+    return (
+      <div className="py-1 min-w-[200px]" role="menu">
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
+          Download
+        </button>
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><Bell size={16} strokeWidth={2} /></IconWrap>
+          Send reminder
+        </button>
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><RefreshCw size={16} strokeWidth={2} /></IconWrap>
+          Make correction
+        </button>
+        <button type="button" className={dangerItemClass} style={{ color: DANGER }} role="menuitem" onClick={onClose}>
+          <IconWrap danger><XCircle size={16} strokeWidth={2} style={{ color: DANGER }} /></IconWrap>
+          Void
+        </button>
+      </div>
+    );
+  }
+
+  if (variant === 'draft') {
+    return (
+      <div className="py-1 min-w-[180px]" role="menu">
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
+          Download
+        </button>
+        <button type="button" className={dangerItemClass} style={{ color: DANGER }} role="menuitem" onClick={onClose}>
+          <IconWrap danger><Trash2 size={16} strokeWidth={2} style={{ color: DANGER }} /></IconWrap>
+          Remove
+        </button>
+      </div>
+    );
+  }
+
+  if (variant === 'correcting') {
+    return (
+      <div className="py-1 min-w-[180px]" role="menu">
+        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+          <IconWrap><XCircle size={16} strokeWidth={2} /></IconWrap>
+          Void
+        </button>
+        <button type="button" className={dangerItemClass} style={{ color: DANGER }} role="menuitem" onClick={onClose}>
+          <IconWrap danger><Trash2 size={16} strokeWidth={2} style={{ color: DANGER }} /></IconWrap>
+          Remove
+        </button>
+      </div>
+    );
+  }
+
+  /* completed / voided */
+  return (
+    <div className="py-1 min-w-[180px]" role="menu">
+      <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+        <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
+        Download
+      </button>
+      <button type="button" className={dangerItemClass} style={{ color: DANGER }} role="menuitem" onClick={onClose}>
+        <IconWrap danger><Trash2 size={16} strokeWidth={2} style={{ color: DANGER }} /></IconWrap>
+        Remove
+      </button>
+    </div>
+  );
+};
+
 interface EnvelopesListViewProps {
   onSendEnvelope?: () => void;
 }
 
+const btnOutline = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-800 bg-white hover:bg-slate-50 shadow-sm';
+const btnOrange = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-white bg-[#F5A623] hover:bg-[#e09420] shadow-sm';
 const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope }) => {
   const [search, setSearch] = useState('');
-  const [showArchived, setShowArchived] = useState(false);
+  const [showVoided, setShowVoided] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('lastModified');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ p1: true });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ e1: true });
+  const [openMoreId, setOpenMoreId] = useState<string | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setOpenMoreId(null);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -155,7 +373,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
   };
 
   const filteredRoots = useMemo(() => {
-    let rows = MOCK_ENVELOPES.filter((r) => showArchived || !r.archived);
+    let rows = MOCK_ENVELOPES.filter((r) => showVoided || r.status !== 'voided');
     const q = search.trim().toLowerCase();
     if (q) {
       rows = rows.filter((r) => {
@@ -165,9 +383,12 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
       });
     }
     return [...rows].sort((a, b) => compareRows(a, b, sortKey, sortDir));
-  }, [search, showArchived, sortKey, sortDir]);
+  }, [search, showVoided, sortKey, sortDir]);
 
-  const visibleCount = useMemo(() => MOCK_ENVELOPES.filter((r) => showArchived || !r.archived).length, [showArchived]);
+  const visibleCount = useMemo(
+    () => MOCK_ENVELOPES.filter((r) => showVoided || r.status !== 'voided').length,
+    [showVoided]
+  );
 
   const SortHeader: React.FC<{ label: string; colKey: SortKey }> = ({ label, colKey }) => (
     <button
@@ -183,46 +404,123 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
     </button>
   );
 
-  const renderActions = (row: EnvelopeTableRow, isChild: boolean) => {
-    const canSign = row.status === 'yet to sign';
-    const signMuted = row.status === 'correcting' || row.status === 'voided' || row.status === 'completed';
-    return (
-      <div className="flex items-center justify-end gap-2 flex-wrap">
+  const renderEnvelopeActions = (row: EnvelopeTableRow) => {
+    const { status, adminIsSigner } = row;
+    const moreVariant = moreMenuVariantForEnvelope(status);
+
+    const moreBtn = (
+      <div className="relative inline-block" ref={openMoreId === row.id ? moreMenuRef : null}>
         <button
           type="button"
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-700 bg-white hover:bg-slate-50"
+          className="p-2 text-slate-500 hover:text-slate-800 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 shadow-sm"
+          aria-label="More actions"
+          onClick={() => setOpenMoreId((id) => (id === row.id ? null : row.id))}
         >
-          <Eye size={14} />
-          View
+          <MoreVertical size={16} />
         </button>
-        <button
-          type="button"
-          disabled={signMuted}
-          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-bold text-white ${
-            signMuted ? 'bg-amber-200 text-amber-800/80 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600'
-          }`}
-        >
-          <PenLine size={14} />
-          Sign
-        </button>
-        {!isChild && (
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-700 bg-white hover:bg-slate-50"
-          >
+        {openMoreId === row.id && (
+          <div className="absolute right-0 top-full mt-1 z-[140] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+            <EnvelopeMoreMenu variant={moreVariant} onClose={() => setOpenMoreId(null)} />
+          </div>
+        )}
+      </div>
+    );
+
+    if (status === 'draft') {
+      return (
+        <div className="flex items-center justify-end gap-2 flex-wrap">
+          <button type="button" className={btnOutline}>
             <PenLine size={14} />
             Edit
           </button>
-        )}
-        <button type="button" className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
-          <Download size={16} />
+          {moreBtn}
+        </div>
+      );
+    }
+
+    if (status === 'correcting') {
+      return (
+        <div className="flex items-center justify-end gap-2 flex-wrap">
+          <button type="button" className={btnOutline}>
+            <PenLine size={14} />
+            Edit
+          </button>
+          <button type="button" className={btnOutline}>
+            <Send size={14} />
+            Resend
+          </button>
+          {moreBtn}
+        </div>
+      );
+    }
+
+    if (status === 'completed' || status === 'voided') {
+      return (
+        <div className="flex items-center justify-end gap-2 flex-wrap">
+          <button type="button" className={btnOutline}>
+            <Eye size={14} />
+            View
+          </button>
+          {moreBtn}
+        </div>
+      );
+    }
+
+    if (status === 'yet to sign') {
+      if (adminIsSigner) {
+        return (
+          <div className="flex items-center justify-end gap-2 flex-wrap">
+            <button type="button" className={btnOutline}>
+              <Eye size={14} />
+              View
+            </button>
+            <button type="button" className={btnOrange}>
+              <PenLine size={14} />
+              Sign
+            </button>
+            {moreBtn}
+          </div>
+        );
+      }
+      return (
+        <div className="flex items-center justify-end gap-2 flex-wrap">
+          <button type="button" className={btnOutline}>
+            <Eye size={14} />
+            View
+          </button>
+          {moreBtn}
+        </div>
+      );
+    }
+
+    /* in progress */
+    if (adminIsSigner) {
+      return (
+        <div className="flex items-center justify-end gap-2 flex-wrap">
+          <button type="button" className={btnOutline}>
+            <Eye size={14} />
+            View
+          </button>
+          <button type="button" className={btnOrange}>
+            <PenLine size={14} />
+            Sign
+          </button>
+          {moreBtn}
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        <button type="button" className={btnOutline}>
+          <Eye size={14} />
+          View
         </button>
-        <button type="button" className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
-          <MoreVertical size={16} />
-        </button>
+        {moreBtn}
       </div>
     );
   };
+
+  const hasChildren = (row: EnvelopeTableRow) => !!row.children && row.children.length > 0;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -234,7 +532,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            className="inline-flex items-center gap-2 px-4 py-1.5 border border-slate-200 rounded-lg text-[13px] font-bold text-slate-700 hover:bg-slate-50"
+            className="inline-flex items-center gap-2 px-4 py-1.5 border border-slate-200 rounded-lg text-[13px] font-bold text-slate-800 bg-white hover:bg-slate-50 shadow-sm"
           >
             <Bell size={14} />
             Send reminder
@@ -270,26 +568,26 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search"
-              className="w-full border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-[13px] outline-none focus:ring-2 focus:ring-[#7A005D]/20"
+              className="w-full border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-[13px] outline-none focus:ring-2 focus:ring-[#7A005D]/20 bg-white"
             />
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <button
               type="button"
-              onClick={() => setShowArchived((v) => !v)}
+              onClick={() => setShowVoided((v) => !v)}
               className={`w-11 h-6 rounded-full relative transition-colors border shadow-inner ${
-                showArchived ? 'bg-[#7A005D] border-[#7A005D]' : 'bg-slate-300 border-slate-400/20'
+                showVoided ? 'bg-[#7A005D] border-[#7A005D]' : 'bg-slate-300 border-slate-400/20'
               }`}
-              aria-pressed={showArchived}
-              aria-label="Show archived envelopes"
+              aria-pressed={showVoided}
+              aria-label="Show voided envelopes"
             >
               <span
                 className={`absolute top-[2px] w-5 h-5 bg-white rounded-full shadow border border-slate-200 transition-all ${
-                  showArchived ? 'left-[22px]' : 'left-[2px]'
+                  showVoided ? 'left-[22px]' : 'left-[2px]'
                 }`}
               />
             </button>
-            <span className="text-[13px] text-slate-900 font-bold whitespace-nowrap">Show archived</span>
+            <span className="text-[13px] text-slate-900 font-bold whitespace-nowrap">Show voided</span>
           </div>
         </div>
         <button
@@ -304,7 +602,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse min-w-[880px]">
           <thead>
-            <tr className="border-b border-slate-200 bg-white">
+            <tr className="border-b border-slate-200 bg-white text-[11px] text-slate-500 font-bold uppercase tracking-wider">
               <th className="px-6 py-3 w-[40%]">
                 <SortHeader label="Name" colKey="name" />
               </th>
@@ -323,9 +621,9 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
             {filteredRoots.map((row) => (
               <React.Fragment key={row.id}>
                 <tr className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
-                  <td className="px-6 py-3.5">
+                  <td className="px-6 py-4 align-middle">
                     <div className="flex items-center gap-2 min-w-0">
-                      {row.children && row.children.length > 0 ? (
+                      {hasChildren(row) ? (
                         <button
                           type="button"
                           onClick={() => setExpanded((e) => ({ ...e, [row.id]: !e[row.id] }))}
@@ -335,49 +633,64 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
                           {expanded[row.id] ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                         </button>
                       ) : (
-                        <span className="w-5 shrink-0" />
+                        <span className="w-[22px] shrink-0 inline-block" />
                       )}
-                      <FileText size={18} className="text-slate-400 shrink-0" />
+                      <Mail size={18} className="text-slate-500 shrink-0" strokeWidth={2} />
                       <span className="font-bold truncate" style={{ color: PRIMARY_PURPLE }}>
                         {row.name}
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="px-4 py-4 align-middle">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotClass(row.status)}`} />
-                      <span className="font-semibold capitalize">{statusLabel(row.status)}</span>
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${envelopeStatusDotClass(row.status)}`} />
+                      <span className="font-semibold capitalize">{statusLabelText(row.status)}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5 text-slate-500 font-medium tabular-nums">
+                  <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
                     {formatLastModified(row.lastModified)}
                   </td>
-                  <td className="px-6 py-3.5">{renderActions(row, false)}</td>
+                  <td className="px-6 py-4 align-middle">{renderEnvelopeActions(row)}</td>
                 </tr>
                 {row.children &&
                   expanded[row.id] &&
-                  row.children
-                    .filter((c) => showArchived || !c.archived)
-                    .map((child) => (
-                      <tr key={child.id} className="border-b border-slate-100 bg-slate-50/40 hover:bg-slate-50/80">
-                        <td className="px-6 py-2.5 pl-14">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FileText size={16} className="text-slate-400 shrink-0" />
-                            <span className="font-semibold text-slate-700 truncate">{child.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${statusDotClass(child.status)}`} />
-                            <span className="font-semibold capitalize text-[12px]">{statusLabel(child.status)}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5 text-slate-500 font-medium text-[12px] tabular-nums">
-                          {formatLastModified(child.lastModified)}
-                        </td>
-                        <td className="px-6 py-2.5">{renderActions(child, true)}</td>
-                      </tr>
-                    ))}
+                  row.children.map((child) => (
+                    <tr key={child.id} className="border-b border-slate-100 bg-slate-50/50 hover:bg-slate-50/90">
+                      <td className="px-6 py-4 pl-14 align-middle">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText size={16} className="text-slate-400 shrink-0" />
+                          <span className="font-semibold text-slate-800 truncate">{child.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 align-middle">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${documentStatusDotClass(child.status)}`} />
+                          <span className="font-semibold capitalize text-[13px]">{statusLabelText(child.status)}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-slate-500 font-medium text-[13px] tabular-nums align-middle">
+                        {formatLastModified(child.lastModified)}
+                      </td>
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
+                            aria-label="View document"
+                          >
+                            <Eye size={18} strokeWidth={2} />
+                          </button>
+                          <button
+                            type="button"
+                            className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
+                            aria-label="Download document"
+                          >
+                            <Download size={18} strokeWidth={2} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
               </React.Fragment>
             ))}
           </tbody>

@@ -182,37 +182,38 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-white p-8 custom-scrollbar">
-          {/* Page Title & Help Link */}
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="w-10 h-10 bg-[#7A005D] text-white rounded-lg flex items-center justify-center shadow-sm">
-              <div className="p-1.5 border-2 border-white/40 rounded-md">
-                 <FileText size={18} strokeWidth={2.5} />
+        <main className="flex-1 overflow-y-auto bg-white custom-scrollbar">
+          <div className="sticky top-0 z-30 bg-white border-b border-slate-200 px-8 pt-8 pb-0 mb-8 shadow-sm">
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="w-10 h-10 bg-[#7A005D] text-white rounded-lg flex items-center justify-center shadow-sm">
+                <div className="p-1.5 border-2 border-white/40 rounded-md">
+                  <FileText size={18} strokeWidth={2.5} />
+                </div>
               </div>
+              <h1 className="text-2xl font-bold text-slate-900">Documents</h1>
+              <a href="#" className="flex items-center space-x-1.5 px-2.5 py-1 border border-slate-200 rounded-md text-[11px] font-bold text-slate-600 hover:bg-slate-50">
+                <span>Help docs</span>
+                <ExternalLink size={12} />
+              </a>
             </div>
-            <h1 className="text-2xl font-bold text-slate-900">Documents</h1>
-            <a href="#" className="flex items-center space-x-1.5 px-2.5 py-1 border border-slate-200 rounded-md text-[11px] font-bold text-slate-600 hover:bg-slate-50">
-              <span>Help docs</span>
-              <ExternalLink size={12} />
-            </a>
+
+            <div className="flex items-center space-x-8">
+              {['People', 'Templates', 'Envelopes', 'Rules', 'Settings'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`pb-3 text-[14px] font-bold transition-all relative ${
+                    activeTab === tab ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {tab}
+                  {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#7A005D]" />}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Navigation Tabs */}
-          <div className="flex items-center space-x-8 border-b border-slate-200 mb-8">
-            {['People', 'Templates', 'Envelopes', 'Rules', 'Settings'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`pb-3 text-[14px] font-bold transition-all relative ${
-                  activeTab === tab ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {tab}
-                {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#7A005D]" />}
-              </button>
-            ))}
-          </div>
-
+          <div className="px-8 pb-8">
           {activeTab === 'People' && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-8">
               <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100">
@@ -383,6 +384,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
               {activeTab} view is not available in this demo.
             </div>
           )}
+          </div>
         </main>
       </div>
     </div>
