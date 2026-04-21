@@ -1,57 +1,169 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Search, 
-  HelpCircle, 
-  Accessibility, 
-  Bell, 
-  MoreVertical, 
-  LogOut, 
-  UserPlus, 
-  Download, 
-  Settings,
-  X,
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import {
+  Search,
+  HelpCircle,
+  Accessibility,
+  Bell,
+  MoreVertical,
+  Download,
   ChevronDown,
   Sparkles,
-  MessageSquare
+  MessageSquare,
+  Settings,
+  Eye,
+  FileText,
+  PenLine,
+  LogOut,
+  UserPlus,
+  ClipboardX,
+  LifeBuoy,
+  FileCheck,
+  Lock,
 } from 'lucide-react';
+import type { EnvelopeStatus, DocumentSigningStatus } from './EnvelopesListView';
+import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
 
-interface DocumentReviewViewProps {
-  onExit: () => void;
-  onGoHome?: () => void;
+export interface SignFlowDoc {
+  id: string;
+  name: string;
+  status: DocumentSigningStatus;
 }
 
-const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({ onExit, onGoHome }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+export interface DocumentReviewFlow {
+  packetId: string;
+  packetName: string;
+  envelopeStatus: EnvelopeStatus;
+  docs: SignFlowDoc[];
+}
+
+interface DocumentReviewViewProps {
+  flow: DocumentReviewFlow;
+  onExit: () => void;
+  onGoHome?: () => void;
+  onCompleteAll: (packetId: string) => void;
+  onSavePartial: (packetId: string, completedDocIds: string[]) => void;
+}
+
+const ACCENT_SIGN = '#FDB71C';
+
+function needsSignerAction(doc: SignFlowDoc, envelopeStatus: EnvelopeStatus): boolean {
+  if (envelopeStatus === 'voided' || envelopeStatus === 'draft') return false;
+  if (doc.status === 'completed') return false;
+  if (doc.status === 'draft') return false;
+  return true;
+}
+
+const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
+  flow,
+  onExit,
+  onGoHome,
+  onCompleteAll,
+  onSavePartial,
+}) => {
+  const [phase, setPhase] = useState<'list' | 'sign'>('list');
+  const [listMenuOpen, setListMenuOpen] = useState(false);
+  const [signMenuOpen, setSignMenuOpen] = useState(false);
+  const [activeSignDocId, setActiveSignDocId] = useState<string | null>(null);
+  const [fieldValue, setFieldValue] = useState('');
+  const [completedInSession, setCompletedInSession] = useState<Record<string, boolean>>({});
+
+  const listMenuRef = useRef<HTMLDivElement>(null);
+  const signMenuRef = useRef<HTMLDivElement>(null);
+
+  const signableDocs = useMemo(
+    () => flow.docs.filter((d) => needsSignerAction(d, flow.envelopeStatus)),
+    [flow.docs, flow.envelopeStatus]
+  );
+
+  const activeSignIndex = useMemo(() => {
+    if (!activeSignDocId) return 0;
+    return Math.max(
+      0,
+      signableDocs.findIndex((d) => d.id === activeSignDocId)
+    );
+  }, [activeSignDocId, signableDocs]);
+
+  const currentSignDoc = signableDocs[activeSignIndex] ?? null;
+  const isLastSignDoc =
+    signableDocs.length > 0 && activeSignIndex === signableDocs.length - 1;
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
+    const down = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (listMenuRef.current?.contains(t)) return;
+      if (signMenuRef.current?.contains(t)) return;
+      setListMenuOpen(false);
+      setSignMenuOpen(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('mousedown', down);
+    return () => document.removeEventListener('mousedown', down);
   }, []);
+
+  const openSignForDoc = (docId: string) => {
+    setActiveSignDocId(docId);
+    setFieldValue('');
+    setPhase('sign');
+    setListMenuOpen(false);
+  };
+
+  const handleSaveAndExitList = () => {
+    onExit();
+  };
+
+  const handleSaveAndExitSign = () => {
+    const ids = new Set<string>();
+    signableDocs.forEach((d) => {
+      if (completedInSession[d.id]) ids.add(d.id);
+    });
+    if (fieldValue.trim() && currentSignDoc) ids.add(currentSignDoc.id);
+    if (ids.size > 0) onSavePartial(flow.packetId, [...ids]);
+    else onExit();
+  };
+
+  const handleNext = () => {
+    if (!currentSignDoc || !fieldValue.trim()) return;
+    const nextCompleted = { ...completedInSession, [currentSignDoc.id]: true };
+    setCompletedInSession(nextCompleted);
+    setFieldValue('');
+    const nextIdx = activeSignIndex + 1;
+    if (nextIdx < signableDocs.length) {
+      setActiveSignDocId(signableDocs[nextIdx].id);
+    }
+  };
+
+  const handleComplete = () => {
+    if (!currentSignDoc || !fieldValue.trim()) return;
+    const finalCompleted = { ...completedInSession, [currentSignDoc.id]: true };
+    const allDone = signableDocs.every((d) => finalCompleted[d.id]);
+    if (allDone) {
+      onCompleteAll(flow.packetId);
+    } else {
+      onSavePartial(
+        flow.packetId,
+        signableDocs.filter((d) => finalCompleted[d.id]).map((d) => d.id)
+      );
+    }
+  };
+
+  const listVariant = moreMenuVariantForEnvelope(flow.envelopeStatus);
 
   return (
     <div className="flex flex-col h-screen bg-[#F3F4F6] overflow-hidden text-[#1e293b]">
-      {/* Top Header */}
       <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 shrink-0 z-50">
         <div className="flex items-center space-x-6">
-          <div 
-            className="flex items-center cursor-pointer hover:opacity-70 transition-opacity" 
+          <div
+            className="flex items-center cursor-pointer hover:opacity-70 transition-opacity"
             onClick={onGoHome}
             title="Go to Home"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M7 6C7 6 4 9 4 12C4 15 7 18 7 18" stroke="#000" strokeWidth="2" strokeLinecap="round"/>
-              <path d="M12 6C12 6 9 9 9 12C9 15 12 18 12 18" stroke="#000" strokeWidth="2" strokeLinecap="round"/>
-              <path d="M17 6C17 6 14 9 14 12C14 15 17 18 17 18" stroke="#000" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M7 6C7 6 4 9 4 12C4 15 7 18 7 18" stroke="#000" strokeWidth="2" strokeLinecap="round" />
+              <path d="M12 6C12 6 9 9 9 12C9 15 12 18 12 18" stroke="#000" strokeWidth="2" strokeLinecap="round" />
+              <path d="M17 6C17 6 14 9 14 12C14 15 17 18 17 18" stroke="#000" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </div>
-          <div className="h-6 w-px bg-slate-200"></div>
+          <div className="h-6 w-px bg-slate-200" />
           <div className="flex items-center space-x-2 cursor-pointer group">
             <span className="text-sm font-semibold text-slate-700">Tools</span>
             <ChevronDown size={14} className="text-slate-500" />
@@ -61,9 +173,9 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({ onExit, onGoHom
         <div className="flex-1 max-w-2xl px-8">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search or jump to..." 
+            <input
+              type="text"
+              placeholder="Search or jump to..."
               className="w-full bg-slate-100 border-none rounded-md py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-slate-300 outline-none"
             />
           </div>
@@ -72,121 +184,267 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({ onExit, onGoHom
         <div className="flex items-center space-x-4">
           <HelpCircle size={18} className="text-slate-500 cursor-pointer" />
           <Accessibility size={18} className="text-slate-500 cursor-pointer" />
-          <div className="relative">
-            <div className="bg-white border border-slate-200 rounded p-1">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            </div>
-            <span className="absolute -top-1.5 -right-1.5 bg-[#EF4444] text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">4</span>
-          </div>
           <Bell size={18} className="text-slate-500 cursor-pointer" />
-          <div className="rotate-45">
-            <div className="w-4 h-4 border-2 border-slate-500 rounded-sm"></div>
-          </div>
-          <div className="h-6 w-px bg-slate-200 mx-1"></div>
+          <div className="h-6 w-px bg-slate-200 mx-1" />
           <div className="flex items-center space-x-3 cursor-pointer">
-            <span className="text-sm text-slate-700 font-semibold">Wright, Davis and Price</span>
-            <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200">
-              <img src="https://picsum.photos/id/64/100/100" alt="Avatar" />
-            </div>
+            <span className="text-sm text-slate-700 font-semibold">Acme</span>
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 bg-slate-200" />
           </div>
         </div>
       </header>
 
-      {/* Sub Header */}
-      <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-40">
-        <h2 className="text-sm font-bold text-slate-900">Comprehensive Project Oversight and Coordination Contract</h2>
-        <div className="flex items-center space-x-2">
-          <button 
-            className="px-5 py-2 bg-[#7A005D] text-white rounded-lg text-xs font-bold hover:opacity-90 transition-opacity"
-            onClick={onExit}
-          >
-            Complete
-          </button>
-          <div className="relative" ref={menuRef}>
-            <button 
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="p-2 hover:bg-slate-50 border border-slate-200 rounded-lg text-slate-600 transition-colors"
-            >
-              <MoreVertical size={18} />
-            </button>
-            
-            {isMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                <button onClick={onExit} className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                  <LogOut size={16} />
-                  <span>Save and exit</span>
-                </button>
-                <button className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                  <UserPlus size={16} />
-                  <span>Assign to someone else</span>
-                </button>
-                <button className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                  <Download size={16} />
-                  <span>Download document</span>
-                </button>
-              </div>
-            )}
+      {phase === 'list' && (
+        <>
+          <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
+            <h2 className="text-sm font-bold text-slate-900">Review and sign documents</h2>
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-slate-500 font-medium">Last saved just now</span>
+              <button
+                type="button"
+                onClick={handleSaveAndExitList}
+                className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-slate-900"
+              >
+                <LogOut size={14} />
+                Save and exit
+              </button>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Document Canvas */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center py-12 px-6">
-          <div className="w-[800px] bg-white shadow-xl min-h-[1030px] p-20 relative">
-            <div className="space-y-4 text-[13px] text-slate-800 leading-relaxed font-normal mt-12">
-              <p>
-                Demo Admin Harry Porter January 1, 1974 
-                <span className="bg-[#FEE2E2] text-[#991B1B] px-1.5 py-0.5 rounded text-[11px] font-medium mx-1">Pay frequency</span> 
-                1 de diciembre de 2016 1
-              </p>
-              <p>December 2016 January 1, 1974</p>
-              
-              <div className="mt-8 flex flex-col space-y-4">
-                <div className="flex items-end space-x-2">
-                  <div className="font-serif italic text-3xl opacity-80" style={{ transform: 'rotate(-5deg)' }}>
-                    r o r
-                  </div>
-                  <div className="w-32 border-b border-slate-300"></div>
+          <div className="flex-1 overflow-y-auto p-8">
+            <div className="max-w-3xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Review and sign documents</h3>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Review and sign the following documents from Acme to proceed with onboarding.
+                  </p>
                 </div>
-                <div className="flex items-center text-[13px]">
-                   <span>1 janvier 1974</span>
-                   <span className="bg-[#FEE2E2] text-[#991B1B] px-1.5 py-0.5 rounded text-[11px] font-medium mx-2">Pay frequency</span> 
-                   <span>4</span>
+                <div className="relative shrink-0" ref={listMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setListMenuOpen((v) => !v)}
+                    className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
+                    aria-label="More"
+                  >
+                    <MoreVertical size={20} strokeWidth={2} />
+                  </button>
+                  {listMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 z-[200] rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+                      <EnvelopeMoreMenu variant={listVariant} onClose={() => setListMenuOpen(false)} />
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="mt-8">
-                <input 
-                  type="text" 
-                  defaultValue="testing"
-                  className="w-40 border border-slate-200 rounded-md px-3 py-1.5 outline-none focus:ring-1 focus:ring-purple-200"
-                />
+              <div className="px-6 py-4 bg-slate-50/80 border-b border-slate-100">
+                <p className="text-[13px] font-bold text-slate-900">{flow.packetName}</p>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {flow.docs.map((doc) => {
+                  const showSign = needsSignerAction(doc, flow.envelopeStatus);
+                  return (
+                    <div key={doc.id} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50/60">
+                      <FileText size={20} className="text-slate-400 shrink-0" />
+                      <span className="flex-1 font-semibold text-slate-900 text-[14px] truncate">{doc.name}</span>
+                      <button type="button" className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg" aria-label="View">
+                        <Eye size={18} />
+                      </button>
+                      <button type="button" className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg" aria-label="Download">
+                        <Download size={18} />
+                      </button>
+                      {showSign ? (
+                        <button
+                          type="button"
+                          onClick={() => openSignForDoc(doc.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-bold text-slate-900 shrink-0"
+                          style={{ backgroundColor: ACCENT_SIGN }}
+                        >
+                          <PenLine size={14} strokeWidth={2} />
+                          Sign
+                        </button>
+                      ) : (
+                        <span className="w-[72px] shrink-0" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
-        </div>
+        </>
+      )}
 
-        {/* Right Utility Bar */}
-        <div className="w-10 flex flex-col items-center py-8 space-y-8 bg-transparent absolute right-0 top-0 h-full border-l border-transparent z-30">
-          <div className="flex flex-col items-center -rotate-90 origin-center translate-y-24 space-x-2">
-            <button className="flex items-center space-x-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap bg-white border border-slate-200 px-3 py-1.5 rounded-t-lg shadow-sm">
-               <MessageSquare size={12} className="rotate-90" />
-               <span>Share feedback</span>
-            </button>
+      {phase === 'sign' && currentSignDoc && (
+        <>
+          <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-40">
+            <h2 className="text-sm font-bold text-slate-900 truncate pr-4">{currentSignDoc.name}</h2>
+            <div className="flex items-center gap-3 shrink-0">
+              {signableDocs.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleSaveAndExitSign}
+                  className="text-xs font-bold text-slate-700 hover:text-slate-900 px-2"
+                >
+                  Save and exit
+                </button>
+              )}
+              {signableDocs.length > 1 && !isLastSignDoc ? (
+                <button
+                  type="button"
+                  disabled={!fieldValue.trim()}
+                  onClick={handleNext}
+                  className="px-5 py-2 bg-[#7A005D] text-white rounded-[8px] text-xs font-bold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!fieldValue.trim()}
+                  onClick={handleComplete}
+                  className="px-5 py-2 bg-[#7A005D] text-white rounded-[8px] text-xs font-bold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Complete
+                </button>
+              )}
+              <div className="relative" ref={signMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setSignMenuOpen((v) => !v)}
+                  className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
+                  aria-label="More"
+                >
+                  <MoreVertical size={18} strokeWidth={2} />
+                </button>
+                {signMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-[200] py-1 overflow-hidden">
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+                      onClick={() => {
+                        setSignMenuOpen(false);
+                        handleSaveAndExitSign();
+                      }}
+                    >
+                      <LogOut size={16} />
+                      Save and exit
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+                      onClick={() => setSignMenuOpen(false)}
+                    >
+                      <Download size={16} />
+                      Download
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+                      onClick={() => setSignMenuOpen(false)}
+                    >
+                      <UserPlus size={16} />
+                      Assign to someone else
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold hover:bg-slate-50"
+                      style={{ color: '#E4633C' }}
+                      onClick={() => setSignMenuOpen(false)}
+                    >
+                      <ClipboardX size={16} style={{ color: '#E4633C' }} />
+                      Refuse to sign
+                    </button>
+                    <div className="border-t border-slate-100 my-1" />
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+                      onClick={() => setSignMenuOpen(false)}
+                    >
+                      <LifeBuoy size={16} />
+                      Help and support
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+                      onClick={() => setSignMenuOpen(false)}
+                    >
+                      <FileCheck size={16} />
+                      Terms of use
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+                      onClick={() => setSignMenuOpen(false)}
+                    >
+                      <Lock size={16} />
+                      Privacy policy
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-          
-          <div className="flex flex-col items-center space-y-6 mt-auto pb-4 absolute bottom-4 w-full">
-             <button className="text-slate-400 hover:text-slate-600 transition-colors">
-               <Settings size={20} />
-             </button>
-             <button className="w-8 h-8 bg-[#7A005D] text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform">
-               <Sparkles size={16} />
-             </button>
+
+          <div className="flex-1 flex overflow-hidden relative">
+            <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center py-12 px-6">
+              <div className="w-[800px] bg-white shadow-xl min-h-[1030px] p-20 relative">
+                <div className="space-y-4 text-[13px] text-slate-800 leading-relaxed font-normal mt-12">
+                  <p>
+                    Demo Admin · {currentSignDoc.name}
+                    <span className="bg-[#FEE2E2] text-[#991B1B] px-1.5 py-0.5 rounded text-[11px] font-medium mx-1">
+                      Pay frequency
+                    </span>
+                    Placeholder agreement text for this prototype signing step.
+                  </p>
+                  <p>Please complete the required field below to continue.</p>
+                  <div className="mt-8 flex flex-col space-y-4">
+                    <div className="flex items-end space-x-2">
+                      <div className="font-serif italic text-3xl opacity-80" style={{ transform: 'rotate(-5deg)' }}>
+                        sign
+                      </div>
+                      <div className="w-32 border-b border-slate-300" />
+                    </div>
+                  </div>
+                  <div className="mt-8">
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Required acknowledgment</label>
+                    <input
+                      type="text"
+                      value={fieldValue}
+                      onChange={(e) => setFieldValue(e.target.value)}
+                      placeholder="Type your initials to sign"
+                      className="w-full max-w-md border border-slate-200 rounded-[8px] px-3 py-2 outline-none focus:ring-2 focus:ring-[#7A005D]/25"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="w-10 flex flex-col items-center py-8 space-y-8 bg-transparent absolute right-0 top-0 h-full border-l border-transparent z-30">
+              <div className="flex flex-col items-center -rotate-90 origin-center translate-y-24 space-x-2">
+                <button
+                  type="button"
+                  className="flex items-center space-x-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap bg-white border border-slate-200 px-3 py-1.5 rounded-t-lg shadow-sm"
+                >
+                  <MessageSquare size={12} className="rotate-90" />
+                  <span>Share feedback</span>
+                </button>
+              </div>
+              <div className="flex flex-col items-center space-y-6 mt-auto pb-4 absolute bottom-4 w-full">
+                <button type="button" className="text-slate-400 hover:text-slate-600 transition-colors">
+                  <Settings size={20} />
+                </button>
+                <button
+                  type="button"
+                  className="w-8 h-8 bg-[#7A005D] text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
+                >
+                  <Sparkles size={16} />
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 };

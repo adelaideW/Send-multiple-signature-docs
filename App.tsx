@@ -12,6 +12,9 @@ import PeopleTabView from './components/PeopleTabView';
 import GeminiAssistant from './components/GeminiAssistant';
 import { MOCK_EMPLOYEE } from './constants';
 import type { UploadedFileItem } from './types';
+import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus } from './components/EnvelopesListView';
+import { cloneInitialEnvelopeRows } from './components/EnvelopesListView';
+import type { DocumentReviewFlow } from './components/DocumentReviewView';
 
 type ViewType = 'landing' | 'profile' | 'envelope' | 'template_editor' | 'envelope_details' | 'document_review' | 'people_tab';
 
@@ -31,6 +34,59 @@ interface EnvelopeState {
   customMessageBody: string;
   advancedTags: string[];
 }
+
+function computeDraftDisplayTitle(st: EnvelopeState): string {
+  const fromTemplates = st.selectedTemplates
+    .map((t) => String(t).replace(/\.pdf$/i, ''))
+    .join(', ');
+  if (fromTemplates.trim()) {
+    return fromTemplates.length > 50 ? `${fromTemplates.slice(0, 47)}...` : fromTemplates;
+  }
+  const f = st.uploadedFiles[0];
+  if (f) {
+    const n = f.name.replace(/\.pdf$/i, '');
+    return n.length > 50 ? `${n.slice(0, 47)}...` : n;
+  }
+  return 'Untitled draft';
+}
+
+function childrenFromEnvelopeState(st: EnvelopeState): EnvelopeDocumentRow[] {
+  const ts = new Date().toISOString();
+  if (st.selectedTemplates.length > 0) {
+    return st.selectedTemplates.map((t, i) => {
+      const base = String(t).replace(/\.pdf$/i, '');
+      return {
+        id: `draft-doc-${Date.now()}-${i}`,
+        name: String(t).toLowerCase().endsWith('.pdf') ? String(t) : `${base}.pdf`,
+        status: 'draft' as DocumentSigningStatus,
+        lastModified: ts,
+      };
+    });
+  }
+  return st.uploadedFiles.map((f, i) => ({
+    id: `draft-doc-${Date.now()}-${i}`,
+    name: f.name,
+    status: 'draft' as DocumentSigningStatus,
+    lastModified: ts,
+  }));
+}
+
+const DEMO_EDIT_RECIPIENTS: EnvelopeState['recipients'] = [
+  {
+    id: '1',
+    user: { id: 'u1', name: 'David Gonzales', email: 'david.g@acme.com' },
+    action: 'Needs to complete',
+    searchTerm: '',
+    isActionDropdownOpen: false,
+  },
+  {
+    id: '2',
+    user: { id: 'u2', name: 'Sarah Jenkins', email: 'sarah.j@acme.com' },
+    action: 'Needs to complete',
+    searchTerm: '',
+    isActionDropdownOpen: false,
+  },
+];
 
 const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   selectedTemplates: [],
@@ -56,7 +112,7 @@ const DraftSavedSnackbar: React.FC<{
 
   return (
     <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[260] animate-in fade-in slide-in-from-bottom-4 duration-300 px-4 w-full max-w-lg pointer-events-none">
-      <div className="pointer-events-auto rounded-full bg-[#C6F6F1] border border-[#A5F3E9] shadow-lg flex items-center gap-4 px-5 py-3 min-h-[52px]">
+      <div className="pointer-events-auto rounded-full bg-[#C6F6F1] border border-[#A5F3E9] shadow-lg flex items-center gap-3 px-5 py-3 min-h-[52px]">
         <div className="w-9 h-9 rounded-full bg-[#0D9488] flex items-center justify-center text-white shrink-0">
           <Check size={18} strokeWidth={3} />
         </div>
@@ -67,6 +123,14 @@ const DraftSavedSnackbar: React.FC<{
           className="text-[14px] font-bold text-[#134E4A] hover:underline shrink-0"
         >
           View details
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="p-1.5 text-[#134E4A]/70 hover:text-[#134E4A] shrink-0 rounded-full hover:bg-[#A5F3E9]/40"
+          aria-label="Dismiss"
+        >
+          <X size={18} strokeWidth={2} />
         </button>
       </div>
     </div>
@@ -104,17 +168,23 @@ const App: React.FC = () => {
   const [viewHistory, setViewHistory] = useState<ViewType[]>(['landing']);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [sentEnvelopeName, setSentEnvelopeName] = useState('');
-  const [selectedEnvelopeName, setSelectedEnvelopeName] = useState('');
+  const [packetRows, setPacketRows] = useState<EnvelopeTableRow[]>(() => cloneInitialEnvelopeRows());
+  const [selectedPacketId, setSelectedPacketId] = useState<string | null>(null);
   const [viewByDocuments, setViewByDocuments] = useState(false);
   const [templateEditorMode, setTemplateEditorMode] = useState<'create' | 'edit'>('edit');
   const [templateEditorSeed, setTemplateEditorSeed] = useState<{ title: string; bodyHtml: string | null } | null>(null);
   const [documentsHubTab, setDocumentsHubTab] = useState('People');
   const [draftSavedSnackOpen, setDraftSavedSnackOpen] = useState(false);
-  const [draftSnackDetailName, setDraftSnackDetailName] = useState('');
+  const [draftSavedPacketId, setDraftSavedPacketId] = useState<string | null>(null);
+  const [signFlow, setSignFlow] = useState<DocumentReviewFlow | null>(null);
+  const [pdfPlacementSeed, setPdfPlacementSeed] = useState(false);
   const envelopeEntryRef = useRef<ViewType>('landing');
+  const editingPacketIdRef = useRef<string | null>(null);
 
   // Persistent Envelope Creation State
   const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
+
+  const selectedPacket = selectedPacketId ? packetRows.find((r) => r.id === selectedPacketId) : undefined;
 
   const currentView = viewHistory[viewHistory.length - 1];
 
@@ -142,11 +212,30 @@ const App: React.FC = () => {
 
   const handleSaveAndExitEnvelope = useCallback(() => {
     const st = envelopeState;
-    const name =
-      (st.selectedTemplates[0] && String(st.selectedTemplates[0]).replace(/\.pdf$/i, '')) ||
-      st.uploadedFiles[0]?.name?.replace(/\.pdf$/i, '') ||
-      'Untitled draft';
-    setDraftSnackDetailName(name);
+    const displayTitle = computeDraftDisplayTitle(st);
+    const children = childrenFromEnvelopeState(st);
+    const editId = editingPacketIdRef.current;
+    const rowId = editId ?? `draft-${Date.now()}`;
+    const row: EnvelopeTableRow = {
+      id: rowId,
+      name: displayTitle,
+      status: 'draft',
+      lastModified: new Date().toISOString(),
+      adminIsSigner: true,
+      children: children.length > 0 ? children : undefined,
+    };
+    setPacketRows((prev) => {
+      const i = prev.findIndex((r) => r.id === rowId);
+      if (i >= 0) {
+        const next = [...prev];
+        next[i] = row;
+        return next;
+      }
+      return [row, ...prev];
+    });
+    setDraftSavedPacketId(rowId);
+    editingPacketIdRef.current = null;
+    setPdfPlacementSeed(false);
     setViewHistory((prev) => {
       const i = prev.lastIndexOf('envelope');
       if (i < 0) return prev;
@@ -169,12 +258,13 @@ const App: React.FC = () => {
     });
   };
 
-  const handleOpenEnvelopeDetails = (name: string) => {
-    setSelectedEnvelopeName(name);
+  const handleOpenEnvelopeDetails = (packetId: string) => {
+    setSelectedPacketId(packetId);
     navigateTo('envelope_details');
   };
 
   const handleExitEnvelopeDetails = () => {
+    setSelectedPacketId(null);
     setDocumentsHubTab('Documents');
     setViewByDocuments(true);
     setViewHistory((prev) => {
@@ -185,10 +275,135 @@ const App: React.FC = () => {
   };
 
   const handleDraftViewDetails = useCallback(() => {
-    setSelectedEnvelopeName(draftSnackDetailName);
+    if (draftSavedPacketId) setSelectedPacketId(draftSavedPacketId);
     setDraftSavedSnackOpen(false);
     navigateTo('envelope_details');
-  }, [draftSnackDetailName, navigateTo]);
+  }, [draftSavedPacketId, navigateTo]);
+
+  const startSignFlow = useCallback(
+    (packetId: string) => {
+      const row = packetRows.find((r) => r.id === packetId);
+      if (!row) return;
+      setSignFlow({
+        packetId: row.id,
+        packetName: row.name,
+        envelopeStatus: row.status,
+        docs: (row.children ?? []).map((c) => ({ id: c.id, name: c.name, status: c.status })),
+      });
+      navigateTo('document_review');
+    },
+    [packetRows, navigateTo]
+  );
+
+  const trimToPeopleTab = useCallback(() => {
+    setViewHistory((prev) => {
+      const i = prev.indexOf('people_tab');
+      if (i >= 0) return prev.slice(0, i + 1);
+      return ['people_tab'];
+    });
+  }, []);
+
+  const handleSignComplete = useCallback(
+    (packetId: string) => {
+      const ts = new Date().toISOString();
+      setPacketRows((prev) =>
+        prev.map((r) => {
+          if (r.id !== packetId) return r;
+          return {
+            ...r,
+            status: 'completed' as EnvelopeStatus,
+            lastModified: ts,
+            children: r.children?.map((c) => ({
+              ...c,
+              status: 'completed' as DocumentSigningStatus,
+              lastModified: ts,
+            })),
+          };
+        })
+      );
+      setSignFlow(null);
+      setDocumentsHubTab('Documents');
+      trimToPeopleTab();
+    },
+    [trimToPeopleTab]
+  );
+
+  const handleSignPartial = useCallback(
+    (packetId: string, completedDocIds: string[]) => {
+      const ts = new Date().toISOString();
+      const done = new Set(completedDocIds);
+      setPacketRows((prev) =>
+        prev.map((r) => {
+          if (r.id !== packetId) return r;
+          const children = r.children?.map((c) =>
+            done.has(c.id)
+              ? { ...c, status: 'completed' as DocumentSigningStatus, lastModified: ts }
+              : c.status === 'completed'
+                ? c
+                : { ...c, status: 'yet to sign' as DocumentSigningStatus, lastModified: ts }
+          );
+          return {
+            ...r,
+            status: 'in progress' as EnvelopeStatus,
+            lastModified: ts,
+            children,
+          };
+        })
+      );
+      setSignFlow(null);
+      setDocumentsHubTab('Documents');
+      trimToPeopleTab();
+    },
+    [trimToPeopleTab]
+  );
+
+  const prefillStateFromDraftRow = (row: EnvelopeTableRow): EnvelopeState => {
+    const uploadedFiles: UploadedFileItem[] = (row.children ?? []).map((c, i) => ({
+      id: `pf-${Date.now()}-${i}`,
+      name: c.name.endsWith('.pdf') ? c.name : `${c.name}.pdf`,
+      previewTitle: c.name.replace(/\.pdf$/i, '').slice(0, 48),
+      previewParagraphs: [
+        'Prototype PDF preview: this document is part of your saved draft packet.',
+        'Signature fields are shown on the placement canvas for demonstration.',
+      ],
+    }));
+    return {
+      ...INITIAL_ENVELOPE_STATE,
+      selectedTemplates: [],
+      uploadedFiles,
+      recipients: DEMO_EDIT_RECIPIENTS,
+    };
+  };
+
+  const prefillStateFromCorrectingRow = (row: EnvelopeTableRow): EnvelopeState => {
+    const names = (row.children ?? []).map((c) => c.name.replace(/\.pdf$/i, ''));
+    return {
+      ...INITIAL_ENVELOPE_STATE,
+      selectedTemplates: names,
+      uploadedFiles: [],
+      recipients: DEMO_EDIT_RECIPIENTS,
+    };
+  };
+
+  const handleEditEnvelope = useCallback(
+    (packetId: string) => {
+      const row = packetRows.find((r) => r.id === packetId);
+      if (!row) return;
+      editingPacketIdRef.current = packetId;
+      if (row.status === 'draft') {
+        setEnvelopeState(prefillStateFromDraftRow(row));
+        setPdfPlacementSeed(true);
+      } else if (row.status === 'correcting') {
+        setEnvelopeState(prefillStateFromCorrectingRow(row));
+        setPdfPlacementSeed(false);
+      } else {
+        editingPacketIdRef.current = null;
+        return;
+      }
+      goToEnvelopeCreator('people_tab');
+    },
+    [packetRows, goToEnvelopeCreator]
+  );
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
@@ -207,15 +422,29 @@ const App: React.FC = () => {
       {currentView === 'people_tab' && (
         <PeopleTabView 
           onGoHome={() => setViewHistory(['landing'])} 
-          onSendDocument={() => goToEnvelopeCreator('people_tab')}
+          onSendDocument={() => {
+            editingPacketIdRef.current = null;
+            setPdfPlacementSeed(false);
+            setEnvelopeState(INITIAL_ENVELOPE_STATE);
+            goToEnvelopeCreator('people_tab');
+          }}
           onProfileClick={() => navigateTo('profile')}
           onNewTemplate={() => {
             setTemplateEditorSeed(null);
             setTemplateEditorMode('create');
             navigateTo('template_editor');
           }}
-          onSendDocuments={() => goToEnvelopeCreator('people_tab')}
+          onSendDocuments={() => {
+            editingPacketIdRef.current = null;
+            setPdfPlacementSeed(false);
+            setEnvelopeState(INITIAL_ENVELOPE_STATE);
+            goToEnvelopeCreator('people_tab');
+          }}
+          packetRows={packetRows}
+          onPacketRowsChange={setPacketRows}
           onViewDocumentPacket={handleOpenEnvelopeDetails}
+          onEditDocumentPacket={handleEditEnvelope}
+          onSignDocumentPacket={startSignFlow}
           hubTab={documentsHubTab}
           onHubTabChange={setDocumentsHubTab}
         />
@@ -253,9 +482,14 @@ const App: React.FC = () => {
                   <Sidebar />
                   <div className="flex-1 min-w-0">
                     <EmployeeDocumentsSection 
-                      onSend={() => goToEnvelopeCreator('profile')} 
-                      onOpenEnvelope={handleOpenEnvelopeDetails}
-                      onReviewDocument={() => navigateTo('document_review')}
+                      onSend={() => {
+                        editingPacketIdRef.current = null;
+                        setPdfPlacementSeed(false);
+                        setEnvelopeState(INITIAL_ENVELOPE_STATE);
+                        goToEnvelopeCreator('profile');
+                      }} 
+                      onOpenEnvelope={() => handleOpenEnvelopeDetails('e1')}
+                      onReviewDocument={() => startSignFlow('e1')}
                       viewByDocuments={viewByDocuments}
                       setViewByDocuments={setViewByDocuments}
                     />
@@ -283,12 +517,20 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {currentView === 'envelope_details' && (
+      {currentView === 'envelope_details' && selectedPacket && (
         <div className="fixed inset-0 z-[130] overflow-y-auto bg-[#F9FAFB]">
           <EnvelopeDetailsView
-            envelopeName={selectedEnvelopeName}
+            envelopeName={selectedPacket.name}
+            packetStatus={selectedPacket.status}
+            sentOn="03/01/2026 9:00 AM"
+            sentBy="Harry Porter"
+            documents={(selectedPacket.children ?? []).map((c) => ({
+              name: c.name,
+              status: selectedPacket.status === 'voided' ? ('voided' as DocumentSigningStatus) : c.status,
+            }))}
+            isVoided={selectedPacket.status === 'voided'}
             onExit={handleExitEnvelopeDetails}
-            onSign={() => navigateTo('document_review')}
+            onSign={() => startSignFlow(selectedPacket.id)}
           />
         </div>
       )}
@@ -318,6 +560,8 @@ const App: React.FC = () => {
             onContinue={handleEnvelopeContinue}
             state={envelopeState}
             onUpdateState={setEnvelopeState}
+            seedPdfPlacementDemo={pdfPlacementSeed}
+            onSeedPdfPlacementConsumed={() => setPdfPlacementSeed(false)}
           />
         </div>
       )}
@@ -368,11 +612,14 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {currentView === 'document_review' && (
-        <div className="absolute inset-0 z-[120] bg-white">
-          <DocumentReviewView 
-            onExit={goBack} 
+      {currentView === 'document_review' && signFlow && (
+        <div className="fixed inset-0 z-[140] bg-white">
+          <DocumentReviewView
+            flow={signFlow}
+            onExit={goBack}
             onGoHome={() => setViewHistory(['landing'])}
+            onCompleteAll={handleSignComplete}
+            onSavePartial={handleSignPartial}
           />
         </div>
       )}

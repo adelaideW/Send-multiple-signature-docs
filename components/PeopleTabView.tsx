@@ -30,7 +30,7 @@ import {
   FileText
 } from 'lucide-react';
 import TemplatesLibraryView from './TemplatesLibraryView';
-import EnvelopesListView from './EnvelopesListView';
+import EnvelopesListView, { type EnvelopeTableRow } from './EnvelopesListView';
 
 interface PeopleRow {
   id: string;
@@ -79,7 +79,11 @@ interface PeopleTabViewProps {
   onProfileClick?: () => void;
   onNewTemplate?: () => void;
   onSendDocuments?: () => void;
-  onViewDocumentPacket?: (name: string) => void;
+  packetRows?: EnvelopeTableRow[];
+  onPacketRowsChange?: (rows: EnvelopeTableRow[]) => void;
+  onViewDocumentPacket?: (packetId: string) => void;
+  onEditDocumentPacket?: (packetId: string) => void;
+  onSignDocumentPacket?: (packetId: string) => void;
   hubTab?: string;
   onHubTabChange?: (tab: string) => void;
 }
@@ -90,7 +94,11 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   onProfileClick,
   onNewTemplate,
   onSendDocuments,
+  packetRows,
+  onPacketRowsChange,
   onViewDocumentPacket,
+  onEditDocumentPacket,
+  onSignDocumentPacket,
   hubTab: hubTabProp,
   onHubTabChange,
 }) => {
@@ -383,7 +391,14 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
 
           {activeTab === 'Documents' && (
             <div className="mb-8">
-              <EnvelopesListView onSendDocuments={onSendDocuments} onViewEnvelope={onViewDocumentPacket} />
+              <EnvelopesListView
+                rows={packetRows}
+                onRowsChange={onPacketRowsChange}
+                onSendDocuments={onSendDocuments}
+                onViewEnvelope={onViewDocumentPacket}
+                onEditEnvelope={onEditDocumentPacket}
+                onSignEnvelope={onSignDocumentPacket}
+              />
             </div>
           )}
 

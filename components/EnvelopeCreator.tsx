@@ -61,6 +61,9 @@ interface EnvelopeCreatorProps {
   onContinue?: (envelopeName: string) => void;
   state?: any;
   onUpdateState?: (state: any) => void;
+  /** When true (e.g. editing a draft PDF packet), jump to placement with demo fields once uploads exist. */
+  seedPdfPlacementDemo?: boolean;
+  onSeedPdfPlacementConsumed?: () => void;
 }
 
 const HR_UPLOAD_SAMPLES: Omit<UploadedFileItem, 'id'>[] = [
@@ -382,7 +385,9 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   onCreateTemplateWithName,
   onContinue,
   state: persistentState,
-  onUpdateState
+  onUpdateState,
+  seedPdfPlacementDemo = false,
+  onSeedPdfPlacementConsumed,
 }) => {
   const exitSavingDraft = () => {
     if (onSaveAndExit) onSaveAndExit();
@@ -460,6 +465,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const [autoModalRecipientId, setAutoModalRecipientId] = useState('');
   const placementPageRef = useRef<HTMLDivElement>(null);
   const placementAutoGateRef = useRef(false);
+  const suppressPlacementAutoModalRef = useRef(false);
+  const pdfPlacementSeedDoneRef = useRef(false);
   const [fieldDragOffset, setFieldDragOffset] = useState<{ id: string; dx: number; dy: number } | null>(null);
   const [fieldResize, setFieldResize] = useState<{
     id: string;
@@ -626,7 +633,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       if (currentStep === 'setup') placementAutoGateRef.current = false;
       return;
     }
-    if (!placementAutoGateRef.current) {
+    if (suppressPlacementAutoModalRef.current) {
+      suppressPlacementAutoModalRef.current = false;
+      placementAutoGateRef.current = true;
+    } else if (!placementAutoGateRef.current) {
       placementAutoGateRef.current = true;
       setAutoFieldsModalOpen(true);
       setShowInsertFieldsButton(false);
@@ -635,6 +645,52 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     setPlacementActiveRecipientId(first);
     setAutoModalRecipientId(first);
   }, [currentStep, uploadedFiles.length, recipients]);
+
+  useEffect(() => {
+    if (!seedPdfPlacementDemo) {
+      pdfPlacementSeedDoneRef.current = false;
+      return;
+    }
+    if (pdfPlacementSeedDoneRef.current || uploadedFiles.length === 0) return;
+    pdfPlacementSeedDoneRef.current = true;
+    suppressPlacementAutoModalRef.current = true;
+    setCurrentStep('placement');
+    const rid = recipients.find((r) => r.user)?.id ?? recipients[0]?.id ?? '1';
+    const ts = Date.now();
+    setPlacementFields([
+      {
+        id: `seed-text-${ts}`,
+        type: 'text',
+        x: 130,
+        y: 300,
+        w: 220,
+        h: 40,
+        recipientSlotId: rid,
+        required: true,
+      },
+      {
+        id: `seed-sig-${ts}`,
+        type: 'signature',
+        x: 150,
+        y: 400,
+        w: 200,
+        h: 48,
+        recipientSlotId: rid,
+        required: true,
+      },
+      {
+        id: `seed-date-${ts}`,
+        type: 'date_signed',
+        x: 130,
+        y: 500,
+        w: 160,
+        h: 40,
+        recipientSlotId: rid,
+        required: false,
+      },
+    ]);
+    onSeedPdfPlacementConsumed?.();
+  }, [seedPdfPlacementDemo, uploadedFiles.length, recipients, onSeedPdfPlacementConsumed]);
 
   useEffect(() => {
     if (!fieldDragOffset) return;
