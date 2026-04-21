@@ -1,17 +1,19 @@
 
 import React from 'react';
-import { 
-  ChevronRight, 
-  Search, 
-  MoreVertical, 
-  Eye, 
-  Download, 
-  Filter, 
-  Maximize2, 
-  Columns, 
+import {
+  ChevronLeft,
+  Search,
+  MoreVertical,
+  Eye,
+  Download,
+  Filter,
+  Maximize2,
+  Columns,
   Settings2,
   FileText,
-  ChevronDown
+  ChevronDown,
+  PenLine,
+  Share2,
 } from 'lucide-react';
 
 interface Recipient {
@@ -31,47 +33,53 @@ const RECIPIENTS: Recipient[] = [
   {
     id: 'r1',
     order: 1,
-    name: 'Richard Satherland',
-    email: 'bs@email.com',
-    avatar: 'https://i.pravatar.cc/150?u=richard',
+    name: 'David Gonzales',
+    email: 'david.gonzales@example.com',
+    avatar: 'https://i.pravatar.cc/150?u=davidg',
     status: 'Completed',
     action: 'To sign',
-    sentOn: '10/14/2024 7:19 AM',
-    completedOn: '10/14/2024 7:25 AM',
+    sentOn: '03/01/2026 8:15 AM',
+    completedOn: '03/01/2026 9:02 AM',
   },
   {
     id: 'r2',
     order: 2,
-    name: 'Shreya Patel',
-    email: 'shreya@email.com',
-    initials: 'SP',
+    name: 'Carmen Brown',
+    email: 'carmen.brown@example.com',
+    initials: 'CB',
     status: 'In progress',
     action: 'To sign',
-    sentOn: '-',
-    completedOn: '-',
+    sentOn: '03/01/2026 9:00 AM',
+    completedOn: '—',
   },
   {
     id: 'r3',
     order: 2,
-    name: 'Tom Hall',
-    email: 'th@email.com',
-    initials: 'TH',
+    name: 'Harry Porter',
+    email: 'harry.porter@example.com',
+    initials: 'HP',
     status: 'In progress',
     action: 'To view',
-    sentOn: '10/14/2024 8:19 AM',
-    completedOn: '-',
+    sentOn: '03/01/2026 9:00 AM',
+    completedOn: '—',
   },
   {
     id: 'r4',
     order: 3,
-    name: 'Rick Edmond',
-    email: 're@email.com',
-    avatar: 'https://i.pravatar.cc/150?u=rick',
+    name: 'Tracy Davis',
+    email: 'tracy.davis@example.com',
+    avatar: 'https://i.pravatar.cc/150?u=tracyd',
     status: 'Waiting',
     action: 'To sign',
-    sentOn: '-',
-    completedOn: '-',
-  }
+    sentOn: '03/01/2026 9:00 AM',
+    completedOn: '—',
+  },
+];
+
+const DETAIL_DOCUMENTS = [
+  'Employment_Agreement_John_Doe.pdf',
+  'W4_Tax_Form_2026.pdf',
+  'Health_Insurance_Enrollment.pdf',
 ];
 
 interface EnvelopeDetailsViewProps {
@@ -84,33 +92,41 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({ envelopeName,
   return (
     <div className="flex flex-col h-screen bg-[#F9FAFB] overflow-hidden">
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-6">
-        {/* Breadcrumbs */}
-        <nav className="flex items-center space-x-2 text-[13px] text-slate-500 mb-2">
-          <span className="hover:text-slate-700 cursor-pointer" onClick={onExit}>Documents</span>
-          <ChevronRight size={14} className="text-slate-300" />
-          <span className="text-slate-800 font-medium">{envelopeName}</span>
-        </nav>
+        <button
+          type="button"
+          onClick={onExit}
+          className="inline-flex items-center gap-1.5 text-[13px] font-bold text-slate-700 hover:text-slate-900 -mt-1 mb-2"
+        >
+          <ChevronLeft size={18} strokeWidth={2} />
+          Back
+        </button>
 
         {/* Main Info Card */}
         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col space-y-1">
-              <div className="flex items-center space-x-3">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex flex-col space-y-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-xl font-bold text-slate-900">{envelopeName}</h1>
-                <span className="bg-[#FEF2F2] text-[#B91C1C] text-[11px] font-bold px-2 py-0.5 rounded border border-[#FEE2E2]">
+                <span className="text-[11px] font-bold text-[#F59E0B] uppercase tracking-wide whitespace-nowrap">
                   Yet to sign
                 </span>
               </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <button 
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
                 onClick={onSign}
-                className="px-5 py-2 bg-[#7A005D] text-white rounded-xl text-sm font-bold hover:opacity-90 transition-opacity"
+                className="inline-flex items-center gap-2 px-5 py-2 bg-[#7A005D] text-white rounded-full text-sm font-bold hover:opacity-90 transition-opacity"
               >
+                <PenLine size={18} strokeWidth={2} className="text-white" />
                 Sign
               </button>
-              <button className="p-2 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50">
-                <MoreVertical size={18} />
+              <button
+                type="button"
+                className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-lg"
+                aria-label="More actions"
+              >
+                <MoreVertical size={18} strokeWidth={2} />
               </button>
             </div>
           </div>
@@ -118,11 +134,11 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({ envelopeName,
           <div className="flex items-center space-x-12 mt-6">
             <div>
               <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1">Sent on</p>
-              <p className="text-[13px] font-medium text-slate-800">10/14/2024 7:19 AM</p>
+              <p className="text-[13px] font-medium text-slate-800">03/01/2026 9:00 AM</p>
             </div>
             <div>
               <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1">Sent by</p>
-              <p className="text-[13px] font-medium text-[#2563eb] hover:underline cursor-pointer">Anne Montgomery</p>
+              <p className="text-[13px] font-medium text-[#7A005D] hover:underline cursor-pointer">Harry Porter</p>
             </div>
           </div>
         </div>
@@ -133,20 +149,33 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({ envelopeName,
             <h2 className="text-[15px] font-bold text-slate-900">Documents</h2>
           </div>
           <div className="p-2">
-            <div className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 rounded-lg group transition-colors">
-              <div className="flex items-center space-x-3">
-                <FileText size={20} className="text-slate-400" />
-                <span className="text-[14px] font-bold text-slate-900">Comprehensive Project Oversight and Coordination Contract</span>
+            {DETAIL_DOCUMENTS.map((fileName) => (
+              <div
+                key={fileName}
+                className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 rounded-lg group transition-colors"
+              >
+                <div className="flex items-center space-x-3 min-w-0">
+                  <FileText size={20} className="text-slate-400 shrink-0" />
+                  <span className="text-[14px] font-bold text-slate-900 truncate">{fileName}</span>
+                </div>
+                <div className="flex items-center space-x-1 shrink-0">
+                  <button
+                    type="button"
+                    className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md"
+                    aria-label={`View ${fileName}`}
+                  >
+                    <Eye size={20} />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md"
+                    aria-label={`Download ${fileName}`}
+                  >
+                    <Download size={20} />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center space-x-4">
-                <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md">
-                  <Eye size={20} />
-                </button>
-                <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md">
-                  <Download size={20} />
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
@@ -158,13 +187,16 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({ envelopeName,
               <span className="text-slate-400 font-medium">· 4</span>
             </div>
             <div className="flex items-center space-x-1">
-              <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-md">
+              <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-md" aria-label="Share">
+                <Share2 size={18} />
+              </button>
+              <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-md" aria-label="Settings">
                 <Settings2 size={18} />
               </button>
-              <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-md">
+              <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-md" aria-label="Columns">
                 <Columns size={18} />
               </button>
-              <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-md">
+              <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-md" aria-label="Expand">
                 <Maximize2 size={18} />
               </button>
             </div>
@@ -226,7 +258,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({ envelopeName,
                 {RECIPIENTS.map((row) => (
                   <tr key={row.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4">
-                      <div className="w-6 h-6 rounded-full bg-[#E0F2FE] text-[#0369A1] flex items-center justify-center font-bold text-[11px]">
+                      <div className="w-7 h-7 rounded-full border-2 border-red-500 text-red-600 flex items-center justify-center font-bold text-[11px]">
                         {row.order}
                       </div>
                     </td>

@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search,
   Filter,
@@ -339,29 +340,63 @@ const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({ variant, onClose })
 };
 
 interface EnvelopesListViewProps {
-  onSendEnvelope?: () => void;
+  onSendDocuments?: () => void;
+  onViewEnvelope?: (name: string) => void;
 }
 
-const btnOutline = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-800 bg-white hover:bg-slate-50 shadow-sm';
-const btnOrange = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-white bg-[#F5A623] hover:bg-[#e09420] shadow-sm';
-const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope }) => {
+const btnOutline =
+  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 text-[12px] font-bold text-slate-900 bg-white hover:bg-slate-50 shadow-sm shrink-0 whitespace-nowrap';
+const btnOrange =
+  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold text-slate-900 bg-[#F5A623] hover:bg-[#e09420] shadow-sm shrink-0 whitespace-nowrap';
+const btnResend =
+  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold text-white bg-[#7A005D] hover:opacity-95 shadow-sm shrink-0 whitespace-nowrap';
+const moreIconBtn =
+  'p-1.5 text-slate-900 hover:bg-slate-100 rounded-lg shrink-0';
+
+const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendDocuments, onViewEnvelope }) => {
   const [search, setSearch] = useState('');
   const [showVoided, setShowVoided] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('lastModified');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ e1: true });
   const [openMoreId, setOpenMoreId] = useState<string | null>(null);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const moreTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useLayoutEffect(() => {
+    if (!openMoreId) {
+      setMenuPos(null);
+      return;
+    }
+    const btn = moreTriggerRefs.current[openMoreId];
+    if (!btn) return;
+    const place = () => {
+      const r = btn.getBoundingClientRect();
+      const mw = 260;
+      const left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8));
+      setMenuPos({ top: r.bottom + 8, left });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [openMoreId]);
 
   useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
-        setOpenMoreId(null);
-      }
+    if (!openMoreId) return;
+    const down = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (moreTriggerRefs.current[openMoreId]?.contains(t)) return;
+      const root = document.getElementById('envelope-more-menu-root');
+      if (root?.contains(t)) return;
+      setOpenMoreId(null);
     };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
+    document.addEventListener('mousedown', down);
+    return () => document.removeEventListener('mousedown', down);
+  }, [openMoreId]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -409,28 +444,35 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
     const moreVariant = moreMenuVariantForEnvelope(status);
 
     const moreBtn = (
-      <div className="relative inline-block" ref={openMoreId === row.id ? moreMenuRef : null}>
-        <button
-          type="button"
-          className="p-2 text-slate-500 hover:text-slate-800 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 shadow-sm"
-          aria-label="More actions"
-          onClick={() => setOpenMoreId((id) => (id === row.id ? null : row.id))}
-        >
-          <MoreVertical size={16} />
-        </button>
-        {openMoreId === row.id && (
-          <div className="absolute right-0 top-full mt-1 z-[140] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
-            <EnvelopeMoreMenu variant={moreVariant} onClose={() => setOpenMoreId(null)} />
-          </div>
-        )}
-      </div>
+      <button
+        type="button"
+        ref={(el) => {
+          moreTriggerRefs.current[row.id] = el;
+        }}
+        className={moreIconBtn}
+        aria-label="More actions"
+        onClick={() => setOpenMoreId((id) => (id === row.id ? null : row.id))}
+      >
+        <MoreVertical size={18} strokeWidth={2} />
+      </button>
+    );
+
+    const viewBtn = (
+      <button
+        type="button"
+        className={btnOutline}
+        onClick={() => onViewEnvelope?.(row.name)}
+      >
+        <Eye size={14} strokeWidth={2} />
+        View
+      </button>
     );
 
     if (status === 'draft') {
       return (
-        <div className="flex items-center justify-end gap-2 flex-wrap">
+        <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
           <button type="button" className={btnOutline}>
-            <PenLine size={14} />
+            <PenLine size={14} strokeWidth={2} />
             Edit
           </button>
           {moreBtn}
@@ -440,13 +482,13 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
 
     if (status === 'correcting') {
       return (
-        <div className="flex items-center justify-end gap-2 flex-wrap">
+        <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
           <button type="button" className={btnOutline}>
-            <PenLine size={14} />
+            <PenLine size={14} strokeWidth={2} />
             Edit
           </button>
-          <button type="button" className={btnOutline}>
-            <Send size={14} />
+          <button type="button" className={btnResend}>
+            <Send size={14} strokeWidth={2} />
             Resend
           </button>
           {moreBtn}
@@ -456,11 +498,8 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
 
     if (status === 'completed' || status === 'voided') {
       return (
-        <div className="flex items-center justify-end gap-2 flex-wrap">
-          <button type="button" className={btnOutline}>
-            <Eye size={14} />
-            View
-          </button>
+        <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
+          {viewBtn}
           {moreBtn}
         </div>
       );
@@ -469,13 +508,10 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
     if (status === 'yet to sign') {
       if (adminIsSigner) {
         return (
-          <div className="flex items-center justify-end gap-2 flex-wrap">
-            <button type="button" className={btnOutline}>
-              <Eye size={14} />
-              View
-            </button>
+          <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
+            {viewBtn}
             <button type="button" className={btnOrange}>
-              <PenLine size={14} />
+              <PenLine size={14} strokeWidth={2} />
               Sign
             </button>
             {moreBtn}
@@ -483,26 +519,19 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
         );
       }
       return (
-        <div className="flex items-center justify-end gap-2 flex-wrap">
-          <button type="button" className={btnOutline}>
-            <Eye size={14} />
-            View
-          </button>
+        <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
+          {viewBtn}
           {moreBtn}
         </div>
       );
     }
 
-    /* in progress */
     if (adminIsSigner) {
       return (
-        <div className="flex items-center justify-end gap-2 flex-wrap">
-          <button type="button" className={btnOutline}>
-            <Eye size={14} />
-            View
-          </button>
+        <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
+          {viewBtn}
           <button type="button" className={btnOrange}>
-            <PenLine size={14} />
+            <PenLine size={14} strokeWidth={2} />
             Sign
           </button>
           {moreBtn}
@@ -510,11 +539,8 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
       );
     }
     return (
-      <div className="flex items-center justify-end gap-2 flex-wrap">
-        <button type="button" className={btnOutline}>
-          <Eye size={14} />
-          View
-        </button>
+      <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
+        {viewBtn}
         {moreBtn}
       </div>
     );
@@ -526,7 +552,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="px-6 py-4 flex flex-col gap-4 border-b border-slate-100 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-[15px] font-bold text-slate-900">Envelopes</h2>
+          <h2 className="text-[15px] font-bold text-slate-900">Documents</h2>
           <span className="text-slate-400 font-medium text-[15px]">· {visibleCount}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -539,11 +565,11 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
           </button>
           <button
             type="button"
-            onClick={onSendEnvelope}
+            onClick={onSendDocuments}
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-[13px] font-bold text-white hover:opacity-95 shadow-sm"
             style={{ backgroundColor: PRIMARY_PURPLE }}
           >
-            Send envelope
+            Send documents
           </button>
           <div className="flex items-center gap-1 pl-2 border-l border-slate-100">
             <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-50">
@@ -600,19 +626,19 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[880px]">
+        <table className="w-full text-left border-collapse min-w-[880px] table-auto">
           <thead>
             <tr className="border-b border-slate-200 bg-white text-[11px] text-slate-500 font-bold uppercase tracking-wider">
-              <th className="px-6 py-3 w-[40%]">
+              <th className="px-6 py-3 min-w-[200px]">
                 <SortHeader label="Name" colKey="name" />
               </th>
-              <th className="px-4 py-3 w-[22%]">
+              <th className="px-4 py-3 min-w-[140px]">
                 <SortHeader label="Status" colKey="status" />
               </th>
-              <th className="px-4 py-3 w-[22%]">
+              <th className="px-4 py-3 min-w-[160px]">
                 <SortHeader label="Last modified" colKey="lastModified" />
               </th>
-              <th className="px-6 py-3 w-[16%] text-right">
+              <th className="px-6 py-3 text-right whitespace-nowrap w-[1%]">
                 <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Actions</span>
               </th>
             </tr>
@@ -650,7 +676,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
                   <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
                     {formatLastModified(row.lastModified)}
                   </td>
-                  <td className="px-6 py-4 align-middle">{renderEnvelopeActions(row)}</td>
+                  <td className="px-6 py-4 align-middle text-right whitespace-nowrap">{renderEnvelopeActions(row)}</td>
                 </tr>
                 {row.children &&
                   expanded[row.id] &&
@@ -662,17 +688,21 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
                           <span className="font-semibold text-slate-800 truncate">{child.name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-4 align-middle">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${documentStatusDotClass(child.status)}`} />
-                          <span className="font-semibold capitalize text-[13px]">{statusLabelText(child.status)}</span>
-                        </div>
+                        <td className="px-4 py-4 align-middle">
+                        {row.status === 'draft' ? (
+                          <span className="text-slate-400 font-medium">—</span>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${documentStatusDotClass(child.status)}`} />
+                            <span className="font-semibold capitalize text-[13px]">{statusLabelText(child.status)}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-4 text-slate-500 font-medium text-[13px] tabular-nums align-middle">
                         {formatLastModified(child.lastModified)}
                       </td>
-                      <td className="px-6 py-4 align-middle">
-                        <div className="flex items-center justify-end gap-1">
+                        <td className="px-6 py-4 align-middle text-right whitespace-nowrap">
+                        <div className="inline-flex items-center justify-end gap-1 flex-nowrap">
                           <button
                             type="button"
                             className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
@@ -696,9 +726,31 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({ onSendEnvelope })
           </tbody>
         </table>
         {filteredRoots.length === 0 && (
-          <div className="py-20 text-center text-slate-500 text-sm font-medium">No envelopes match your filters.</div>
+          <div className="py-20 text-center text-slate-500 text-sm font-medium">No documents match your filters.</div>
         )}
       </div>
+
+      {openMoreId &&
+        menuPos &&
+        (() => {
+          const openRow = MOCK_ENVELOPES.find((r) => r.id === openMoreId);
+          if (!openRow) return null;
+          return createPortal(
+            <div
+              id="envelope-more-menu-root"
+              className="fixed rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
+              style={{
+                top: menuPos.top,
+                left: menuPos.left,
+                zIndex: 2147483647,
+              }}
+              role="presentation"
+            >
+              <EnvelopeMoreMenu variant={moreMenuVariantForEnvelope(openRow.status)} onClose={() => setOpenMoreId(null)} />
+            </div>,
+            document.body
+          );
+        })()}
     </div>
   );
 };

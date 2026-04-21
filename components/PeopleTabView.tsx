@@ -78,7 +78,10 @@ interface PeopleTabViewProps {
   onSendDocument?: () => void;
   onProfileClick?: () => void;
   onNewTemplate?: () => void;
-  onSendEnvelope?: () => void;
+  onSendDocuments?: () => void;
+  onViewDocumentPacket?: (name: string) => void;
+  hubTab?: string;
+  onHubTabChange?: (tab: string) => void;
 }
 
 const PeopleTabView: React.FC<PeopleTabViewProps> = ({
@@ -86,9 +89,14 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   onSendDocument,
   onProfileClick,
   onNewTemplate,
-  onSendEnvelope,
+  onSendDocuments,
+  onViewDocumentPacket,
+  hubTab: hubTabProp,
+  onHubTabChange,
 }) => {
-  const [activeTab, setActiveTab] = useState('People');
+  const [internalHubTab, setInternalHubTab] = useState('People');
+  const activeTab = hubTabProp ?? internalHubTab;
+  const setActiveTab = onHubTabChange ?? setInternalHubTab;
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -198,7 +206,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
             </div>
 
             <div className="flex items-center space-x-8">
-              {['People', 'Templates', 'Envelopes', 'Rules', 'Settings'].map((tab) => (
+              {['People', 'Templates', 'Documents', 'Rules', 'Settings'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -271,12 +279,12 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                           <ChevronDown size={14} className="text-slate-300" />
                         </div>
                       </th>
-                      <th className="px-6 py-3">
-                        <div className="flex items-center space-x-1 cursor-pointer">
-                          <span>Envelopes</span>
-                          <ChevronDown size={14} className="text-slate-300" />
-                        </div>
-                      </th>
+                    <th className="px-6 py-3">
+                      <div className="flex items-center space-x-1 cursor-pointer">
+                        <span>Documents</span>
+                        <ChevronDown size={14} className="text-slate-300" />
+                      </div>
+                    </th>
                       <th className="px-6 py-3">
                         <div className="flex items-center space-x-1 cursor-pointer">
                           <span>Notices</span>
@@ -373,9 +381,9 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
             </div>
           )}
 
-          {activeTab === 'Envelopes' && (
+          {activeTab === 'Documents' && (
             <div className="mb-8">
-              <EnvelopesListView onSendEnvelope={onSendEnvelope} />
+              <EnvelopesListView onSendDocuments={onSendDocuments} onViewEnvelope={onViewDocumentPacket} />
             </div>
           )}
 

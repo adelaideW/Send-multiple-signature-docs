@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Check, X } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -45,6 +45,34 @@ const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   advancedTags: [],
 };
 
+const DraftSavedSnackbar: React.FC<{
+  onViewDetails: () => void;
+  onDismiss: () => void;
+}> = ({ onViewDetails, onDismiss }) => {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 12000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  return (
+    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[260] animate-in fade-in slide-in-from-bottom-4 duration-300 px-4 w-full max-w-lg pointer-events-none">
+      <div className="pointer-events-auto rounded-full bg-[#C6F6F1] border border-[#A5F3E9] shadow-lg flex items-center gap-4 px-5 py-3 min-h-[52px]">
+        <div className="w-9 h-9 rounded-full bg-[#0D9488] flex items-center justify-center text-white shrink-0">
+          <Check size={18} strokeWidth={3} />
+        </div>
+        <span className="text-[14px] font-bold text-[#134E4A] flex-1">Draft saved</span>
+        <button
+          type="button"
+          onClick={onViewDetails}
+          className="text-[14px] font-bold text-[#134E4A] hover:underline shrink-0"
+        >
+          View details
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const SuccessSnackbar: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 10000);
@@ -80,6 +108,10 @@ const App: React.FC = () => {
   const [viewByDocuments, setViewByDocuments] = useState(false);
   const [templateEditorMode, setTemplateEditorMode] = useState<'create' | 'edit'>('edit');
   const [templateEditorSeed, setTemplateEditorSeed] = useState<{ title: string; bodyHtml: string | null } | null>(null);
+  const [documentsHubTab, setDocumentsHubTab] = useState('People');
+  const [draftSavedSnackOpen, setDraftSavedSnackOpen] = useState(false);
+  const [draftSnackDetailName, setDraftSnackDetailName] = useState('');
+  const envelopeEntryRef = useRef<ViewType>('landing');
 
   // Persistent Envelope Creation State
   const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
@@ -99,6 +131,29 @@ const App: React.FC = () => {
       return prev.slice(0, -1);
     });
   }, []);
+
+  const goToEnvelopeCreator = useCallback(
+    (from: ViewType) => {
+      envelopeEntryRef.current = from;
+      navigateTo('envelope');
+    },
+    [navigateTo]
+  );
+
+  const handleSaveAndExitEnvelope = useCallback(() => {
+    const st = envelopeState;
+    const name =
+      (st.selectedTemplates[0] && String(st.selectedTemplates[0]).replace(/\.pdf$/i, '')) ||
+      st.uploadedFiles[0]?.name?.replace(/\.pdf$/i, '') ||
+      'Untitled draft';
+    setDraftSnackDetailName(name);
+    setViewHistory((prev) => {
+      const i = prev.lastIndexOf('envelope');
+      if (i < 0) return prev;
+      return [...prev.slice(0, i), envelopeEntryRef.current];
+    });
+    setDraftSavedSnackOpen(true);
+  }, [envelopeState]);
 
   const handleEnvelopeContinue = (name: string) => {
     setSentEnvelopeName(name);
@@ -120,9 +175,20 @@ const App: React.FC = () => {
   };
 
   const handleExitEnvelopeDetails = () => {
+    setDocumentsHubTab('Documents');
     setViewByDocuments(true);
-    goBack();
+    setViewHistory((prev) => {
+      const i = prev.lastIndexOf('envelope_details');
+      if (i <= 0) return ['people_tab'];
+      return [...prev.slice(0, i), 'people_tab'];
+    });
   };
+
+  const handleDraftViewDetails = useCallback(() => {
+    setSelectedEnvelopeName(draftSnackDetailName);
+    setDraftSavedSnackOpen(false);
+    navigateTo('envelope_details');
+  }, [draftSnackDetailName, navigateTo]);
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
@@ -141,19 +207,22 @@ const App: React.FC = () => {
       {currentView === 'people_tab' && (
         <PeopleTabView 
           onGoHome={() => setViewHistory(['landing'])} 
-          onSendDocument={() => navigateTo('envelope')}
+          onSendDocument={() => goToEnvelopeCreator('people_tab')}
           onProfileClick={() => navigateTo('profile')}
           onNewTemplate={() => {
             setTemplateEditorSeed(null);
             setTemplateEditorMode('create');
             navigateTo('template_editor');
           }}
-          onSendEnvelope={() => navigateTo('envelope')}
+          onSendDocuments={() => goToEnvelopeCreator('people_tab')}
+          onViewDocumentPacket={handleOpenEnvelopeDetails}
+          hubTab={documentsHubTab}
+          onHubTabChange={setDocumentsHubTab}
         />
       )}
 
       {/* Profile & Main Sidebar View */}
-      <div className={`flex min-h-screen bg-[#F9FAFB] ${['profile', 'envelope_details'].includes(currentView) ? 'block' : 'hidden'}`}>
+      <div className={`flex min-h-screen bg-[#F9FAFB] ${currentView === 'profile' ? 'block' : 'hidden'}`}>
         <div className="w-14 bg-white border-r border-slate-200 flex flex-col items-center py-4 space-y-6 sticky top-0 h-screen z-30 shrink-0">
           <div 
             onClick={() => setViewHistory(['landing'])}
@@ -184,7 +253,7 @@ const App: React.FC = () => {
                   <Sidebar />
                   <div className="flex-1 min-w-0">
                     <EmployeeDocumentsSection 
-                      onSend={() => navigateTo('envelope')} 
+                      onSend={() => goToEnvelopeCreator('profile')} 
                       onOpenEnvelope={handleOpenEnvelopeDetails}
                       onReviewDocument={() => navigateTo('document_review')}
                       viewByDocuments={viewByDocuments}
@@ -194,15 +263,7 @@ const App: React.FC = () => {
                 </div>
               </>
             )}
-            {currentView === 'envelope_details' && (
-              <EnvelopeDetailsView 
-                envelopeName={selectedEnvelopeName} 
-                onExit={handleExitEnvelopeDetails} 
-                onSign={() => navigateTo('document_review')}
-              />
-            )}
-
-            {['profile', 'envelope_details', 'people_tab'].includes(currentView) && (
+            {['profile', 'people_tab'].includes(currentView) && (
               <button 
                 onClick={() => setIsAssistantOpen(!isAssistantOpen)}
                 className="fixed bottom-6 right-6 w-12 h-12 bg-[#7A005D] text-white rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform z-50"
@@ -218,21 +279,26 @@ const App: React.FC = () => {
               <GeminiAssistant onClose={() => setIsAssistantOpen(false)} />
             )}
 
-            {showSuccessToast && (
-              <SuccessSnackbar 
-                message="envelope sent" 
-                onClose={() => setShowSuccessToast(false)} 
-              />
-            )}
           </main>
         </div>
       </div>
+
+      {currentView === 'envelope_details' && (
+        <div className="fixed inset-0 z-[130] overflow-y-auto bg-[#F9FAFB]">
+          <EnvelopeDetailsView
+            envelopeName={selectedEnvelopeName}
+            onExit={handleExitEnvelopeDetails}
+            onSign={() => navigateTo('document_review')}
+          />
+        </div>
+      )}
 
       {/* Envelope Creator View */}
       {currentView === 'envelope' && (
         <div className="absolute inset-0 z-[100] bg-white">
           <EnvelopeCreator 
-            onExit={goBack} 
+            onExit={goBack}
+            onSaveAndExit={handleSaveAndExitEnvelope}
             onEditDocument={(detail) => {
               setTemplateEditorSeed(detail ?? null);
               setTemplateEditorMode('edit');
@@ -309,6 +375,17 @@ const App: React.FC = () => {
             onGoHome={() => setViewHistory(['landing'])}
           />
         </div>
+      )}
+
+      {showSuccessToast && (
+        <SuccessSnackbar message="envelope sent" onClose={() => setShowSuccessToast(false)} />
+      )}
+
+      {draftSavedSnackOpen && (
+        <DraftSavedSnackbar
+          onViewDetails={handleDraftViewDetails}
+          onDismiss={() => setDraftSavedSnackOpen(false)}
+        />
       )}
     </div>
   );

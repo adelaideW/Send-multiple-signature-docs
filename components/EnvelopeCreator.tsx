@@ -52,6 +52,8 @@ import type { UploadedFileItem } from '../types';
 
 interface EnvelopeCreatorProps {
   onExit: () => void;
+  /** Save draft and return to the flow entry point (shows draft snackbar in App). */
+  onSaveAndExit?: () => void;
   onEditDocument?: (detail: { title: string; bodyHtml: string }) => void;
   onCreateTemplate?: () => void;
   /** Opens template editor with suggested name (from "Create and select …"). */
@@ -373,7 +375,8 @@ const CoachmarkPortal: React.FC<{
 };
 
 const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({ 
-  onExit, 
+  onExit,
+  onSaveAndExit,
   onEditDocument, 
   onCreateTemplate,
   onCreateTemplateWithName,
@@ -381,6 +384,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   state: persistentState,
   onUpdateState
 }) => {
+  const exitSavingDraft = () => {
+    if (onSaveAndExit) onSaveAndExit();
+    else onExit();
+  };
   const [currentStep, setCurrentStep] = useState<'setup' | 'placement'>('setup');
   const [expandedSections, setExpandedSections] = useState<string[]>(['documents', 'recipients', 'customMessage', 'advanced']);
   const [leftWidth, setLeftWidth] = useState(500);
@@ -1177,7 +1184,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             <Pencil size={14} className="text-slate-400 cursor-pointer" />
           </div>
           <div className="flex items-center space-x-4 mr-4">
-            <button onClick={() => setCurrentStep('setup')} className="flex items-center space-x-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
+            <button type="button" onClick={exitSavingDraft} className="flex items-center space-x-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
               <LogOut size={16} />
               <span>Save and exit</span>
             </button>
@@ -1573,7 +1580,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
           <Pencil size={14} className="text-slate-400 cursor-pointer hover:text-slate-600" />
         </div>
         <div className="flex items-center space-x-4">
-          <button onClick={onExit} className="flex items-center space-x-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
+          <button type="button" onClick={exitSavingDraft} className="flex items-center space-x-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
             <LogOut size={16} />
             <span>Save and exit</span>
           </button>
