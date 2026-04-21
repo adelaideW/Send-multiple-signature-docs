@@ -22,7 +22,6 @@ import {
 import TemplatesLibraryView from './TemplatesLibraryView';
 import EnvelopesListView, { type EnvelopeTableRow } from './EnvelopesListView';
 import ToolsSidePanel from './ToolsSidePanel';
-import ToolsMegaMenuPopover from './ToolsMegaMenuPopover';
 import SendReminderModal from './SendReminderModal';
 
 interface PeopleRow {
@@ -103,8 +102,6 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [toolsSideCollapsed, setToolsSideCollapsed] = useState(false);
-  const [toolsHeaderMenuOpen, setToolsHeaderMenuOpen] = useState(false);
-  const headerToolsRef = useRef<HTMLButtonElement | null>(null);
   const [sendReminderOpen, setSendReminderOpen] = useState(false);
 
   useEffect(() => {
@@ -127,33 +124,13 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-40">
-          <button
-            ref={headerToolsRef}
-            type="button"
-            onClick={() => setToolsHeaderMenuOpen((v) => !v)}
-            className="flex items-center gap-1 cursor-pointer group rounded-md px-1 py-1 -ml-1 hover:bg-slate-50"
-            aria-expanded={toolsHeaderMenuOpen}
-            aria-haspopup="dialog"
-          >
-            <span className="text-[14px] font-bold text-slate-700">Tools</span>
-            <ChevronDown
-              size={14}
-              className={`text-slate-400 group-hover:text-slate-600 transition-transform ${toolsHeaderMenuOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
-          <ToolsMegaMenuPopover
-            open={toolsHeaderMenuOpen}
-            onClose={() => setToolsHeaderMenuOpen(false)}
-            anchorRef={headerToolsRef}
-          />
-
-          <div className="flex-1 max-w-2xl px-12">
+        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-40 gap-4">
+          <div className="flex-1 max-w-2xl min-w-0">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input 
-                type="text" 
-                placeholder="Search or jump to" 
+              <input
+                type="text"
+                placeholder="Search or jump to"
                 className="w-full bg-slate-100 border-none rounded-lg py-2 pl-10 pr-4 text-[13px] outline-none"
               />
             </div>

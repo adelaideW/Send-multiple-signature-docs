@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Search, HelpCircle, Bell, Accessibility, ChevronDown, Grid } from 'lucide-react';
+import { Search, HelpCircle, Bell, Accessibility, Grid } from 'lucide-react';
 
 interface HeaderProps {
   onProfileClick?: () => void;
@@ -9,12 +9,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ onProfileClick }) => {
   return (
     <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-20">
-      <div className="flex items-center space-x-4 w-1/3">
-        <div className="flex items-center space-x-1 cursor-pointer">
-          <span className="text-[14px] font-bold text-slate-700">Menu</span>
-          <ChevronDown size={14} className="text-slate-500" />
-        </div>
-      </div>
+      <div className="w-1/3 shrink-0" aria-hidden />
 
       <div className="flex-1 max-w-2xl px-4">
         <div className="relative">

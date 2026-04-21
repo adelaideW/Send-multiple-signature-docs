@@ -11,11 +11,13 @@ interface ToolsMegaMenuPopoverProps {
   open: boolean;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLElement | null>;
+  /** Called when user chooses Home from the top section (e.g. navigate to landing). */
+  onHome?: () => void;
 }
 
 const sectionHeader = 'px-4 pt-3 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider';
 
-const ToolsMegaMenuPopover: React.FC<ToolsMegaMenuPopoverProps> = ({ open, onClose, anchorRef }) => {
+const ToolsMegaMenuPopover: React.FC<ToolsMegaMenuPopoverProps> = ({ open, onClose, anchorRef, onHome }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const [flyoutOpen, setFlyoutOpen] = useState(false);
@@ -69,6 +71,12 @@ const ToolsMegaMenuPopover: React.FC<ToolsMegaMenuPopoverProps> = ({ open, onClo
                 <button
                   key={item.id}
                   type="button"
+                  onClick={() => {
+                    if (item.id === 'home') {
+                      onHome?.();
+                      onClose();
+                    }
+                  }}
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-[13px] font-medium text-slate-700 hover:bg-slate-50"
                 >
                   <Icon size={18} className="text-slate-500 shrink-0" strokeWidth={2} />
@@ -146,14 +154,11 @@ const ToolsMegaMenuPopover: React.FC<ToolsMegaMenuPopoverProps> = ({ open, onClo
           >
             {TOOLS_FLYOUT_ITEMS.map((item) => {
               const Icon = item.icon;
-              const isDocs = item.id === 'documents';
               return (
                 <button
                   key={item.id}
                   type="button"
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] text-slate-800 hover:bg-slate-50 first:rounded-t-lg last:rounded-b-lg ${
-                    isDocs ? 'font-bold bg-slate-100' : 'font-medium'
-                  }`}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-medium text-slate-800 hover:bg-slate-50 first:rounded-t-lg last:rounded-b-lg"
                 >
                   <Icon size={18} className="text-slate-500 shrink-0" strokeWidth={2} />
                   <span className="truncate">{item.label}</span>

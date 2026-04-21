@@ -1,7 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
-  ChevronRight,
   History,
   Search,
   MoreVertical,
@@ -35,9 +34,11 @@ interface EmployeeProfileProps {
 export const EmployeeHeaderSection: React.FC<EmployeeProfileProps> = ({ employee }) => {
   return (
     <div className="pt-4 px-8 pb-4">
-      <nav className="flex items-center space-x-2 text-[12px] text-slate-500 mb-4">
+      <nav className="flex items-center gap-2 text-[12px] text-slate-500 mb-4">
         <span className="hover:text-slate-700 cursor-pointer">Feeds</span>
-        <ChevronRight size={14} className="text-slate-300" />
+        <span className="text-slate-300" aria-hidden>
+          /
+        </span>
         <span className="text-slate-800 font-medium">Employee profile</span>
       </nav>
 
@@ -273,12 +274,44 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   return (
     <div className="pr-8 pb-8 pl-4 pt-0">
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm min-h-[500px] overflow-hidden relative">
-        <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100">
-          <div className="flex items-center space-x-2">
-            <h2 className="text-[16px] font-bold text-slate-900">Documents</h2>
-            <span className="text-slate-400 font-medium text-sm">
-              · {profileTab === 'action_required' ? ACTION_REQUIRED_BADGE : DOCUMENTS_TAB_TOTAL}
-            </span>
+        <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100 gap-4 flex-wrap">
+          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50/80 shrink-0">
+            <button
+              type="button"
+              onClick={() => setProfileTab('action_required')}
+              className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors inline-flex items-center gap-2 ${
+                profileTab === 'action_required'
+                  ? 'bg-[#7A005D] text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-white'
+              }`}
+            >
+              Action required
+              <span
+                className={`min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                  profileTab === 'action_required' ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
+                }`}
+              >
+                {ACTION_REQUIRED_BADGE}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setProfileTab('documents')}
+              className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors inline-flex items-center gap-2 ${
+                profileTab === 'documents'
+                  ? 'bg-[#7A005D] text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-white'
+              }`}
+            >
+              Documents
+              <span
+                className={`text-[11px] font-bold tabular-nums ${
+                  profileTab === 'documents' ? 'text-white/90' : 'text-slate-500'
+                }`}
+              >
+                {DOCUMENTS_TAB_TOTAL}
+              </span>
+            </button>
           </div>
 
           <div className="flex items-center space-x-3">
@@ -352,47 +385,8 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50/80">
-                <button
-                  type="button"
-                  onClick={() => setProfileTab('action_required')}
-                  className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors inline-flex items-center gap-2 ${
-                    profileTab === 'action_required'
-                      ? 'bg-[#7A005D] text-white shadow-sm'
-                      : 'text-slate-700 hover:bg-white'
-                  }`}
-                >
-                  Action required
-                  <span
-                    className={`min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
-                      profileTab === 'action_required' ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
-                    }`}
-                  >
-                    {ACTION_REQUIRED_BADGE}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setProfileTab('documents')}
-                  className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors inline-flex items-center gap-2 ${
-                    profileTab === 'documents'
-                      ? 'bg-[#7A005D] text-white shadow-sm'
-                      : 'text-slate-700 hover:bg-white'
-                  }`}
-                >
-                  Documents
-                  <span
-                    className={`text-[11px] font-bold tabular-nums ${
-                      profileTab === 'documents' ? 'text-white/90' : 'text-slate-500'
-                    }`}
-                  >
-                    {DOCUMENTS_TAB_TOTAL}
-                  </span>
-                </button>
-              </div>
-
               {profileTab === 'documents' && (
-                <div className="flex items-center gap-2 pl-1">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setShowArchive((v) => !v)}

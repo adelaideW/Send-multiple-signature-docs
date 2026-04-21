@@ -4,7 +4,6 @@ import {
   LayoutGrid,
   UserCircle,
   Code,
-  FileText,
   CheckSquare,
   Bell,
   Box,
@@ -37,7 +36,6 @@ export const TOOLS_FLYOUT_ITEMS: { id: string; label: string; icon: LucideIcon }
   { id: 'app-studio', label: 'App Studio', icon: LayoutGrid },
   { id: 'approvals', label: 'Approvals', icon: UserCircle },
   { id: 'developer', label: 'Developer', icon: Code },
-  { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'inbox', label: 'Inbox', icon: CheckSquare },
   { id: 'notification-center', label: 'Notification Center', icon: Bell },
   { id: 'recipes', label: 'Recipes', icon: Box },
@@ -63,7 +61,6 @@ export const MEGA_MENU_TOP: { id: string; label: string; icon: LucideIcon }[] = 
 export const MEGA_MENU_PRODUCTS: PlatformNavItem[] = [
   { id: 'favorites', label: 'Favorites', icon: Star, chevron: true },
   { id: 'time', label: 'Time', icon: Clock, chevron: true },
-  { id: 'documents-prod', label: 'Documents', icon: FileText, chevron: true },
   { id: 'benefits', label: 'Benefits', icon: Heart, chevron: true },
   { id: 'payroll', label: 'Payroll', icon: DollarSign, chevron: true },
   { id: 'finance', label: 'Finance', icon: CreditCard, chevron: true },
