@@ -540,7 +540,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   return (
     <div className="pr-8 pb-8 pl-4 pt-0">
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm min-h-[500px] overflow-hidden relative flex">
-        <aside className="w-[220px] shrink-0 bg-slate-900 py-4 px-2 overflow-y-auto max-h-[min(900px,calc(100vh-12rem))] custom-scrollbar">
+        <aside className="w-[220px] shrink-0 bg-white border-r border-slate-200 py-4 px-2 overflow-y-auto max-h-[min(900px,calc(100vh-12rem))] custom-scrollbar">
           <nav className="space-y-0.5" aria-label="Employee profile sections">
             {PROFILE_LEFT_NAV_PRIMARY.map((label) => {
               const isDocuments = label === 'Documents';
@@ -550,8 +550,8 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                   type="button"
                   className={`w-full text-left px-3 py-2 rounded-md text-[13px] leading-snug transition-colors ${
                     isDocuments
-                      ? 'bg-white/15 text-white font-semibold'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                      ? 'bg-slate-100 text-slate-900 font-semibold'
+                      : 'text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   {label}
@@ -563,7 +563,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
               <button
                 key={label}
                 type="button"
-                className="w-full text-left px-3 py-2 rounded-md text-[13px] leading-snug text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors"
+                className="w-full text-left px-3 py-2 rounded-md text-[13px] leading-snug text-slate-900 hover:bg-slate-50 transition-colors"
               >
                 {label}
               </button>
@@ -571,7 +571,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
           </nav>
         </aside>
 
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative border-l border-slate-200">
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
         <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100 gap-4 flex-wrap">
           <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50/80 shrink-0">
             <button
