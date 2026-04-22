@@ -570,29 +570,6 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               <Printer size={16} />
             </button>
             <div className="h-6 w-px bg-slate-200 mx-1" />
-            <button
-              type="button"
-              onClick={() => setRecipientPanelOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-50 shadow-sm shrink-0"
-            >
-              <LayoutGrid size={14} className="text-slate-500" />
-              <span className="whitespace-nowrap">Recipient fields</span>
-            </button>
-            <button
-              type="button"
-              onClick={focusEditor}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-50 shadow-sm shrink-0"
-            >
-              <Zap size={14} className="fill-slate-700 text-slate-700" />
-              <span className="whitespace-nowrap">Insert variable</span>
-            </button>
-            <button
-              type="button"
-              className="px-2.5 py-1 bg-[#f8fafc] border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm shrink-0"
-            >
-              Import
-            </button>
-            <div className="h-6 w-px bg-slate-200 mx-1" />
             <div className="flex items-center space-x-1 border border-slate-200 rounded px-2 py-0.5 bg-white cursor-pointer hover:bg-slate-50 min-w-[110px] justify-between">
               <span className="text-[12px] font-medium text-slate-700">Normal text</span>
               <ChevronDown size={14} className="text-slate-400" />
@@ -730,6 +707,29 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 <ChevronDown size={10} className="ml-0.5" />
               </button>
             </div>
+            <div className="h-6 w-px bg-slate-200 mx-1" />
+            <button
+              type="button"
+              onClick={() => setRecipientPanelOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-50 shadow-sm shrink-0"
+            >
+              <LayoutGrid size={14} className="text-slate-500" />
+              <span className="whitespace-nowrap">Recipient fields</span>
+            </button>
+            <button
+              type="button"
+              onClick={focusEditor}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-50 shadow-sm shrink-0"
+            >
+              <Zap size={14} className="fill-slate-700 text-slate-700" />
+              <span className="whitespace-nowrap">Insert variable</span>
+            </button>
+            <button
+              type="button"
+              className="px-2.5 py-1 bg-[#f8fafc] border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm shrink-0"
+            >
+              Import
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
@@ -950,7 +950,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               </button>
             </div>
             <p className="text-sm text-slate-700 leading-relaxed mb-6">
-              You have unsaved content. If you leave now, your changes will be lost.
+              You have unsaved contents. Are you sure you want to leave the editor without saving this template?
             </p>
             <div className="flex justify-end gap-2 flex-wrap">
               <button
@@ -961,18 +961,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   onExit();
                 }}
               >
-                Exit without saving
+                Leave without saving
               </button>
               <button
                 type="button"
                 className="px-4 py-2.5 rounded-xl bg-[#7A005D] text-white text-sm font-bold hover:opacity-95"
                 onClick={() => {
-                  performSave(true);
                   setUnsavedExitModalOpen(false);
-                  onExit();
+                  performSave(true);
                 }}
               >
-                Save and exit
+                Save template
               </button>
             </div>
           </div>
