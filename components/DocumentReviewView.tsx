@@ -314,6 +314,17 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                       <FileText size={20} className="text-slate-400 shrink-0" />
                       <span className="min-w-0 flex-1 font-semibold text-slate-900 text-[14px] truncate">{doc.name}</span>
                       <div className="flex items-center justify-end gap-1 shrink-0">
+                        {showSign ? (
+                          <button
+                            type="button"
+                            onClick={() => openSignForDoc(doc.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-bold text-slate-900"
+                            style={{ backgroundColor: ACCENT_SIGN }}
+                          >
+                            <PenLine size={14} strokeWidth={2} />
+                            Sign
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
@@ -330,17 +341,6 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                         >
                           <Download size={18} />
                         </button>
-                        {showSign ? (
-                          <button
-                            type="button"
-                            onClick={() => openSignForDoc(doc.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-bold text-slate-900"
-                            style={{ backgroundColor: ACCENT_SIGN }}
-                          >
-                            <PenLine size={14} strokeWidth={2} />
-                            Sign
-                          </button>
-                        ) : null}
                       </div>
                     </div>
                   );
@@ -356,15 +356,14 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
           <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-40">
             <h2 className="text-sm font-bold text-slate-900 truncate pr-4">{currentSignDoc.name}</h2>
             <div className="flex items-center gap-3 shrink-0">
-              {signableDocs.length > 1 && (
-                <button
-                  type="button"
-                  onClick={handleSaveAndExitSign}
-                  className="text-xs font-bold text-slate-700 hover:text-slate-900 px-2"
-                >
-                  Save and exit
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleSaveAndExitSign}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 px-1"
+              >
+                <LogOut size={14} />
+                Save and exit
+              </button>
               {signableDocs.length > 1 && !isLastSignDoc ? (
                 <button
                   type="button"
@@ -485,17 +484,6 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
             style={{ top: signMenuPos.top, left: signMenuPos.left, zIndex: 2147483647 }}
             role="menu"
           >
-            <button
-              type="button"
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
-              onClick={() => {
-                setSignMenuOpen(false);
-                handleSaveAndExitSign();
-              }}
-            >
-              <LogOut size={16} />
-              Save and exit
-            </button>
             <button
               type="button"
               className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
