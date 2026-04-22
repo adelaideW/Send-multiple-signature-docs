@@ -185,6 +185,31 @@ const ACTION_REQUIRED_BADGE = ACTION_REQUIRED_PACKETS.reduce(
   0
 );
 
+/** Left profile rail (prototype: only Documents is active; matches reference layout). */
+const PROFILE_LEFT_NAV_PRIMARY = [
+  'Employee information',
+  'Personal information',
+  'Additional information',
+  'Hierarchy information',
+  'Business partners',
+  'Compensation information',
+  'Jobs',
+  'Direct Reports',
+  'Custom fields',
+  'Documents',
+] as const;
+
+const PROFILE_LEFT_NAV_SECONDARY = [
+  'Payroll',
+  'Insurance',
+  'Commuter',
+  'Apps',
+  'App usernames',
+  'Devices',
+  'Two factor devices',
+  'Authentication',
+] as const;
+
 type ProfileFile = { id: string; name: string; lastModified: string; archived: boolean };
 type ProfileSubfolder = { id: string; name: string; files: ProfileFile[] };
 type ProfileRootFolder = {
@@ -515,20 +540,52 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   return (
     <div className="pr-8 pb-8 pl-4 pt-0">
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm min-h-[500px] overflow-hidden relative flex">
-        <aside className="w-52 shrink-0 border-r border-slate-100 bg-slate-50/60 py-4 px-2">
-          <nav className="space-y-1" aria-label="Employee documents">
+        <aside className="w-[220px] shrink-0 bg-slate-900 py-4 px-2 overflow-y-auto max-h-[min(900px,calc(100vh-12rem))] custom-scrollbar">
+          <nav className="space-y-0.5" aria-label="Employee profile sections">
+            {PROFILE_LEFT_NAV_PRIMARY.map((label) => {
+              const isDocuments = label === 'Documents';
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  className={`w-full text-left px-3 py-2 rounded-md text-[13px] leading-snug transition-colors ${
+                    isDocuments
+                      ? 'bg-white/15 text-white font-semibold'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            <div className="h-4" aria-hidden />
+            {PROFILE_LEFT_NAV_SECONDARY.map((label) => (
+              <button
+                key={label}
+                type="button"
+                className="w-full text-left px-3 py-2 rounded-md text-[13px] leading-snug text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors"
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative border-l border-slate-200">
+        <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100 gap-4 flex-wrap">
+          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50/80 shrink-0">
             <button
               type="button"
               onClick={() => setProfileTab('action_required')}
-              className={`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-[13px] font-bold transition-colors ${
+              className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors inline-flex items-center gap-2 ${
                 profileTab === 'action_required'
                   ? 'bg-[#7A005D] text-white shadow-sm'
-                  : 'text-slate-800 hover:bg-white border border-transparent hover:border-slate-200'
+                  : 'text-slate-700 hover:bg-white'
               }`}
             >
-              <span>Action required</span>
+              Action required
               <span
-                className={`min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center tabular-nums ${
+                className={`min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
                   profileTab === 'action_required' ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
                 }`}
               >
@@ -538,13 +595,13 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
             <button
               type="button"
               onClick={() => setProfileTab('documents')}
-              className={`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-[13px] font-bold transition-colors ${
+              className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors inline-flex items-center gap-2 ${
                 profileTab === 'documents'
                   ? 'bg-[#7A005D] text-white shadow-sm'
-                  : 'text-slate-800 hover:bg-white border border-transparent hover:border-slate-200'
+                  : 'text-slate-700 hover:bg-white'
               }`}
             >
-              <span>Documents</span>
+              Documents
               <span
                 className={`text-[11px] font-bold tabular-nums ${
                   profileTab === 'documents' ? 'text-white/90' : 'text-slate-500'
@@ -553,12 +610,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                 {DOCUMENTS_TAB_TOTAL}
               </span>
             </button>
-          </nav>
-        </aside>
-
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
-        <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100 gap-4 flex-wrap">
-          <div className="min-w-[120px] shrink-0" aria-hidden />
+          </div>
 
           <div className="flex items-center space-x-3">
             <button
@@ -807,8 +859,9 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                               <div className="flex items-center justify-end gap-1">
                                 <button
                                   type="button"
+                                  onClick={() => setProfilePreviewName(child.name)}
                                   className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
-                                  aria-label="View"
+                                  aria-label={`Preview ${child.name}`}
                                 >
                                   <Eye size={18} />
                                 </button>
