@@ -770,7 +770,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   };
   const [currentStep, setCurrentStep] = useState<'setup' | 'placement'>('setup');
   const [expandedSections, setExpandedSections] = useState<string[]>(['documents', 'recipients', 'customMessage', 'advanced']);
-  const [leftWidth, setLeftWidth] = useState(500);
+  const [leftWidth, setLeftWidth] = useState(600);
   const [isResizing, setIsResizing] = useState(false);
   const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false);
   

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   X,
   ChevronDown,
@@ -79,6 +79,18 @@ function createChipElement(label: string): HTMLSpanElement {
   return span;
 }
 
+function editorHasMeaningfulContent(root: HTMLElement): boolean {
+  const titleP = root.querySelector('p[data-title-line]');
+  const titleText = (titleP?.textContent || '').replace(/\u00a0/g, ' ').trim();
+  if (titleText.length > 0) return true;
+  if (root.querySelectorAll(`span[data-chip="${CHIP_ATTR}"]`).length > 0) return true;
+  for (const child of Array.from(root.children)) {
+    if (child === titleP) continue;
+    if ((child.textContent || '').replace(/\u00a0/g, ' ').trim().length > 0) return true;
+  }
+  return false;
+}
+
 const TemplateEditor: React.FC<TemplateEditorProps> = ({
   onExit,
   onGoHome,
@@ -97,6 +109,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeeRole, setEmployeeRole] = useState<'employee' | 'manager'>('employee');
+  const [contentCheck, setContentCheck] = useState(0);
+  const [unsavedExitModalOpen, setUnsavedExitModalOpen] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const chipMoveRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -155,6 +169,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       tp.textContent = text;
     }
     syncingTitleFromBar.current = false;
+    setContentCheck((c) => c + 1);
   };
 
   const wireChipDragHandlers = useCallback((root: HTMLElement) => {
@@ -205,6 +220,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     if (titleText) setTemplateName(titleText);
     else if (initialTitle?.trim()) setTemplateName(initialTitle.trim());
     wireChipDragHandlers(ed);
+    setContentCheck((c) => c + 1);
   }, [initialBodyHtml, initialTitle, isCreate, useRichCanvas, wireChipDragHandlers]);
 
   useEffect(() => {
@@ -225,6 +241,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     if (!sel || sel.rangeCount === 0) {
       editor.appendChild(createChipElement(label));
       wireChipDragHandlers(editor);
+      setContentCheck((c) => c + 1);
       return;
     }
     let range = sel.getRangeAt(0);
@@ -241,6 +258,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     sel.removeAllRanges();
     sel.addRange(range);
     wireChipDragHandlers(editor);
+    setContentCheck((c) => c + 1);
   }, [wireChipDragHandlers]);
 
   const handleEditorDrop = useCallback(
@@ -281,6 +299,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           sel.addRange(range);
         }
         wireChipDragHandlers(editor);
+        setContentCheck((c) => c + 1);
         return;
       }
 
@@ -296,6 +315,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           sel.addRange(range);
         }
         wireChipDragHandlers(editor);
+        setContentCheck((c) => c + 1);
       }
     },
     [wireChipDragHandlers]
@@ -313,6 +333,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       if (prev instanceof HTMLElement && prev.dataset.chip === CHIP_ATTR) {
         e.preventDefault();
         prev.remove();
+        setContentCheck((c) => c + 1);
       }
     }
     if (anchorNode.nodeType === Node.ELEMENT_NODE) {
@@ -321,6 +342,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       if (e.key === 'Backspace' && child instanceof HTMLElement && child.dataset.chip === CHIP_ATTR) {
         e.preventDefault();
         child.remove();
+        setContentCheck((c) => c + 1);
       }
     }
   };
@@ -338,7 +360,46 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       setTemplateName(readTitleFromEditor());
     }
     wireChipDragHandlers(ed);
+    setContentCheck((c) => c + 1);
   };
+
+  const canSave = useMemo(() => {
+    if (!useRichCanvas) return true;
+    const el = editorRef.current;
+    if (!el) return false;
+    return editorHasMeaningfulContent(el);
+  }, [useRichCanvas, contentCheck]);
+
+  const performSave = useCallback(
+    (allowEmpty: boolean) => {
+      if (useRichCanvas && !allowEmpty) {
+        const el = editorRef.current;
+        if (!el || !editorHasMeaningfulContent(el)) return;
+      }
+      const name = templateName.trim() || readTitleFromEditor().trim() || 'Untitled template';
+      const body = useRichCanvas && editorRef.current ? editorRef.current.innerHTML : '';
+      if (isCreate && onSaveNewTemplate) {
+        onSaveNewTemplate(name, body);
+      } else if (!isCreate && onUpdateTemplate) {
+        onUpdateTemplate(name, body);
+      } else {
+        onExit();
+      }
+    },
+    [useRichCanvas, templateName, isCreate, onSaveNewTemplate, onUpdateTemplate, onExit]
+  );
+
+  const requestEditorExit = useCallback(() => {
+    if (!useRichCanvas) {
+      onExit();
+      return;
+    }
+    if (!editorRef.current || !editorHasMeaningfulContent(editorRef.current)) {
+      onExit();
+      return;
+    }
+    setUnsavedExitModalOpen(true);
+  }, [useRichCanvas, onExit]);
 
   const displayTitle = templateName.trim() || '[Envelope Templates Name]';
 
@@ -450,36 +511,33 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           )}
         </div>
         <div className="flex items-center space-x-2 shrink-0">
+          <button type="button" className="px-4 py-1.5 bg-[#f8fafc] border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm">
+            Preview
+          </button>
+          <span
+            className="inline-flex"
+            title={useRichCanvas && !canSave ? 'Enter content before saving' : undefined}
+          >
+            <button
+              type="button"
+              onClick={() => performSave(false)}
+              disabled={useRichCanvas && !canSave}
+              className={`px-6 py-1.5 rounded-xl text-[13px] font-bold transition-all shadow-md ml-1 ${
+                useRichCanvas && !canSave
+                  ? 'bg-[#7A005D]/45 text-white cursor-not-allowed'
+                  : 'bg-[#7A005D] text-white hover:opacity-95'
+              }`}
+            >
+              Save
+            </button>
+          </span>
           <button
             type="button"
-            onClick={() => setRecipientPanelOpen(true)}
-            className="flex items-center space-x-2 px-3.5 py-1.5 bg-white border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+            onClick={requestEditorExit}
+            className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+            aria-label="Close editor"
           >
-            <LayoutGrid size={16} className="text-slate-500" />
-            <span>Recipient fields</span>
-          </button>
-          <button className="flex items-center space-x-2 px-3.5 py-1.5 bg-white border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm">
-            <Zap size={16} className="fill-slate-700 text-slate-700" />
-            <span>Insert variable</span>
-          </button>
-          <button className="px-4 py-1.5 bg-[#f8fafc] border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm">Preview</button>
-          <button className="px-4 py-1.5 bg-[#f8fafc] border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm">Import</button>
-          <button
-            type="button"
-            onClick={() => {
-              const name = templateName.trim() || readTitleFromEditor().trim() || 'Untitled template';
-              const body = useRichCanvas && editorRef.current ? editorRef.current.innerHTML : '';
-              if (isCreate && onSaveNewTemplate) {
-                onSaveNewTemplate(name, body);
-              } else if (!isCreate && onUpdateTemplate) {
-                onUpdateTemplate(name, body);
-              } else {
-                onExit();
-              }
-            }}
-            className="px-6 py-1.5 bg-[#7A005D] text-white rounded-xl text-[13px] font-bold hover:opacity-95 transition-all shadow-md ml-1"
-          >
-            Save
+            <X size={18} />
           </button>
         </div>
       </div>
@@ -510,6 +568,29 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               onClick={() => window.print()}
             >
               <Printer size={16} />
+            </button>
+            <div className="h-6 w-px bg-slate-200 mx-1" />
+            <button
+              type="button"
+              onClick={() => setRecipientPanelOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-50 shadow-sm shrink-0"
+            >
+              <LayoutGrid size={14} className="text-slate-500" />
+              <span className="whitespace-nowrap">Recipient fields</span>
+            </button>
+            <button
+              type="button"
+              onClick={focusEditor}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-50 shadow-sm shrink-0"
+            >
+              <Zap size={14} className="fill-slate-700 text-slate-700" />
+              <span className="whitespace-nowrap">Insert variable</span>
+            </button>
+            <button
+              type="button"
+              className="px-2.5 py-1 bg-[#f8fafc] border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm shrink-0"
+            >
+              Import
             </button>
             <div className="h-6 w-px bg-slate-200 mx-1" />
             <div className="flex items-center space-x-1 border border-slate-200 rounded px-2 py-0.5 bg-white cursor-pointer hover:bg-slate-50 min-w-[110px] justify-between">
@@ -841,6 +922,62 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           </div>
         </div>
       </div>
+
+      {unsavedExitModalOpen && (
+        <div
+          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setUnsavedExitModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unsaved-exit-title"
+          >
+            <div className="flex justify-between items-start gap-3 mb-2">
+              <h2 id="unsaved-exit-title" className="text-lg font-bold text-slate-900 pr-2">
+                Unsaved Changes
+              </h2>
+              <button
+                type="button"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
+                onClick={() => setUnsavedExitModalOpen(false)}
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed mb-6">
+              You have unsaved content. If you leave now, your changes will be lost.
+            </p>
+            <div className="flex justify-end gap-2 flex-wrap">
+              <button
+                type="button"
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
+                onClick={() => {
+                  setUnsavedExitModalOpen(false);
+                  onExit();
+                }}
+              >
+                Exit without saving
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2.5 rounded-xl bg-[#7A005D] text-white text-sm font-bold hover:opacity-95"
+                onClick={() => {
+                  performSave(true);
+                  setUnsavedExitModalOpen(false);
+                  onExit();
+                }}
+              >
+                Save and exit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
