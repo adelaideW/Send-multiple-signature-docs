@@ -363,10 +363,13 @@ function recipientFieldAccent(rid: string): string {
 
 interface RecipientSlot {
   id: string;
-  user: { id: string, name: string, email?: string } | null;
+  user: { id: string; name: string; email?: string } | null;
   action: 'Needs to complete' | 'CC recipient';
   searchTerm: string;
   isActionDropdownOpen: boolean;
+  /** Per-recipient private note (Add custom message). */
+  customMessage?: string;
+  showCustomMessage?: boolean;
 }
 
 const RECIPIENT_DRAG_TYPE = 'application/x-recipient-id';
@@ -502,6 +505,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       action: r.action,
       searchTerm: r.searchTerm ?? '',
       isActionDropdownOpen: r.isActionDropdownOpen ?? false,
+      customMessage: r.customMessage,
+      showCustomMessage: r.showCustomMessage,
     }));
   }, [persistentState?.recipients]);
   const selectedFolder =
@@ -567,6 +572,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     startH: number;
   } | null>(null);
   const [recipientPickerOpenId, setRecipientPickerOpenId] = useState<string | null>(null);
+  const [recipientRowMenuId, setRecipientRowMenuId] = useState<string | null>(null);
+  const [externalRecipientModal, setExternalRecipientModal] = useState<{
+    slotId: string;
+    email: string;
+    fullName: string;
+    title: 'Add external recipient' | 'Edit recipient';
+  } | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const tagsRef = useRef<HTMLDivElement>(null);
@@ -619,6 +631,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     if (!q) return allTagOptionsList;
     return allTagOptionsList.filter((t) => t.toLowerCase().includes(q));
   }, [allTagOptionsList, tagFilter]);
+
+  const tagFilterHasNoExactMatch =
+    tagFilter.trim().length > 0 &&
+    !allTagOptionsList.some((t) => t.toLowerCase() === tagFilter.trim().toLowerCase());
 
   const templateFilterHasNoExactMatch =
     templateFilter.trim().length > 0 &&
@@ -713,10 +729,16 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       ) {
         setRecipientPickerOpenId(null);
       }
+      if (
+        recipientRowMenuId &&
+        !(event.target as Element).closest('[data-recipient-row-menu]')
+      ) {
+        setRecipientRowMenuId(null);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [recipientPickerOpenId]);
+  }, [recipientPickerOpenId, recipientRowMenuId]);
 
   useEffect(() => {
     if (currentStep !== 'placement' || uploadedFiles.length === 0) {
@@ -891,9 +913,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     const next = [...recipients, { 
       id: newId, 
       user: null, 
-      action: 'Needs to complete', 
+      action: 'Needs to complete' as const, 
       searchTerm: '',
-      isActionDropdownOpen: false
+      isActionDropdownOpen: false,
+      showCustomMessage: false,
     }];
     const nextGroups = signingOrderEnabled
       ? [...signingOrderGroups, [newId]]
@@ -905,6 +928,33 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     const next = recipients.map(r => r.id === id ? { ...r, ...updates } : r);
     updateState({ recipients: next });
     if (updates.user) setShowRecipientErrors(false);
+  };
+
+  const toggleTag = (t: string) => {
+    const has = advancedTags.includes(t);
+    const next = has ? advancedTags.filter((x) => x !== t) : [...advancedTags, t];
+    updateState({ advancedTags: next });
+    setTagFilter('');
+  };
+
+  const removeOneTag = (t: string) => {
+    updateState({ advancedTags: advancedTags.filter((x) => x !== t) });
+  };
+
+  const clearAllTags = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    updateState({ advancedTags: [] });
+  };
+
+  const commitExternalRecipient = () => {
+    if (!externalRecipientModal) return;
+    const e = externalRecipientModal.email.trim();
+    const n = externalRecipientModal.fullName.trim();
+    if (!e || !n) return;
+    const user = { id: `ext-${Date.now()}`, name: n, email: e };
+    updateRecipient(externalRecipientModal.slotId, { user, searchTerm: '' });
+    setExternalRecipientModal(null);
+    setRecipientPickerOpenId(null);
   };
 
   const removeRecipient = (id: string) => {
@@ -959,17 +1009,25 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     }
   };
 
-  const isUserAlreadyRecipient = (userId: string, exceptSlotId: string) =>
-    recipients.some((r) => r.id !== exceptSlotId && r.user?.id === userId);
+  const isUserAlreadyRecipient = (user: { id: string; email?: string }, exceptSlotId: string) =>
+    recipients.some(
+      (r) =>
+        r.id !== exceptSlotId &&
+        r.user &&
+        (r.user.id === user.id || (user.email && r.user.email && r.user.email.toLowerCase() === user.email.toLowerCase()))
+    );
 
   const renderRecipientUserPicker = (recipient: RecipientSlot, opts: { placeholder: string; variant: 'signing' | 'parallel' }) => {
     const open = recipientPickerOpenId === recipient.id;
     const err = showRecipientErrors && !recipient.user;
     const triggerErr = err ? 'border-red-500 ring-2 ring-red-200' : 'border-slate-200';
     const minW = opts.variant === 'parallel' ? 'min-w-0' : 'min-w-[140px]';
+    const q = recipient.searchTerm.trim();
+    const mockMatches = filterMockUsers(recipient.searchTerm);
+    const hasNoDirectoryMatch = q.length > 0 && mockMatches.length === 0;
 
-    const list = filterMockUsers(recipient.searchTerm).map((user) => {
-      const taken = isUserAlreadyRecipient(user.id, recipient.id);
+    const list = mockMatches.map((user) => {
+      const taken = isUserAlreadyRecipient(user, recipient.id);
       if (taken) {
         return (
           <div key={user.id} className="group relative px-4 py-2 opacity-50 cursor-not-allowed select-none" title="recipient existed">
@@ -1005,6 +1063,18 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       );
     });
 
+    const openAddExternal = (raw: string) => {
+      const t = raw.trim();
+      const looksEmail = t.includes('@');
+      setExternalRecipientModal({
+        slotId: recipient.id,
+        email: looksEmail ? t : '',
+        fullName: looksEmail ? '' : t,
+        title: 'Add external recipient',
+      });
+      setRecipientPickerOpenId(null);
+    };
+
     return (
       <div className={`flex-1 relative ${minW}`} data-recipient-picker>
         {recipient.user ? (
@@ -1036,11 +1106,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
           <div
             className={`w-full flex items-center rounded-xl px-2 py-2 bg-white h-12 border gap-2 transition-colors ${triggerErr} ${!err ? 'border-slate-200 hover:border-slate-300' : ''}`}
           >
-            {opts.variant === 'parallel' ? (
-              <Search className="text-slate-400 shrink-0 ml-1" size={16} aria-hidden />
-            ) : (
-              <User className="text-slate-400 shrink-0 ml-1" size={16} aria-hidden />
-            )}
+            <Search className="text-slate-400 shrink-0 ml-1" size={16} aria-hidden />
             <input
               type="text"
               value={recipient.searchTerm}
@@ -1062,9 +1128,27 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             </button>
           </div>
         )}
-        {open && (
-          <div className="absolute z-[400] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
-            <div className="max-h-60 overflow-y-auto custom-scrollbar">{list}</div>
+        {open && !recipient.user && (
+          <div className="absolute z-[400] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col overflow-hidden max-h-[min(360px,70vh)]">
+            <div className="max-h-52 min-h-0 overflow-y-auto custom-scrollbar">{list.length > 0 ? list : <p className="px-4 py-6 text-sm text-slate-500 text-center">No internal matches</p>}</div>
+            <div className="border-t border-slate-200 bg-white shrink-0 flex flex-col">
+              {hasNoDirectoryMatch && (
+                <button
+                  type="button"
+                  onClick={() => openAddExternal(q)}
+                  className="w-full text-left px-4 py-3 text-sm font-semibold text-[#2563eb] hover:bg-slate-50 border-b border-slate-100"
+                >
+                  Add {q} as external recipient
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => openAddExternal('')}
+                className="w-full text-left px-4 py-3 text-sm font-semibold text-[#2563eb] hover:bg-slate-50"
+              >
+                Add external recipient
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -1681,9 +1765,89 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     );
   }
 
+  const externalFormValid =
+    !!externalRecipientModal && externalRecipientModal.email.trim() !== '' && externalRecipientModal.fullName.trim() !== '';
+
   return (
     <>
       {renderCreateTagModal()}
+      {externalRecipientModal && (
+        <div
+          className="fixed inset-0 z-[650] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setExternalRecipientModal(null)}
+          role="presentation"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="external-recipient-title"
+          >
+            <div className="flex items-start justify-between p-5 pb-2">
+              <h2 id="external-recipient-title" className="text-lg font-bold text-slate-900 pr-2">
+                {externalRecipientModal.title}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setExternalRecipientModal(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="px-5 pb-2 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold text-slate-900">
+                  Recipient email<span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={externalRecipientModal.email}
+                  onChange={(e) =>
+                    setExternalRecipientModal((m) => (m ? { ...m, email: e.target.value } : m))
+                  }
+                  placeholder="Enter email"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold text-slate-900">
+                  Full name<span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={externalRecipientModal.fullName}
+                  onChange={(e) =>
+                    setExternalRecipientModal((m) => (m ? { ...m, fullName: e.target.value } : m))
+                  }
+                  placeholder="Enter full name"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setExternalRecipientModal(null)}
+                className="px-4 py-2 rounded-xl text-sm font-bold border border-slate-200 text-slate-800 bg-white hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!externalFormValid}
+                onClick={commitExternalRecipient}
+                className={`px-4 py-2 rounded-xl text-sm font-bold text-white transition-opacity ${
+                  externalFormValid ? 'bg-[#7A005D] hover:opacity-90' : 'bg-slate-300 cursor-not-allowed'
+                }`}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     <div className={`flex flex-col h-screen bg-white overflow-hidden text-[#1e293b] ${isResizing ? 'cursor-col-resize select-none' : ''}`}>
       <header className="h-14 border-b border-slate-200 px-4 flex items-center justify-between shrink-0 bg-white z-[100]">
         <div className="flex items-center space-x-6">
@@ -2056,24 +2220,89 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                     <div className="shrink-0 w-5 h-5 rounded-full bg-[#7A005D] text-white text-[11px] font-bold flex items-center justify-center shadow-sm mt-1">
                                       {stepNum}
                                     </div>
-                                    <div className="flex-1 flex items-center space-x-3 relative min-w-0 flex-wrap sm:flex-nowrap">
-                                      {renderRecipientUserPicker(recipient, {
-                                        placeholder: 'Search by name or email',
-                                        variant: 'signing',
-                                      })}
-                                      <div className="relative flex-1 min-w-[140px]">
-                                        <button type="button" onClick={() => updateRecipient(recipient.id, { isActionDropdownOpen: !recipient.isActionDropdownOpen })} className="w-full border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between bg-white h-12">
-                                          <span className="text-sm font-medium text-slate-800 truncate">{recipient.action}</span>
-                                          <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${recipient.isActionDropdownOpen ? 'rotate-180' : ''}`} />
-                                        </button>
-                                        {recipient.isActionDropdownOpen && (
-                                          <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl">
-                                            <div onClick={() => updateRecipient(recipient.id, { action: 'Needs to complete', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">Needs to complete</div>
-                                            <div onClick={() => updateRecipient(recipient.id, { action: 'CC recipient', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">CC recipient</div>
-                                          </div>
-                                        )}
+                                    <div className="flex-1 min-w-0 space-y-3">
+                                      <div className="flex items-center space-x-3 relative min-w-0 flex-wrap sm:flex-nowrap">
+                                        {renderRecipientUserPicker(recipient, {
+                                          placeholder: 'Search',
+                                          variant: 'signing',
+                                        })}
+                                        <div className="relative flex-1 min-w-[140px]">
+                                          <button type="button" onClick={() => updateRecipient(recipient.id, { isActionDropdownOpen: !recipient.isActionDropdownOpen })} className="w-full border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between bg-white h-12">
+                                            <span className="text-sm font-medium text-slate-800 truncate">{recipient.action}</span>
+                                            <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${recipient.isActionDropdownOpen ? 'rotate-180' : ''}`} />
+                                          </button>
+                                          {recipient.isActionDropdownOpen && (
+                                            <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl">
+                                              <div onClick={() => updateRecipient(recipient.id, { action: 'Needs to complete', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">Needs to complete</div>
+                                              <div onClick={() => updateRecipient(recipient.id, { action: 'CC recipient', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">CC recipient</div>
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="relative shrink-0 mt-1" data-recipient-row-menu>
+                                          <button
+                                            type="button"
+                                            className="p-1.5 text-slate-400 hover:text-slate-600"
+                                            onClick={() => setRecipientRowMenuId((v) => (v === recipient.id ? null : recipient.id))}
+                                            aria-haspopup="menu"
+                                            aria-expanded={recipientRowMenuId === recipient.id}
+                                          >
+                                            <MoreVertical size={20} />
+                                          </button>
+                                          {recipientRowMenuId === recipient.id && (
+                                            <div className="absolute right-0 top-full mt-1 z-[130] w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-xl text-left">
+                                              <button
+                                                type="button"
+                                                className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
+                                                onClick={() => {
+                                                  setRecipientRowMenuId(null);
+                                                  setExternalRecipientModal({
+                                                    slotId: recipient.id,
+                                                    email: recipient.user?.email || 'jane.smith@external-partner.com',
+                                                    fullName: recipient.user?.name || 'Jane Smith',
+                                                    title: 'Edit recipient',
+                                                  });
+                                                }}
+                                              >
+                                                edit recipient
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
+                                                onClick={() => {
+                                                  setRecipientRowMenuId(null);
+                                                  updateRecipient(recipient.id, { showCustomMessage: true, customMessage: recipient.customMessage ?? '' });
+                                                }}
+                                              >
+                                                add custom message
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
-                                      <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600 shrink-0 mt-1"><MoreVertical size={20} /></button>
+                                      {recipient.showCustomMessage && (
+                                        <div className="border-t border-slate-100 pt-3 space-y-2">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <label className="text-sm font-bold text-slate-900">
+                                              Custom message<span className="text-red-500">*</span>
+                                            </label>
+                                            <button
+                                              type="button"
+                                              className="p-1 text-slate-400 hover:text-slate-600 rounded"
+                                              aria-label="Remove custom message"
+                                              onClick={() => updateRecipient(recipient.id, { showCustomMessage: false, customMessage: '' })}
+                                            >
+                                              <X size={16} />
+                                            </button>
+                                          </div>
+                                          <textarea
+                                            value={recipient.customMessage ?? ''}
+                                            onChange={(e) => updateRecipient(recipient.id, { customMessage: e.target.value })}
+                                            rows={4}
+                                            placeholder="Add a private note for this recipient"
+                                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 min-h-[100px] resize-y outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
+                                          />
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -2113,24 +2342,89 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             <label className="text-sm font-bold text-slate-900">Recipient<span className="text-red-500">*</span></label>
                             {recipients.length > 1 && <button type="button" onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>}
                           </div>
-                          <div className="flex items-center space-x-3 relative">
-                            {renderRecipientUserPicker(recipient, {
-                              placeholder: 'Search by name or email',
-                              variant: 'parallel',
-                            })}
-                            <div className="relative flex-1 min-w-0">
-                              <button type="button" onClick={() => updateRecipient(recipient.id, { isActionDropdownOpen: !recipient.isActionDropdownOpen })} className="w-full border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between bg-white h-12">
-                                <span className="text-sm font-medium text-slate-800 truncate">{recipient.action}</span>
-                                <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${recipient.isActionDropdownOpen ? 'rotate-180' : ''}`} />
-                              </button>
-                              {recipient.isActionDropdownOpen && (
-                                <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl">
-                                  <div onClick={() => updateRecipient(recipient.id, { action: 'Needs to complete', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">Needs to complete</div>
-                                  <div onClick={() => updateRecipient(recipient.id, { action: 'CC recipient', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">CC recipient</div>
-                                </div>
-                              )}
+                          <div className="space-y-3">
+                            <div className="flex items-center space-x-3 relative">
+                              {renderRecipientUserPicker(recipient, {
+                                placeholder: 'Search',
+                                variant: 'parallel',
+                              })}
+                              <div className="relative flex-1 min-w-0">
+                                <button type="button" onClick={() => updateRecipient(recipient.id, { isActionDropdownOpen: !recipient.isActionDropdownOpen })} className="w-full border border-slate-200 rounded-xl px-4 py-2 flex items-center justify-between bg-white h-12">
+                                  <span className="text-sm font-medium text-slate-800 truncate">{recipient.action}</span>
+                                  <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${recipient.isActionDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                                {recipient.isActionDropdownOpen && (
+                                  <div className="absolute z-[110] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl">
+                                    <div onClick={() => updateRecipient(recipient.id, { action: 'Needs to complete', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">Needs to complete</div>
+                                    <div onClick={() => updateRecipient(recipient.id, { action: 'CC recipient', isActionDropdownOpen: false })} className="px-5 py-3 text-sm hover:bg-slate-50 cursor-pointer font-medium text-slate-700">CC recipient</div>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="relative shrink-0" data-recipient-row-menu>
+                                <button
+                                  type="button"
+                                  className="p-1.5 text-slate-400 hover:text-slate-600"
+                                  onClick={() => setRecipientRowMenuId((v) => (v === recipient.id ? null : recipient.id))}
+                                  aria-haspopup="menu"
+                                  aria-expanded={recipientRowMenuId === recipient.id}
+                                >
+                                  <MoreVertical size={20} />
+                                </button>
+                                {recipientRowMenuId === recipient.id && (
+                                  <div className="absolute right-0 top-full mt-1 z-[130] w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-xl text-left">
+                                    <button
+                                      type="button"
+                                      className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
+                                      onClick={() => {
+                                        setRecipientRowMenuId(null);
+                                        setExternalRecipientModal({
+                                          slotId: recipient.id,
+                                          email: recipient.user?.email || 'jane.smith@external-partner.com',
+                                          fullName: recipient.user?.name || 'Jane Smith',
+                                          title: 'Edit recipient',
+                                        });
+                                      }}
+                                    >
+                                      edit recipient
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
+                                      onClick={() => {
+                                        setRecipientRowMenuId(null);
+                                        updateRecipient(recipient.id, { showCustomMessage: true, customMessage: recipient.customMessage ?? '' });
+                                      }}
+                                    >
+                                      add custom message
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            <button type="button" className="p-1.5 text-slate-400 hover:text-slate-600 shrink-0"><MoreVertical size={20} /></button>
+                            {recipient.showCustomMessage && (
+                              <div className="border-t border-slate-100 pt-3 space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <label className="text-sm font-bold text-slate-900">
+                                    Custom message<span className="text-red-500">*</span>
+                                  </label>
+                                  <button
+                                    type="button"
+                                    className="p-1 text-slate-400 hover:text-slate-600 rounded"
+                                    aria-label="Remove custom message"
+                                    onClick={() => updateRecipient(recipient.id, { showCustomMessage: false, customMessage: '' })}
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                                <textarea
+                                  value={recipient.customMessage ?? ''}
+                                  onChange={(e) => updateRecipient(recipient.id, { customMessage: e.target.value })}
+                                  rows={4}
+                                  placeholder="Add a private note for this recipient"
+                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 min-h-[100px] resize-y outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -2311,97 +2605,135 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                 <div className="space-y-2 relative" ref={tagsRef}>
                   <label className="text-sm font-bold text-slate-900">Tags</label>
                   <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                    <input
-                      type="text"
-                      value={
-                        isTagsMenuOpen
-                          ? tagFilter
-                          : advancedTags.length
-                            ? advancedTags.join(', ')
-                            : ''
-                      }
-                      onChange={(e) => {
-                        setTagFilter(e.target.value);
-                        if (!isTagsMenuOpen) setIsTagsMenuOpen(true);
-                      }}
-                      onFocus={() => {
-                        setIsTagsMenuOpen(true);
-                        setTagFilter((prev) => (isTagsMenuOpen ? prev : ''));
-                      }}
-                      placeholder="Choose or add tags"
-                      className={`w-full border border-slate-200 rounded-xl py-3 pl-12 pr-10 text-sm h-11 placeholder:text-slate-400 ${INPUT_FOCUS} ${
-                        !isTagsMenuOpen && advancedTags.length === 0 ? 'text-slate-400' : 'text-slate-900'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 rounded"
-                      aria-label="Toggle tags"
-                      onClick={() => {
-                        if (!isTagsMenuOpen) setTagFilter('');
-                        setIsTagsMenuOpen((o) => !o);
-                      }}
+                    <div
+                      className={`w-full border border-slate-200 rounded-lg bg-white flex items-stretch gap-2 px-3 py-2 min-h-[44px] focus-within:ring-2 focus-within:ring-[#5AA5E7]/45 focus-within:border-[#5AA5E7]`}
                     >
-                      <ChevronDown size={16} className={isTagsMenuOpen ? 'rotate-180' : ''} />
-                    </button>
-                  </div>
-                  {isTagsMenuOpen && (
-                    <div className="absolute z-[400] top-full mt-1 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col max-h-80 overflow-hidden">
-                      <div className="overflow-y-auto flex-1 min-h-0 max-h-52">
-                        {filteredTagOptions.map((tag) => (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => {
-                              const has = advancedTags.includes(tag);
-                              updateState({ advancedTags: has ? advancedTags.filter((t) => t !== tag) : [...advancedTags, tag] });
-                            }}
-                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex items-center justify-between"
-                          >
-                            {tag}
-                            {advancedTags.includes(tag) && <Check size={16} className="text-blue-600 shrink-0" />}
-                          </button>
-                        ))}
-                        {tagFilter.trim() && !filteredTagOptions.length && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const t = tagFilter.trim();
-                              if (!t) return;
-                              if (!advancedTags.includes(t)) {
-                                setExtraTagOptions((prev) => (prev.includes(t) ? prev : [...prev, t]));
-                                updateState({ advancedTags: [...advancedTags, t] });
-                              }
-                              setTagFilter('');
-                              setIsTagsMenuOpen(false);
-                            }}
-                            className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 border-t border-slate-100"
-                          >
-                            <div className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center shrink-0">
-                              <Plus size={14} className="text-slate-600" />
-                            </div>
-                            <span>Create and select &apos;{tagFilter.trim()}&apos;</span>
-                          </button>
-                        )}
-                        {!tagFilter.trim() && filteredTagOptions.length === 0 && (
-                          <p className="px-4 py-6 text-sm text-slate-500 text-center">No tags yet</p>
-                        )}
+                      <Search className="text-slate-400 shrink-0 mt-1.5" size={16} />
+                      <div className="flex flex-1 min-w-0 flex-col gap-1.5 min-h-0 py-0.5">
+                        <div className="max-h-[3.25rem] min-h-0 overflow-y-auto overflow-x-hidden flex flex-wrap gap-1.5 content-start custom-scrollbar">
+                          {advancedTags.map((t) => (
+                            <span
+                              key={t}
+                              className="inline-flex items-center gap-1 shrink-0 max-w-[min(200px,100%)] bg-slate-100 text-slate-800 text-[11px] pl-2 pr-1 py-0.5 rounded border border-slate-200/80"
+                            >
+                              <span className="truncate">{t}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeOneTag(t);
+                                }}
+                                className="shrink-0 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                                aria-label={`Remove ${t}`}
+                              >
+                                <X size={12} strokeWidth={2.5} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                        <input
+                          type="text"
+                          value={tagFilter}
+                          onChange={(e) => {
+                            setTagFilter(e.target.value);
+                            setIsTagsMenuOpen(true);
+                          }}
+                          onFocus={() => setIsTagsMenuOpen(true)}
+                          placeholder="Search"
+                          className="w-full text-[13px] outline-none bg-transparent border-none p-0 min-h-[1.125rem] placeholder:text-slate-400"
+                          aria-label="Search tags"
+                        />
                       </div>
-                      <div className="border-t border-slate-200 bg-white shrink-0">
+                      <div className="flex flex-col items-end justify-end gap-0.5 shrink-0 self-stretch pb-0.5">
+                        {advancedTags.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => clearAllTags(e)}
+                            className="flex h-[20px] w-[20px] min-h-[20px] min-w-[20px] items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+                            aria-label="Clear all tags"
+                          >
+                            <X size={10} strokeWidth={2.5} className="shrink-0" aria-hidden />
+                          </button>
+                        )}
                         <button
                           type="button"
+                          className="p-1 text-slate-400 hover:text-slate-600 rounded mt-auto"
+                          aria-label="Toggle tag list"
                           onClick={() => {
-                            setCreateTagDraft(tagFilter.trim());
-                            setCreateTagModalOpen(true);
+                            if (!isTagsMenuOpen) setTagFilter('');
+                            setIsTagsMenuOpen((o) => !o);
                           }}
-                          className="w-full text-left px-4 py-3 text-sm font-bold text-[#7A005D] hover:bg-slate-50"
                         >
-                          Create new tag
+                          <ChevronDown size={14} className={isTagsMenuOpen ? 'rotate-180' : ''} />
                         </button>
                       </div>
                     </div>
-                  )}
+                    {isTagsMenuOpen && (
+                      <div className="absolute z-[400] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col max-h-[360px] overflow-hidden">
+                        <div className="py-1 overflow-y-auto custom-scrollbar min-h-0 flex-1 max-h-52">
+                          {filteredTagOptions.length > 0 ? (
+                            filteredTagOptions.map((tag) => (
+                              <div
+                                key={tag}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => toggleTag(tag)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    toggleTag(tag);
+                                  }
+                                }}
+                                className="flex items-center justify-between px-5 py-2.5 hover:bg-slate-50 cursor-pointer"
+                              >
+                                <span className="text-sm text-slate-800 font-medium truncate pr-4">{tag}</span>
+                                {advancedTags.includes(tag) && <Check size={16} className="text-blue-600 ml-auto shrink-0" />}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="px-4 py-4 text-sm text-slate-500 text-center">No tags match your search</p>
+                          )}
+                        </div>
+                        <div className="border-t border-slate-200 shrink-0 bg-white">
+                          {tagFilterHasNoExactMatch ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const t = tagFilter.trim();
+                                if (!t) return;
+                                if (!advancedTags.includes(t)) {
+                                  setExtraTagOptions((prev) => (prev.includes(t) ? prev : [...prev, t]));
+                                  updateState({ advancedTags: [...advancedTags, t] });
+                                }
+                                setTagFilter('');
+                                setIsTagsMenuOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2 px-5 py-3 text-left text-sm font-semibold text-[#5AA5E7] hover:bg-slate-50 transition-colors"
+                            >
+                              <div className="w-7 h-7 rounded-full border border-[#5AA5E7]/45 flex items-center justify-center shrink-0">
+                                <Plus size={14} className="text-[#5AA5E7]" />
+                              </div>
+                              <span>Create and select &apos;{tagFilter.trim()}&apos;</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCreateTagDraft(tagFilter.trim());
+                                setCreateTagModalOpen(true);
+                                setIsTagsMenuOpen(false);
+                              }}
+                              className="w-full text-left px-5 py-3 text-sm font-semibold text-[#5AA5E7] hover:bg-slate-50 transition-colors"
+                            >
+                              Create a tag
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <label className="flex items-start space-x-3 text-slate-800 cursor-pointer">
                   <input type="checkbox" className="w-5 h-5 mt-0.5 rounded-md border-slate-300 cursor-pointer accent-[#7A005D]" />
