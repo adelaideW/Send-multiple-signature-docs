@@ -2263,7 +2263,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                                   });
                                                 }}
                                               >
-                                                edit recipient
+                                                Edit recipient
                                               </button>
                                               <button
                                                 type="button"
@@ -2273,7 +2273,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                                   updateRecipient(recipient.id, { showCustomMessage: true, customMessage: recipient.customMessage ?? '' });
                                                 }}
                                               >
-                                                add custom message
+                                                Add custom message
                                               </button>
                                             </div>
                                           )}
@@ -2385,7 +2385,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                         });
                                       }}
                                     >
-                                      edit recipient
+                                      Edit recipient
                                     </button>
                                     <button
                                       type="button"
@@ -2395,7 +2395,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                         updateRecipient(recipient.id, { showCustomMessage: true, customMessage: recipient.customMessage ?? '' });
                                       }}
                                     >
-                                      add custom message
+                                      Add custom message
                                     </button>
                                   </div>
                                 )}
