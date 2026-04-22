@@ -353,6 +353,9 @@ interface PlacementField {
 const INPUT_FOCUS =
   'focus:outline-none focus:ring-2 focus:ring-[#5AA5E7]/45 focus:border-[#5AA5E7]';
 
+/** Text link actions in combobox footers (Create and select, add external, etc.). */
+const TEXT_LINK = 'text-[#1D4ED8]';
+
 const RECIPIENT_FIELD_PALETTE = ['#6DB3E8', '#9BB8E8', '#7DC9B8', '#E8A4B8', '#E8C97A', '#88C5D8', '#D8B8E8'];
 
 function recipientFieldAccent(rid: string): string {
@@ -876,6 +879,20 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     title: 'Add external recipient' | 'Edit recipient';
   } | null>(null);
 
+  useEffect(() => {
+    if (!recipientPickerOpenId) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const el = document.querySelector(
+        `[data-recipient-picker="${CSS.escape(recipientPickerOpenId)}"]`
+      );
+      if (el && e.target instanceof Node && !el.contains(e.target)) {
+        setRecipientPickerOpenId(null);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [recipientPickerOpenId]);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const tagsRef = useRef<HTMLDivElement>(null);
 
@@ -1372,7 +1389,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     };
 
     return (
-      <div className={`flex-1 relative ${minW}`} data-recipient-picker>
+      <div className={`flex-1 relative ${minW}`} data-recipient-picker={recipient.id}>
         {recipient.user ? (
           <div className="w-full flex items-center border border-slate-200 rounded-xl px-2 py-2 bg-white h-12 shadow-sm gap-1">
             <button
@@ -1428,22 +1445,23 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
           <div className="absolute z-[400] top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col overflow-hidden max-h-[min(360px,70vh)]">
             <div className="max-h-52 min-h-0 overflow-y-auto custom-scrollbar">{list.length > 0 ? list : <p className="px-4 py-6 text-sm text-slate-500 text-center">No internal matches</p>}</div>
             <div className="border-t border-slate-200 bg-white shrink-0 flex flex-col">
-              {hasNoDirectoryMatch && (
+              {hasNoDirectoryMatch && q ? (
                 <button
                   type="button"
                   onClick={() => openAddExternal(q)}
-                  className="w-full text-left px-4 py-3 text-sm font-semibold text-[#2563eb] hover:bg-slate-50 border-b border-slate-100"
+                  className={`w-full text-left px-4 py-3 text-sm font-semibold ${TEXT_LINK} hover:bg-slate-50`}
                 >
-                  Add {q} as external recipient
+                  Add &apos;{q}&apos; as external recipient
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => openAddExternal('')}
+                  className={`w-full text-left px-4 py-3 text-sm font-semibold ${TEXT_LINK} hover:bg-slate-50`}
+                >
+                  Add external recipient
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => openAddExternal('')}
-                className="w-full text-left px-4 py-3 text-sm font-semibold text-[#2563eb] hover:bg-slate-50"
-              >
-                Add external recipient
-              </button>
             </div>
           </div>
         )}
@@ -2331,10 +2349,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                   if (onCreateTemplateWithName) onCreateTemplateWithName(name);
                                   else onCreateTemplate?.();
                                 }}
-                                className="w-full flex items-center gap-2 px-5 py-3 text-left text-sm font-semibold text-[#5AA5E7] hover:bg-slate-50 transition-colors"
+                                className={`w-full flex items-center gap-2 px-5 py-3 text-left text-sm font-semibold ${TEXT_LINK} hover:bg-slate-50 transition-colors`}
                               >
-                                <div className="w-7 h-7 rounded-full border border-[#5AA5E7]/45 flex items-center justify-center shrink-0">
-                                  <Plus size={14} className="text-[#5AA5E7]" />
+                                <div className={`w-7 h-7 rounded-full border border-[#1D4ED8]/40 flex items-center justify-center shrink-0`}>
+                                  <Plus size={14} className={TEXT_LINK} />
                                 </div>
                                 <span>Create and select &apos;{templateFilter.trim()}&apos;</span>
                               </button>
@@ -2347,7 +2365,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                   setTemplateFilter('');
                                   onCreateTemplate?.();
                                 }}
-                                className="w-full text-left px-5 py-3 text-sm font-semibold text-[#5AA5E7] hover:bg-slate-50 transition-colors"
+                                className={`w-full text-left px-5 py-3 text-sm font-semibold ${TEXT_LINK} hover:bg-slate-50 transition-colors`}
                               >
                                 Create a template
                               </button>
@@ -3053,10 +3071,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                 setTagFilter('');
                                 setIsTagsMenuOpen(false);
                               }}
-                              className="w-full flex items-center gap-2 px-5 py-3 text-left text-sm font-semibold text-[#5AA5E7] hover:bg-slate-50 transition-colors"
+                              className={`w-full flex items-center gap-2 px-5 py-3 text-left text-sm font-semibold ${TEXT_LINK} hover:bg-slate-50 transition-colors`}
                             >
-                              <div className="w-7 h-7 rounded-full border border-[#5AA5E7]/45 flex items-center justify-center shrink-0">
-                                <Plus size={14} className="text-[#5AA5E7]" />
+                              <div className="w-7 h-7 rounded-full border border-[#1D4ED8]/40 flex items-center justify-center shrink-0">
+                                <Plus size={14} className={TEXT_LINK} />
                               </div>
                               <span>Create and select &apos;{tagFilter.trim()}&apos;</span>
                             </button>
@@ -3069,7 +3087,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                 setCreateTagModalOpen(true);
                                 setIsTagsMenuOpen(false);
                               }}
-                              className="w-full text-left px-5 py-3 text-sm font-semibold text-[#5AA5E7] hover:bg-slate-50 transition-colors"
+                              className={`w-full text-left px-5 py-3 text-sm font-semibold ${TEXT_LINK} hover:bg-slate-50 transition-colors`}
                             >
                               Create a tag
                             </button>
