@@ -370,9 +370,290 @@ interface RecipientSlot {
   /** Per-recipient private note (Add custom message). */
   customMessage?: string;
   showCustomMessage?: boolean;
+  /** When true (default), custom message body is visible; when false, header stays but textarea is collapsed. */
+  customMessageBodyExpanded?: boolean;
 }
 
 const RECIPIENT_DRAG_TYPE = 'application/x-recipient-id';
+
+type ExpireAfterPreset = '5_days' | '2_weeks' | '1_month' | '3_month' | 'custom';
+type AlertBeforePreset = 'do_not_send' | '1_day' | '2_days' | '5_days' | '1_week' | '2_weeks' | 'custom';
+type ExpirationTimeUnit = 'day' | 'week' | 'month' | 'year';
+
+const EXPIRE_AFTER_MENU: { value: ExpireAfterPreset; label: string }[] = [
+  { value: '5_days', label: '5 days' },
+  { value: '2_weeks', label: '2 weeks' },
+  { value: '1_month', label: '1 month' },
+  { value: '3_month', label: '3 month' },
+  { value: 'custom', label: 'Custom' },
+];
+const ALERT_BEFORE_MENU: { value: AlertBeforePreset; label: string }[] = [
+  { value: 'do_not_send', label: 'Do not send' },
+  { value: '1_day', label: '1 day' },
+  { value: '2_days', label: '2 days' },
+  { value: '5_days', label: '5 days' },
+  { value: '1_week', label: '1 week' },
+  { value: '2_weeks', label: '2 weeks' },
+  { value: 'custom', label: 'Custom' },
+];
+const TIME_UNIT_MENU: { value: ExpirationTimeUnit; label: string }[] = [
+  { value: 'day', label: 'Day(s)' },
+  { value: 'week', label: 'Week(s)' },
+  { value: 'month', label: 'Month(s)' },
+  { value: 'year', label: 'Year(s)' },
+];
+
+const PortalSelectMenu: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  children: React.ReactNode;
+  minWidth?: number;
+}> = ({ open, onClose, anchorRef, children, minWidth = 0 }) => {
+  const [box, setBox] = useState({ top: 0, left: 0, width: 0 });
+  const menuRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setBox({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open, anchorRef]);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (anchorRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      onClose();
+    };
+    const k = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', h);
+    document.addEventListener('keydown', k);
+    return () => {
+      document.removeEventListener('mousedown', h);
+      document.removeEventListener('keydown', k);
+    };
+  }, [open, onClose, anchorRef]);
+  if (!open) return null;
+  const w = Math.max(box.width, minWidth, 160);
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 max-h-[min(400px,calc(100vh-16px))] overflow-y-auto custom-scrollbar"
+      style={{ position: 'fixed', top: box.top, left: box.left, width: w, zIndex: 200000 }}
+      role="listbox"
+    >
+      {children}
+    </div>,
+    document.body
+  );
+};
+
+const AdvancedExpirationFields: React.FC<{
+  afterPreset: ExpireAfterPreset;
+  afterCustomAmount: number;
+  afterCustomUnit: ExpirationTimeUnit;
+  alertPreset: AlertBeforePreset;
+  alertCustomAmount: number;
+  alertCustomUnit: ExpirationTimeUnit;
+  onPatch: (p: {
+    expirationAfterPreset?: ExpireAfterPreset;
+    expirationAfterCustomAmount?: number;
+    expirationAfterCustomUnit?: ExpirationTimeUnit;
+    expirationAlertPreset?: AlertBeforePreset;
+    expirationAlertCustomAmount?: number;
+    expirationAlertCustomUnit?: ExpirationTimeUnit;
+  }) => void;
+}> = ({ afterPreset, afterCustomAmount, afterCustomUnit, alertPreset, alertCustomAmount, alertCustomUnit, onPatch }) => {
+  const [openMenu, setOpenMenu] = useState<null | 'after' | 'afterUnit' | 'alert' | 'alertUnit'>(null);
+  const afterRef = useRef<HTMLButtonElement>(null);
+  const afterUnitRef = useRef<HTMLButtonElement>(null);
+  const alertRef = useRef<HTMLButtonElement>(null);
+  const alertUnitRef = useRef<HTMLButtonElement>(null);
+  const afterLabel = EXPIRE_AFTER_MENU.find((o) => o.value === afterPreset)?.label ?? '5 days';
+  const alertLabel = ALERT_BEFORE_MENU.find((o) => o.value === alertPreset)?.label ?? 'Do not send';
+  const afterUnitLabel = TIME_UNIT_MENU.find((o) => o.value === afterCustomUnit)?.label ?? 'Day(s)';
+  const alertUnitLabel = TIME_UNIT_MENU.find((o) => o.value === alertCustomUnit)?.label ?? 'Day(s)';
+
+  const rowClass =
+    'w-full border border-slate-200 rounded-xl px-3 py-2 flex items-center justify-between bg-white h-12 text-sm font-medium text-slate-800';
+  return (
+    <div className="space-y-4 pl-0 sm:pl-0">
+      <div className="space-y-1.5">
+        <p className="text-sm font-bold text-slate-900">Days until envelope expires</p>
+        <div
+          className={
+            afterPreset === 'custom'
+              ? 'flex flex-col sm:flex-row sm:items-stretch gap-2 sm:gap-2'
+              : 'w-full'
+          }
+        >
+          <div className={afterPreset === 'custom' ? 'flex-1 min-w-0' : 'w-full relative'}>
+            <button
+              type="button"
+              ref={afterRef}
+              onClick={() => setOpenMenu((m) => (m === 'after' ? null : 'after'))}
+              className={rowClass}
+            >
+              <span className="truncate text-left">{afterPreset === 'custom' ? 'Custom' : afterLabel}</span>
+              <ChevronDown size={16} className="text-slate-400 shrink-0" />
+            </button>
+            <PortalSelectMenu
+              open={openMenu === 'after'}
+              onClose={() => setOpenMenu(null)}
+              anchorRef={afterRef}
+              minWidth={240}
+            >
+              {EXPIRE_AFTER_MENU.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="option"
+                  onClick={() => {
+                    onPatch({ expirationAfterPreset: opt.value });
+                    setOpenMenu(null);
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-50 flex items-center justify-between gap-2"
+                >
+                  <span>{opt.label}</span>
+                  {afterPreset === opt.value && <Check size={16} className="text-blue-600 shrink-0" strokeWidth={2.5} />}
+                </button>
+              ))}
+            </PortalSelectMenu>
+          </div>
+          {afterPreset === 'custom' && (
+            <>
+              <input
+                type="number"
+                min={1}
+                value={afterCustomAmount}
+                onChange={(e) => {
+                  const n = Math.max(1, Math.floor(Number(e.target.value) || 1));
+                  onPatch({ expirationAfterCustomAmount: n });
+                }}
+                className="w-full sm:w-16 shrink-0 border border-slate-200 rounded-xl px-2 py-2 text-sm text-slate-900 h-12 text-center outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
+                aria-label="Custom duration amount"
+              />
+              <div className="flex-1 min-w-[100px] relative">
+                <button
+                  type="button"
+                  ref={afterUnitRef}
+                  onClick={() => setOpenMenu((m) => (m === 'afterUnit' ? null : 'afterUnit'))}
+                  className={rowClass}
+                >
+                  <span className="truncate">{afterUnitLabel}</span>
+                  <ChevronDown size={16} className="text-slate-400 shrink-0" />
+                </button>
+                <PortalSelectMenu open={openMenu === 'afterUnit'} onClose={() => setOpenMenu(null)} anchorRef={afterUnitRef} minWidth={160}>
+                  {TIME_UNIT_MENU.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        onPatch({ expirationAfterCustomUnit: opt.value });
+                        setOpenMenu(null);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-50 flex items-center justify-between"
+                    >
+                      <span>{opt.label}</span>
+                      {afterCustomUnit === opt.value && <Check size={16} className="text-blue-600 shrink-0" />}
+                    </button>
+                  ))}
+                </PortalSelectMenu>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-sm font-bold text-slate-900">Alert before expiration date</p>
+        <div className={alertPreset === 'custom' ? 'flex flex-col sm:flex-row sm:items-stretch gap-2' : 'w-full'}>
+          <div className={alertPreset === 'custom' ? 'flex-1 min-w-0' : 'w-full relative'}>
+            <button
+              type="button"
+              ref={alertRef}
+              onClick={() => setOpenMenu((m) => (m === 'alert' ? null : 'alert'))}
+              className={rowClass}
+            >
+              <span className="truncate text-left">{alertPreset === 'custom' ? 'Custom' : alertLabel}</span>
+              <ChevronDown size={16} className="text-slate-400 shrink-0" />
+            </button>
+            <PortalSelectMenu open={openMenu === 'alert'} onClose={() => setOpenMenu(null)} anchorRef={alertRef} minWidth={220}>
+              {ALERT_BEFORE_MENU.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onPatch({ expirationAlertPreset: opt.value });
+                    setOpenMenu(null);
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-50 flex items-center justify-between gap-2"
+                >
+                  <span>{opt.label}</span>
+                  {alertPreset === opt.value && <Check size={16} className="text-blue-600 shrink-0" strokeWidth={2.5} />}
+                </button>
+              ))}
+            </PortalSelectMenu>
+          </div>
+          {alertPreset === 'custom' && (
+            <>
+              <input
+                type="number"
+                min={1}
+                value={alertCustomAmount}
+                onChange={(e) => {
+                  const n = Math.max(1, Math.floor(Number(e.target.value) || 1));
+                  onPatch({ expirationAlertCustomAmount: n });
+                }}
+                className="w-full sm:w-16 shrink-0 border border-slate-200 rounded-xl px-2 py-2 text-sm text-slate-900 h-12 text-center outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
+                aria-label="Custom alert lead amount"
+              />
+              <div className="flex-1 min-w-[100px] relative">
+                <button
+                  type="button"
+                  ref={alertUnitRef}
+                  onClick={() => setOpenMenu((m) => (m === 'alertUnit' ? null : 'alertUnit'))}
+                  className={rowClass}
+                >
+                  <span className="truncate">{alertUnitLabel}</span>
+                  <ChevronDown size={16} className="text-slate-400 shrink-0" />
+                </button>
+                <PortalSelectMenu open={openMenu === 'alertUnit'} onClose={() => setOpenMenu(null)} anchorRef={alertUnitRef} minWidth={160}>
+                  {TIME_UNIT_MENU.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        onPatch({ expirationAlertCustomUnit: opt.value });
+                        setOpenMenu(null);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-50 flex items-center justify-between"
+                    >
+                      <span>{opt.label}</span>
+                      {alertCustomUnit === opt.value && <Check size={16} className="text-blue-600 shrink-0" />}
+                    </button>
+                  ))}
+                </PortalSelectMenu>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 function removeIdFromGroups(groups: string[][], id: string): string[][] {
   return groups.map((g) => g.filter((x) => x !== id)).filter((g) => g.length > 0);
@@ -507,6 +788,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       isActionDropdownOpen: r.isActionDropdownOpen ?? false,
       customMessage: r.customMessage,
       showCustomMessage: r.showCustomMessage,
+      customMessageBodyExpanded: r.customMessageBodyExpanded !== false,
     }));
   }, [persistentState?.recipients]);
   const selectedFolder =
@@ -519,6 +801,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const customMessageSubject = persistentState?.customMessageSubject ?? 'Action required for documents';
   const customMessageBody = persistentState?.customMessageBody ?? 'Please review and send the documents\n• {Document names}';
   const advancedTags: string[] = persistentState?.advancedTags ?? [];
+  const expirationEnabled = persistentState?.expirationEnabled ?? false;
+  const expirationAfterPreset: ExpireAfterPreset = persistentState?.expirationAfterPreset ?? '5_days';
+  const expirationAfterCustomAmount = Math.max(1, persistentState?.expirationAfterCustomAmount ?? 5);
+  const expirationAfterCustomUnit: ExpirationTimeUnit = persistentState?.expirationAfterCustomUnit ?? 'day';
+  const expirationAlertPreset: AlertBeforePreset = persistentState?.expirationAlertPreset ?? 'do_not_send';
+  const expirationAlertCustomAmount = Math.max(1, persistentState?.expirationAlertCustomAmount ?? 1);
+  const expirationAlertCustomUnit: ExpirationTimeUnit = persistentState?.expirationAlertCustomUnit ?? 'day';
 
   const updateState = (updates: any) => {
     onUpdateState?.({
@@ -532,6 +821,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       customMessageSubject,
       customMessageBody,
       advancedTags,
+      expirationEnabled,
+      expirationAfterPreset,
+      expirationAfterCustomAmount,
+      expirationAfterCustomUnit,
+      expirationAlertPreset,
+      expirationAlertCustomAmount,
+      expirationAlertCustomUnit,
       ...updates
     });
   };
@@ -2199,7 +2495,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                       <button type="button" onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>
                                     )}
                                   </div>
-                                  <div className="flex items-start space-x-3 relative">
+                                  <div className="flex items-center space-x-3 relative">
                                     <div
                                       draggable
                                       onDragStart={(e) => {
@@ -2212,12 +2508,12 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                         setDraggingRecipientId(null);
                                         setDropTargetZone(null);
                                       }}
-                                      className="shrink-0 p-2 mt-1 cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50"
+                                      className="shrink-0 p-2 cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50"
                                       title="Drag to reorder or combine signing steps"
                                     >
                                       <GripVertical size={20} />
                                     </div>
-                                    <div className="shrink-0 w-5 h-5 rounded-full bg-[#7A005D] text-white text-[11px] font-bold flex items-center justify-center shadow-sm mt-1">
+                                    <div className="shrink-0 w-5 h-5 rounded-full bg-[#7A005D] text-white text-[11px] font-bold flex items-center justify-center shadow-sm">
                                       {stepNum}
                                     </div>
                                     <div className="flex-1 min-w-0 space-y-3">
@@ -2238,7 +2534,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                             </div>
                                           )}
                                         </div>
-                                        <div className="relative shrink-0 mt-1" data-recipient-row-menu>
+                                        <div className="relative shrink-0" data-recipient-row-menu>
                                           <button
                                             type="button"
                                             className="p-1.5 text-slate-400 hover:text-slate-600"
@@ -2270,7 +2566,11 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                                 className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
                                                 onClick={() => {
                                                   setRecipientRowMenuId(null);
-                                                  updateRecipient(recipient.id, { showCustomMessage: true, customMessage: recipient.customMessage ?? '' });
+                                                  updateRecipient(recipient.id, {
+                                                    showCustomMessage: true,
+                                                    customMessage: recipient.customMessage ?? '',
+                                                    customMessageBodyExpanded: true,
+                                                  });
                                                 }}
                                               >
                                                 Add custom message
@@ -2285,22 +2585,42 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                             <label className="text-sm font-bold text-slate-900">
                                               Custom message<span className="text-red-500">*</span>
                                             </label>
-                                            <button
-                                              type="button"
-                                              className="p-1 text-slate-400 hover:text-slate-600 rounded"
-                                              aria-label="Remove custom message"
-                                              onClick={() => updateRecipient(recipient.id, { showCustomMessage: false, customMessage: '' })}
-                                            >
-                                              <X size={16} />
-                                            </button>
+                                            <div className="flex items-center gap-0.5 shrink-0">
+                                              <button
+                                                type="button"
+                                                className="p-1 text-slate-400 hover:text-slate-600 rounded"
+                                                aria-label={recipient.customMessageBodyExpanded ? 'Collapse custom message' : 'Expand custom message'}
+                                                onClick={() =>
+                                                  updateRecipient(recipient.id, { customMessageBodyExpanded: !recipient.customMessageBodyExpanded })
+                                                }
+                                              >
+                                                {recipient.customMessageBodyExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="p-1 text-slate-400 hover:text-slate-600 rounded"
+                                                aria-label="Remove custom message"
+                                                onClick={() =>
+                                                  updateRecipient(recipient.id, {
+                                                    showCustomMessage: false,
+                                                    customMessage: '',
+                                                    customMessageBodyExpanded: true,
+                                                  })
+                                                }
+                                              >
+                                                <X size={16} />
+                                              </button>
+                                            </div>
                                           </div>
-                                          <textarea
-                                            value={recipient.customMessage ?? ''}
-                                            onChange={(e) => updateRecipient(recipient.id, { customMessage: e.target.value })}
-                                            rows={4}
-                                            placeholder="Add a private note for this recipient"
-                                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 min-h-[100px] resize-y outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
-                                          />
+                                          {recipient.customMessageBodyExpanded && (
+                                            <textarea
+                                              value={recipient.customMessage ?? ''}
+                                              onChange={(e) => updateRecipient(recipient.id, { customMessage: e.target.value })}
+                                              rows={4}
+                                              placeholder="Add a private note for this recipient"
+                                              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 min-h-[100px] resize-y outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
+                                            />
+                                          )}
                                         </div>
                                       )}
                                     </div>
@@ -2392,7 +2712,11 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                       className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
                                       onClick={() => {
                                         setRecipientRowMenuId(null);
-                                        updateRecipient(recipient.id, { showCustomMessage: true, customMessage: recipient.customMessage ?? '' });
+                                        updateRecipient(recipient.id, {
+                                          showCustomMessage: true,
+                                          customMessage: recipient.customMessage ?? '',
+                                          customMessageBodyExpanded: true,
+                                        });
                                       }}
                                     >
                                       Add custom message
@@ -2407,22 +2731,42 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                   <label className="text-sm font-bold text-slate-900">
                                     Custom message<span className="text-red-500">*</span>
                                   </label>
-                                  <button
-                                    type="button"
-                                    className="p-1 text-slate-400 hover:text-slate-600 rounded"
-                                    aria-label="Remove custom message"
-                                    onClick={() => updateRecipient(recipient.id, { showCustomMessage: false, customMessage: '' })}
-                                  >
-                                    <X size={16} />
-                                  </button>
+                                  <div className="flex items-center gap-0.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      className="p-1 text-slate-400 hover:text-slate-600 rounded"
+                                      aria-label={recipient.customMessageBodyExpanded ? 'Collapse custom message' : 'Expand custom message'}
+                                      onClick={() =>
+                                        updateRecipient(recipient.id, { customMessageBodyExpanded: !recipient.customMessageBodyExpanded })
+                                      }
+                                    >
+                                      {recipient.customMessageBodyExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="p-1 text-slate-400 hover:text-slate-600 rounded"
+                                      aria-label="Remove custom message"
+                                      onClick={() =>
+                                        updateRecipient(recipient.id, {
+                                          showCustomMessage: false,
+                                          customMessage: '',
+                                          customMessageBodyExpanded: true,
+                                        })
+                                      }
+                                    >
+                                      <X size={16} />
+                                    </button>
+                                  </div>
                                 </div>
-                                <textarea
-                                  value={recipient.customMessage ?? ''}
-                                  onChange={(e) => updateRecipient(recipient.id, { customMessage: e.target.value })}
-                                  rows={4}
-                                  placeholder="Add a private note for this recipient"
-                                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 min-h-[100px] resize-y outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
-                                />
+                                {recipient.customMessageBodyExpanded && (
+                                  <textarea
+                                    value={recipient.customMessage ?? ''}
+                                    onChange={(e) => updateRecipient(recipient.id, { customMessage: e.target.value })}
+                                    rows={4}
+                                    placeholder="Add a private note for this recipient"
+                                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 min-h-[100px] resize-y outline-none focus:ring-2 focus:ring-[#5AA5E7]/30"
+                                  />
+                                )}
                               </div>
                             )}
                           </div>
@@ -2746,6 +3090,28 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   <input type="checkbox" className="w-5 h-5 rounded-md border-slate-300 cursor-pointer accent-[#7A005D]" />
                   <span className="text-sm font-medium">Allow recipients to reassign to other people</span>
                 </label>
+                <div className="space-y-3">
+                  <label className="flex items-center space-x-3 text-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 rounded-md border-slate-300 cursor-pointer accent-[#7A005D]"
+                      checked={expirationEnabled}
+                      onChange={(e) => updateState({ expirationEnabled: e.target.checked })}
+                    />
+                    <span className="text-sm font-medium">Set expiration date</span>
+                  </label>
+                  {expirationEnabled && (
+                    <AdvancedExpirationFields
+                      afterPreset={expirationAfterPreset}
+                      afterCustomAmount={expirationAfterCustomAmount}
+                      afterCustomUnit={expirationAfterCustomUnit}
+                      alertPreset={expirationAlertPreset}
+                      alertCustomAmount={expirationAlertCustomAmount}
+                      alertCustomUnit={expirationAlertCustomUnit}
+                      onPatch={(p) => updateState(p)}
+                    />
+                  )}
+                </div>
               </div>
             )}
           </div>

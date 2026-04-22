@@ -35,6 +35,20 @@ interface EnvelopeState {
   customMessageSubject: string;
   customMessageBody: string;
   advancedTags: string[];
+  expirationEnabled?: boolean;
+  expirationAfterPreset?: '5_days' | '2_weeks' | '1_month' | '3_month' | 'custom';
+  expirationAfterCustomAmount?: number;
+  expirationAfterCustomUnit?: 'day' | 'week' | 'month' | 'year';
+  expirationAlertPreset?:
+    | 'do_not_send'
+    | '1_day'
+    | '2_days'
+    | '5_days'
+    | '1_week'
+    | '2_weeks'
+    | 'custom';
+  expirationAlertCustomAmount?: number;
+  expirationAlertCustomUnit?: 'day' | 'week' | 'month' | 'year';
 }
 
 function computeDraftDisplayTitle(st: EnvelopeState): string {
@@ -101,6 +115,13 @@ const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   customMessageSubject: 'Action required for documents',
   customMessageBody: 'Please review and send the documents\n• {Document names}',
   advancedTags: [],
+  expirationEnabled: false,
+  expirationAfterPreset: '5_days',
+  expirationAfterCustomAmount: 5,
+  expirationAfterCustomUnit: 'day',
+  expirationAlertPreset: 'do_not_send',
+  expirationAlertCustomAmount: 1,
+  expirationAlertCustomUnit: 'day',
 };
 
 const DraftSavedSnackbar: React.FC<{
