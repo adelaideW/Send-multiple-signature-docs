@@ -1,0 +1,59 @@
+# Copy to: .github/workflows/vercel-production.yml
+# (GitHub OAuth used by some clients must have the "workflow" scope to push files
+# under .github/workflows — if push is rejected, add this file via the GitHub UI
+# or use: git push with a PAT that includes workflow scope.)
+#
+# Deploys to Vercel on every push to main using the Vercel CLI.
+#
+# This works even when the local-only ".vercel" folder is (correctly) gitignored:
+#   vercel pull fetches project settings from Vercel into the CI runner.
+#
+# If you already use "Vercel for Git" (auto-deploy on push) and you don't want
+# two deployments, either delete this workflow or disable "Automatic deployments"
+# for the connected Git provider in: Project → Settings → Git.
+#
+# One-time setup (Repository → Settings → Secrets and variables → Actions):
+#   1) VERCEL_TOKEN: https://vercel.com/account/tokens
+#   2) VERCEL_ORG_ID, VERCEL_PROJECT_ID: from Vercel → Project → Settings → General,
+#      or from a local "vercel link" (.vercel/project.json — do not commit that folder)
+#
+# If VERCEL_TOKEN is not set, the deploy job is skipped (green check) so you can
+# rely on Vercel's native GitHub integration only.
+
+name: Vercel Production
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: vercel-prod-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    if: ${{ secrets.VERCEL_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull Vercel project settings
+        run: npx --yes vercel@latest pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: npx --yes vercel@latest build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy
+        run: npx --yes vercel@latest deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
