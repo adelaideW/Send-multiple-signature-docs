@@ -17,7 +17,8 @@ import {
   Layout,
   Send,
   Upload,
-  FileText
+  FileText,
+  Trash2,
 } from 'lucide-react';
 import TemplatesLibraryView from './TemplatesLibraryView';
 import EnvelopesListView, { type EnvelopeTableRow } from './EnvelopesListView';
@@ -80,6 +81,8 @@ interface PeopleTabViewProps {
   hubTab?: string;
   onHubTabChange?: (tab: string) => void;
   onOpenDocumentsPeopleTab?: () => void;
+  /** Fires when a person is removed from the list (after local list updates in this view). */
+  onRemovePerson?: (personId: string) => void;
 }
 
 const PeopleTabView: React.FC<PeopleTabViewProps> = ({
@@ -97,10 +100,12 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   hubTab: hubTabProp,
   onHubTabChange,
   onOpenDocumentsPeopleTab,
+  onRemovePerson,
 }) => {
   const [internalHubTab, setInternalHubTab] = useState('People');
   const activeTab = hubTabProp ?? internalHubTab;
   const setActiveTab = onHubTabChange ?? setInternalHubTab;
+  const [peopleRows, setPeopleRows] = useState<PeopleRow[]>(PEOPLE_DATA);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [toolsSideCollapsed, setToolsSideCollapsed] = useState(false);
@@ -205,7 +210,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
               <div className="px-6 py-4 flex items-center justify-between border-b border-slate-100">
                 <div className="flex items-center space-x-2">
                   <span className="text-[14px] font-bold text-slate-900">People</span>
-                  <span className="text-slate-400 font-medium text-[14px]">· 14</span>
+                  <span className="text-slate-400 font-medium text-[14px]">· {peopleRows.length}</span>
                 </div>
                 <div className="flex items-center space-x-3">
                   <button
@@ -271,7 +276,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="text-[13px] text-slate-700">
-                    {PEOPLE_DATA.map((row) => (
+                    {peopleRows.map((row) => (
                       <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
                         <td className="px-6 py-4">
                           <div className="flex items-center space-x-3">
@@ -331,6 +336,19 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                                 >
                                   <Upload size={18} className="text-slate-800" />
                                   <span className="text-[14px] font-medium">Upload document</span>
+                                </button>
+                                <div className="my-1 border-t border-slate-100" role="separator" />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPeopleRows((rows) => rows.filter((r) => r.id !== row.id));
+                                    onRemovePerson?.(row.id);
+                                    setActiveMenuId(null);
+                                  }}
+                                  className="w-full flex items-center space-x-4 px-5 py-3 text-left text-red-600 hover:bg-red-50 transition-colors"
+                                >
+                                  <Trash2 size={18} className="text-red-600 shrink-0" />
+                                  <span className="text-[14px] font-medium">Remove</span>
                                 </button>
                               </div>
                             )}
