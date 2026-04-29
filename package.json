@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "screenshot:envelope": "node scripts/capture-envelope-screenshot.mjs"
+    "screenshot:envelope": "node scripts/capture-envelope-screenshot.mjs",
+    "screenshot:envelope:1440": "node scripts/capture-envelope-screenshot.mjs 1440 1024"
   },
   "dependencies": {
     "react": "^19.2.4",

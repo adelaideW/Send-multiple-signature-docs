@@ -6,9 +6,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
 const BASE_URL = process.env.SCREENSHOT_BASE_URL ?? 'https://send-multiple-signature-docs.vercel.app/';
-const OUT = process.env.SCREENSHOT_OUT ?? join(ROOT, 'envelope-ui-2880x2048.png');
 
-const VIEWPORT = { width: 2880, height: 2048 };
+const dimArgs = process.argv.slice(2).filter((a) => /^\d+$/.test(a));
+const width = Number(process.env.SCREENSHOT_WIDTH ?? dimArgs[0] ?? 2880);
+const height = Number(process.env.SCREENSHOT_HEIGHT ?? dimArgs[1] ?? 2048);
+const VIEWPORT = { width, height };
+const OUT =
+  process.env.SCREENSHOT_OUT ?? join(ROOT, `envelope-ui-${width}x${height}.png`);
 const TEMPLATE_LABEL = 'Canada Contractor Agreement - Monthly Pay - With Equity - Quebec';
 
 async function main() {
