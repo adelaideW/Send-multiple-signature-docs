@@ -7,19 +7,28 @@ const ROOT = join(__dirname, '..');
 
 const BASE_URL = process.env.SCREENSHOT_BASE_URL ?? 'https://send-multiple-signature-docs.vercel.app/';
 
-const dimArgs = process.argv.slice(2).filter((a) => /^\d+$/.test(a));
+const dimArgs = process.argv.slice(2).filter((a) => /^\d+(?:\.\d+)?$/.test(a));
 const width = Number(process.env.SCREENSHOT_WIDTH ?? dimArgs[0] ?? 2880);
 const height = Number(process.env.SCREENSHOT_HEIGHT ?? dimArgs[1] ?? 2048);
+const deviceScaleFactor = Number(
+  process.env.SCREENSHOT_DEVICE_SCALE_FACTOR ?? dimArgs[2] ?? 1
+);
 const VIEWPORT = { width, height };
 const OUT =
-  process.env.SCREENSHOT_OUT ?? join(ROOT, `envelope-ui-${width}x${height}.png`);
+  process.env.SCREENSHOT_OUT ??
+  join(
+    ROOT,
+    deviceScaleFactor === 1
+      ? `envelope-ui-${width}x${height}.png`
+      : `envelope-ui-${width}x${height}-${deviceScaleFactor}x.png`
+  );
 const TEMPLATE_LABEL = 'Canada Contractor Agreement - Monthly Pay - With Equity - Quebec';
 
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: VIEWPORT,
-    deviceScaleFactor: 1,
+    deviceScaleFactor,
   });
   const page = await context.newPage();
 
@@ -57,7 +66,9 @@ async function main() {
   await page.screenshot({ path: OUT, fullPage: false });
 
   await browser.close();
-  console.log('Wrote', OUT);
+  const pw = Math.round(width * deviceScaleFactor);
+  const ph = Math.round(height * deviceScaleFactor);
+  console.log('Wrote', OUT, `(viewport ${width}×${height}, DPR ${deviceScaleFactor} → ${pw}×${ph}px)`);
 }
 
 main().catch((err) => {
