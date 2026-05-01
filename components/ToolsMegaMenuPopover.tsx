@@ -11,7 +11,7 @@ interface ToolsMegaMenuPopoverProps {
   open: boolean;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLElement | null>;
-  /** Called when user chooses Home from the top section (e.g. navigate to landing). */
+  /** Called when user chooses Home from the top section (e.g. Documents → People hub). */
   onHome?: () => void;
   onOpenDocumentsPeopleTab?: () => void;
 }

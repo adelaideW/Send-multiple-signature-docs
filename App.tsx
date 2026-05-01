@@ -7,7 +7,6 @@ import EnvelopeCreator from './components/EnvelopeCreator';
 import TemplateEditor from './components/TemplateEditor';
 import EnvelopeDetailsView from './components/EnvelopeDetailsView';
 import DocumentReviewView from './components/DocumentReviewView';
-import LandingPage from './components/LandingPage';
 import PeopleTabView from './components/PeopleTabView';
 import GeminiAssistant from './components/GeminiAssistant';
 import { MOCK_EMPLOYEE } from './constants';
@@ -17,7 +16,7 @@ import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, Enve
 import { cloneInitialEnvelopeRows } from './components/EnvelopesListView';
 import type { DocumentReviewFlow } from './components/DocumentReviewView';
 
-type ViewType = 'landing' | 'profile' | 'envelope' | 'template_editor' | 'envelope_details' | 'document_review' | 'people_tab';
+type ViewType = 'profile' | 'envelope' | 'template_editor' | 'envelope_details' | 'document_review' | 'people_tab';
 
 // Define the state structure for persistent envelope creation
 interface EnvelopeState {
@@ -213,7 +212,7 @@ const SuccessSnackbar: React.FC<{ message: string; onClose: () => void }> = ({ m
 
 const App: React.FC = () => {
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
-  const [viewHistory, setViewHistory] = useState<ViewType[]>(['landing']);
+  const [viewHistory, setViewHistory] = useState<ViewType[]>(['people_tab']);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [sentEnvelopeName, setSentEnvelopeName] = useState('');
   const [packetRows, setPacketRows] = useState<EnvelopeTableRow[]>(() => cloneInitialEnvelopeRows());
@@ -229,7 +228,7 @@ const App: React.FC = () => {
   const [signFlow, setSignFlow] = useState<DocumentReviewFlow | null>(null);
   const [pdfPlacementSeed, setPdfPlacementSeed] = useState(false);
   const [profileToolsCollapsed, setProfileToolsCollapsed] = useState(false);
-  const envelopeEntryRef = useRef<ViewType>('landing');
+  const envelopeEntryRef = useRef<ViewType>('people_tab');
   const editingPacketIdRef = useRef<string | null>(null);
 
   // Persistent Envelope Creation State
@@ -352,7 +351,7 @@ const App: React.FC = () => {
       if (envelopeIndex > 0) {
         return prev.slice(0, envelopeIndex);
       }
-      return ['landing'];
+      return ['people_tab'];
     });
   };
 
@@ -515,21 +514,10 @@ const App: React.FC = () => {
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      {/* Landing Page View */}
-      {currentView === 'landing' && (
-        <div className="flex flex-col h-screen bg-white">
-          <Header onProfileClick={() => navigateTo('profile')} />
-          <LandingPage 
-            onSelectUserProfile={() => navigateTo('profile')} 
-            onSelectPeopleTab={() => navigateTo('people_tab')}
-          />
-        </div>
-      )}
-
-      {/* People Tab View */}
+      {/* People Tab View — default entry (Documents → People hub) */}
       {currentView === 'people_tab' && (
         <PeopleTabView 
-          onGoHome={() => setViewHistory(['landing'])} 
+          onGoHome={openDocumentsPeopleHub}
           onOpenDocumentsPeopleTab={openDocumentsPeopleHub}
           onSendDocument={() => {
             editingPacketIdRef.current = null;
@@ -571,7 +559,7 @@ const App: React.FC = () => {
           <ToolsSidePanel
             collapsed={profileToolsCollapsed}
             onCollapsedChange={setProfileToolsCollapsed}
-            onGoHome={() => setViewHistory(['landing'])}
+            onGoHome={openDocumentsPeopleHub}
             onOpenDocumentsPeopleTab={openDocumentsPeopleHub}
           />
           <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
@@ -682,7 +670,7 @@ const App: React.FC = () => {
               setTemplateEditorSeed(null);
               goBack();
             }} 
-            onGoHome={() => setViewHistory(['landing'])}
+            onGoHome={openDocumentsPeopleHub}
             mode={templateEditorMode}
             initialTitle={templateEditorSeed?.title}
             initialBodyHtml={templateEditorSeed?.bodyHtml ?? null}
@@ -726,7 +714,7 @@ const App: React.FC = () => {
           <DocumentReviewView
             flow={signFlow}
             onExit={goBack}
-            onGoHome={() => setViewHistory(['landing'])}
+            onGoHome={openDocumentsPeopleHub}
             onCompleteAll={handleSignComplete}
             onSavePartial={handleSignPartial}
           />
