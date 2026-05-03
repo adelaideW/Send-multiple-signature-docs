@@ -1,6 +1,4 @@
-import { useMemo } from 'react';
-
-const INITIAL_SEARCH = typeof window !== 'undefined' ? window.location.search : '';
+import { useLayoutEffect, useState } from 'react';
 
 function isAllowedPortfolioReturn(u: URL): boolean {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
@@ -8,12 +6,7 @@ function isAllowedPortfolioReturn(u: URL): boolean {
   if (u.protocol === 'http:') {
     return u.hostname === 'localhost' || u.hostname === '127.0.0.1';
   }
-  const h = u.hostname;
-  if (h === 'localhost' || h === '127.0.0.1') return true;
-  if (h.endsWith('.vercel.app')) return true;
-  if (h.endsWith('.wixsite.com')) return true;
-  if (h.endsWith('.github.io')) return true;
-  return false;
+  return true;
 }
 
 function parsePortfolioReturn(search: string): string | null {
@@ -40,7 +33,10 @@ function parsePortfolioReturn(search: string): string | null {
 
 /** Fixed top-center link when opened from design portfolio (?portfolioReturn=…). */
 export function PortfolioReturnLink() {
-  const href = useMemo(() => parsePortfolioReturn(INITIAL_SEARCH), []);
+  const [href, setHref] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    setHref(parsePortfolioReturn(window.location.search));
+  }, []);
   if (!href) return null;
   return (
     <a
