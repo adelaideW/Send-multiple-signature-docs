@@ -555,7 +555,7 @@ const App: React.FC = () => {
       {portfolioHomeHref ? (
         <a
           href={portfolioHomeHref}
-          className="fixed left-4 top-4 z-[240] rounded-lg border border-gray-200/90 bg-white/95 px-3 py-2 text-sm font-medium text-gray-900 shadow-md backdrop-blur-sm transition-colors hover:bg-white hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7A005D] focus-visible:ring-offset-2"
+          className="fixed left-1/2 top-4 z-[240] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-lg border border-gray-200/90 bg-white/95 px-3 py-2 text-center text-sm font-medium text-gray-900 shadow-md backdrop-blur-sm transition-colors hover:bg-white hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7A005D] focus-visible:ring-offset-2"
         >
           Back to portfolio home page
         </a>
