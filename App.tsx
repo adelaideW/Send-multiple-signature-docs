@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { PortfolioReturnLink } from './components/PortfolioReturnLink';
 import { Check, X } from 'lucide-react';
 import Header from './components/Header';
 import ToolsSidePanel from './components/ToolsSidePanel';
@@ -17,42 +18,6 @@ import { cloneInitialEnvelopeRows } from './components/EnvelopesListView';
 import type { DocumentReviewFlow } from './components/DocumentReviewView';
 
 type ViewType = 'profile' | 'envelope' | 'template_editor' | 'envelope_details' | 'document_review' | 'people_tab';
-
-const INITIAL_SEARCH = typeof window !== 'undefined' ? window.location.search : '';
-
-function isAllowedPortfolioReturn(u: URL): boolean {
-  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-  if (u.username || u.password) return false;
-  if (u.protocol === 'http:') {
-    return u.hostname === 'localhost' || u.hostname === '127.0.0.1';
-  }
-  const h = u.hostname;
-  if (h === 'localhost' || h === '127.0.0.1') return true;
-  if (h.endsWith('.vercel.app')) return true;
-  return false;
-}
-
-function parsePortfolioReturn(search: string): string | null {
-  let raw: string | null;
-  try {
-    raw = new URLSearchParams(search).get('portfolioReturn');
-  } catch {
-    return null;
-  }
-  if (!raw) return null;
-  try {
-    raw = decodeURIComponent(raw.trim());
-  } catch {
-    return null;
-  }
-  try {
-    const u = new URL(raw);
-    if (!isAllowedPortfolioReturn(u)) return null;
-    return u.href;
-  } catch {
-    return null;
-  }
-}
 
 // Define the state structure for persistent envelope creation
 interface EnvelopeState {
@@ -269,8 +234,6 @@ const App: React.FC = () => {
 
   // Persistent Envelope Creation State
   const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
-
-  const portfolioHomeHref = useMemo(() => parsePortfolioReturn(INITIAL_SEARCH), []);
 
   const selectedPacket = selectedPacketId ? packetRows.find((r) => r.id === selectedPacketId) : undefined;
 
@@ -552,14 +515,7 @@ const App: React.FC = () => {
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      {portfolioHomeHref ? (
-        <a
-          href={portfolioHomeHref}
-          className="fixed left-1/2 top-4 z-[240] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-lg border border-gray-200/90 bg-white/95 px-3 py-2 text-center text-sm font-medium text-gray-900 shadow-md backdrop-blur-sm transition-colors hover:bg-white hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7A005D] focus-visible:ring-offset-2"
-        >
-          Back to portfolio home page
-        </a>
-      ) : null}
+      <PortfolioReturnLink />
       {/* People Tab View — default entry (Documents → People hub) */}
       {currentView === 'people_tab' && (
         <PeopleTabView 
