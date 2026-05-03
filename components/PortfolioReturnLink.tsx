@@ -11,6 +11,8 @@ function isAllowedPortfolioReturn(u: URL): boolean {
   const h = u.hostname;
   if (h === 'localhost' || h === '127.0.0.1') return true;
   if (h.endsWith('.vercel.app')) return true;
+  if (h.endsWith('.wixsite.com')) return true;
+  if (h.endsWith('.github.io')) return true;
   return false;
 }
 
