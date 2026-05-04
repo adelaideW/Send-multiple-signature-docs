@@ -41,9 +41,9 @@ export function PortfolioReturnLink() {
   return (
     <a
       href={href}
-      className="fixed left-1/2 top-4 z-[10000] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-lg border border-gray-200/90 bg-white/95 px-3 py-2 text-center text-sm font-medium text-gray-900 shadow-md backdrop-blur-sm transition-colors hover:bg-white hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7A005D] focus-visible:ring-offset-2"
+      className="fixed left-1/2 top-4 z-[2147483647] max-w-[min(calc(100vw-2rem),20rem)] -translate-x-1/2 whitespace-normal text-center text-[12px] leading-tight font-semibold text-neutral-950 rounded-[10px] border border-neutral-200 bg-white px-3 py-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.08),0_1px_3px_rgba(0,0,0,0.05)] transition-[box-shadow,border-color,background-color] duration-150 hover:border-neutral-300 hover:shadow-[0_6px_24px_rgba(0,0,0,0.1)] focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900 focus-visible:ring-offset-2"
     >
-      Back to portfolio home page
+      Back to Adelaide's portfolio
     </a>
   );
 }
