@@ -866,7 +866,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
           </div>
         </div>
 
-        <aside className="w-full lg:w-[448px] shrink-0 mt-10 px-16">
+        <aside className="hidden lg:block lg:w-[448px] shrink-0 mt-10 px-16">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sticky top-10">
             <h3 className="text-[15px] font-bold text-slate-900">Folder location</h3>
             <p className="text-[12px] text-slate-500 mt-2 leading-relaxed font-medium">
