@@ -165,12 +165,10 @@ const EmptySubfoldersState: React.FC<{ onCreate: () => void; allowCreateHere: bo
   <div className="flex flex-col items-center justify-center py-24 px-6 text-center min-h-[360px] max-w-lg mx-auto w-full">
     <Info size={32} strokeWidth={2} className="text-slate-900 mb-5 shrink-0" aria-hidden />
     <h3 className="text-[17px] font-bold text-slate-900 mb-3">No subfolder available</h3>
-    <p className="text-[14px] text-slate-500 font-medium leading-relaxed mb-8">
-      You can create another subfolder here. A new folder will be created
-      <br />
-      to each selected person&apos;s profile.
+    <p className="text-[14px] text-slate-500 font-medium leading-relaxed mb-8 max-w-[576px]">
+      You can create another subfolder here. A new folder will be created to each selected person&apos;s profile.
     </p>
-    <div className="w-full max-w-md">
+    <div className="w-auto max-w-full">
       <button
         type="button"
         disabled={!allowCreateHere}
@@ -178,11 +176,12 @@ const EmptySubfoldersState: React.FC<{ onCreate: () => void; allowCreateHere: bo
         onClick={() => {
           if (allowCreateHere) onCreate();
         }}
-        className={FULL_WIDTH_PRIMARY_CTA}
-        style={{ backgroundColor: PRIMARY_PURPLE }}
+        className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-[14px] border border-slate-300 bg-white text-[14px] font-semibold text-slate-900 shadow-sm ${
+          allowCreateHere ? 'hover:bg-slate-50' : 'opacity-40 cursor-not-allowed'
+        }`}
       >
         <Plus size={18} strokeWidth={2.5} aria-hidden />
-        Create
+        New
       </button>
     </div>
   </div>
