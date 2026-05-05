@@ -21,7 +21,7 @@ export interface CreateProfileFolderPageProps {
   rootFolder: ProfileFolderNode;
   parentFolderId: string;
   onExit: () => void;
-  onCreate?: (payload: { name: string; description: string }) => void;
+  onCreate?: (payload: { name: string; description: string; include: string[]; except: string[] }) => void;
 }
 
 /** Tooltip — DM Bulk Upload node 7302:210847 */
@@ -524,7 +524,12 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
 
   const handleSubmit = () => {
     if (!nameOk) return;
-    onCreate?.({ name: trimmedName, description: description.trim() });
+    onCreate?.({
+      name: trimmedName,
+      description: description.trim(),
+      include: includeChips,
+      except: exceptChips,
+    });
   };
 
   const layerHelpText = useMemo(() => {

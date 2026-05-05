@@ -31,6 +31,16 @@ export function findProfileFolder(
   return null;
 }
 
+export function findParentProfileFolderId(root: ProfileFolderNode, childId: string): string | null {
+  if (root.id === childId) return null;
+  for (const c of root.children ?? []) {
+    if (c.id === childId) return root.id;
+    const nested = findParentProfileFolderId(c, childId);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 /** Number of edges from `all` down to this node (0 for root). */
 export function depthFromAllDocuments(root: ProfileFolderNode, folderId: string): number | null {
   const walk = (node: ProfileFolderNode, d: number): number | null => {

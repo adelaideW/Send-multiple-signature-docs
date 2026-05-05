@@ -20,6 +20,7 @@ import {
   canCreateFolderUnderParent,
   createInitialProfileFolderRoot,
   findProfileFolder,
+  findParentProfileFolderId,
   isFolderAtMaxTreeDepth,
   truncateProfileFolderName,
   type ProfileFolderNode,
@@ -187,8 +188,20 @@ const EmptySubfoldersState: React.FC<{ onCreate: () => void; allowCreateHere: bo
   </div>
 );
 
-const ProfileFoldersView: React.FC = () => {
-  const [folderRoot, setFolderRoot] = useState<ProfileFolderNode>(() => createInitialProfileFolderRoot());
+const ProfileFoldersView: React.FC<{
+  folderRoot?: ProfileFolderNode;
+  onFolderRootChange?: (next: ProfileFolderNode) => void;
+}> = ({ folderRoot: folderRootProp, onFolderRootChange }) => {
+  const [localFolderRoot, setLocalFolderRoot] = useState<ProfileFolderNode>(() => createInitialProfileFolderRoot());
+  const folderRoot = folderRootProp ?? localFolderRoot;
+  const setFolderRoot = useCallback(
+    (updater: React.SetStateAction<ProfileFolderNode>) => {
+      const next = typeof updater === 'function' ? (updater as (prev: ProfileFolderNode) => ProfileFolderNode)(folderRoot) : updater;
+      if (!folderRootProp) setLocalFolderRoot(next);
+      onFolderRootChange?.(next);
+    },
+    [folderRoot, folderRootProp, onFolderRootChange]
+  );
   const [sidebarWidthPx, setSidebarWidthPx] = useState(SIDEBAR_DEFAULT_W);
   const resizeDragRef = useRef<{ startX: number; startW: number } | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState('all');
@@ -254,6 +267,8 @@ const ProfileFoldersView: React.FC = () => {
 
   const selectedHeading = truncateProfileFolderName(selectedFolder?.name ?? 'All documents');
   const childCountLabel = `${childFolders.length}`;
+  const selectedParentId = findParentProfileFolderId(folderRoot, selectedFolderId);
+  const showBackToParent = selectedFolderId !== 'all' && !!selectedParentId;
 
   const showEmptyNoSubfolders = childFolders.length === 0;
   const showSearchEmpty = !showEmptyNoSubfolders && tableRows.length === 0 && search.trim().length > 0;
@@ -309,6 +324,19 @@ const ProfileFoldersView: React.FC = () => {
         <div className="flex-1 flex flex-col min-w-0 bg-white">
           <div className="px-8 pt-6 pb-4 flex flex-wrap items-start justify-between gap-4 border-b border-slate-100">
             <div className="flex items-center gap-2 min-w-0">
+              {showBackToParent && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedParentId) setSelectedFolderId(selectedParentId);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 shrink-0"
+                  aria-label="Back to parent folder"
+                >
+                  <ChevronRight size={13} className="rotate-180" />
+                  Back
+                </button>
+              )}
               <h2 className="text-[15px] font-bold text-slate-900 shrink-0 truncate" title={selectedFolder?.name}>
                 {selectedHeading} · {childCountLabel}
               </h2>
@@ -465,12 +493,23 @@ const ProfileFoldersView: React.FC = () => {
             rootFolder={folderRoot}
             parentFolderId={selectedFolderId}
             onExit={() => setSubView('list')}
-            onCreate={({ name }) => {
+            onCreate={({ name, include, except }) => {
               const id = `pf-folder-${Date.now()}`;
+              const includeSet = new Set(include);
+              const exceptSet = new Set(except);
+              const includesAllEmployees = include.length === 0 || includeSet.has('All... (Managers, employees, etc.)');
+              const kaleIncluded = includesAllEmployees || includeSet.has('Kale George');
+              const kaleExcluded = exceptSet.has('Kale George');
+              const createdFor =
+                !kaleIncluded || kaleExcluded
+                  ? 'Selected users (Kale excluded)'
+                  : include.length === 0
+                    ? 'All - Employees'
+                    : include.join(', ');
               const child: ProfileFolderNode = {
                 id,
                 name,
-                createdFor: 'All - Employees',
+                createdFor,
                 lastModified: new Date().toISOString(),
               };
               setFolderRoot((r) => addChildFolder(r, selectedFolderId, child));

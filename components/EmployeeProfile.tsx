@@ -30,6 +30,7 @@ import { Employee } from '../types';
 import { PRIMARY_PURPLE } from '../constants';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
+import type { ProfileFolderNode } from '../utils/profileFolderUtils';
 
 interface EmployeeProfileProps {
   employee: Employee;
@@ -114,6 +115,7 @@ interface DocumentsSectionProps {
   onReviewDocument?: () => void;
   viewByDocuments: boolean;
   setViewByDocuments: (val: boolean) => void;
+  profileFolderRoot?: ProfileFolderNode;
 }
 
 type ProfileDocTab = 'action_required' | 'documents';
@@ -333,6 +335,69 @@ const PROFILE_DOCS_TREE: ProfileRootFolder[] = [
   },
 ];
 
+function kaleCanAccessFolder(node: ProfileFolderNode): boolean {
+  const createdFor = (node.createdFor ?? '').toLowerCase();
+  if (!createdFor) return false;
+  if (createdFor.includes('kale excluded')) return false;
+  return createdFor.includes('all') || createdFor.includes('kale george');
+}
+
+function createDynamicRootFolder(name: string, seedId: string): ProfileRootFolder {
+  return {
+    id: `dynamic-root-${seedId}`,
+    name,
+    subfolders: [],
+    files: [],
+  };
+}
+
+function cloneProfileDocsTree(tree: ProfileRootFolder[]): ProfileRootFolder[] {
+  return tree.map((root) => ({
+    ...root,
+    subfolders: root.subfolders.map((sub) => ({ ...sub, files: [...sub.files] })),
+    files: [...root.files],
+  }));
+}
+
+function buildProfileDocsTreeForKale(baseTree: ProfileRootFolder[], profileFolderRoot?: ProfileFolderNode): ProfileRootFolder[] {
+  const tree = cloneProfileDocsTree(baseTree);
+  if (!profileFolderRoot) return tree;
+
+  const rootMap = new Map(tree.map((r) => [r.id, r] as const));
+  const customTopLevel = new Map<string, ProfileRootFolder>();
+
+  const walk = (node: ProfileFolderNode, parent: ProfileFolderNode | null) => {
+    if (node.id !== 'all') {
+      const visible = kaleCanAccessFolder(node);
+      if (visible) {
+        const parentVisible = parent ? kaleCanAccessFolder(parent) : false;
+        if (!parent || parent.id === 'all') {
+          const knownRoot = rootMap.get(node.id);
+          if (!knownRoot && !customTopLevel.has(node.id)) {
+            customTopLevel.set(node.id, createDynamicRootFolder(node.name, node.id));
+          }
+        } else if (parentVisible) {
+          const parentRoot = rootMap.get(parent.id) ?? customTopLevel.get(parent.id);
+          if (parentRoot && !parentRoot.subfolders.some((s) => s.id === node.id)) {
+            parentRoot.subfolders.push({
+              id: node.id,
+              name: node.name,
+              files: [],
+            });
+          }
+        } else if (!customTopLevel.has(node.id)) {
+          customTopLevel.set(node.id, createDynamicRootFolder(node.name, node.id));
+        }
+      }
+    }
+
+    for (const child of node.children ?? []) walk(child, node);
+  };
+
+  walk(profileFolderRoot, null);
+  return [...tree, ...customTopLevel.values()];
+}
+
 function countListedDocuments(tree: ProfileRootFolder[], includeArchived: boolean): number {
   let n = 0;
   for (const root of tree) {
@@ -343,8 +408,6 @@ function countListedDocuments(tree: ProfileRootFolder[], includeArchived: boolea
   }
   return n;
 }
-
-const DOCUMENTS_TAB_TOTAL = countListedDocuments(PROFILE_DOCS_TREE, false);
 
 type DocumentsListRow =
   | { id: string; kind: 'folder'; name: string; isDefault?: boolean; dateLabel: string; navPath: string[] }
@@ -443,14 +506,14 @@ function buildDocumentsListRows(
   return rows;
 }
 
-function breadcrumbForPath(navPath: string[]): { label: string; path: string[] }[] {
+function breadcrumbForPath(tree: ProfileRootFolder[], navPath: string[]): { label: string; path: string[] }[] {
   const crumbs: { label: string; path: string[] }[] = [{ label: 'Documents', path: [] }];
   if (navPath.length >= 1) {
-    const root = PROFILE_DOCS_TREE.find((t) => t.id === navPath[0]);
+    const root = tree.find((t) => t.id === navPath[0]);
     if (root) crumbs.push({ label: root.name, path: [root.id] });
   }
   if (navPath.length >= 2) {
-    const root = PROFILE_DOCS_TREE.find((t) => t.id === navPath[0]);
+    const root = tree.find((t) => t.id === navPath[0]);
     const sub = root?.subfolders.find((s) => s.id === navPath[1]);
     if (sub) crumbs.push({ label: sub.name, path: [navPath[0], navPath[1]] });
   }
@@ -465,6 +528,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   onReviewDocument,
   viewByDocuments,
   setViewByDocuments,
+  profileFolderRoot,
 }) => {
   const profileTab: ProfileDocTab = viewByDocuments ? 'documents' : 'action_required';
   const setProfileTab = useCallback(
@@ -506,12 +570,18 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
     return () => clearTimeout(t);
   }, [profileDocSnack]);
 
+  const docsTree = useMemo(
+    () => buildProfileDocsTreeForKale(PROFILE_DOCS_TREE, profileFolderRoot),
+    [profileFolderRoot]
+  );
+  const documentsTabTotal = useMemo(() => countListedDocuments(docsTree, false), [docsTree]);
+
   const visibleDocumentRows = useMemo(
-    () => buildDocumentsListRows(PROFILE_DOCS_TREE, docNavPath, showArchive, listSearch),
-    [docNavPath, showArchive, listSearch]
+    () => buildDocumentsListRows(docsTree, docNavPath, showArchive, listSearch),
+    [docsTree, docNavPath, showArchive, listSearch]
   );
 
-  const docCrumbs = useMemo(() => breadcrumbForPath(docNavPath), [docNavPath]);
+  const docCrumbs = useMemo(() => breadcrumbForPath(docsTree, docNavPath), [docsTree, docNavPath]);
 
   const selectedCount = useMemo(
     () => visibleDocumentRows.reduce((n, r) => (selectedIds[r.id] ? n + 1 : n), 0),
@@ -607,7 +677,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                   profileTab === 'documents' ? 'text-white/90' : 'text-slate-500'
                 }`}
               >
-                {DOCUMENTS_TAB_TOTAL}
+                {documentsTabTotal}
               </span>
             </button>
           </div>
@@ -984,7 +1054,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
               style={{ backgroundColor: PRIMARY_PURPLE }}
             >
               <span className="text-[13px] font-bold tabular-nums pr-3 mr-1 border-r border-white/25 shrink-0">
-                {selectedCount}/{DOCUMENTS_TAB_TOTAL} selected
+                {selectedCount}/{documentsTabTotal} selected
               </span>
               <div className="flex items-center gap-0.5">
                 {(

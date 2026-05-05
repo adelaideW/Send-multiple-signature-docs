@@ -16,6 +16,7 @@ import type { UploadedFileItem } from './types';
 import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus } from './components/EnvelopesListView';
 import { cloneInitialEnvelopeRows } from './components/EnvelopesListView';
 import type { DocumentReviewFlow } from './components/DocumentReviewView';
+import { createInitialProfileFolderRoot, type ProfileFolderNode } from './utils/profileFolderUtils';
 
 type ViewType = 'profile' | 'envelope' | 'template_editor' | 'envelope_details' | 'document_review' | 'people_tab';
 
@@ -229,6 +230,7 @@ const App: React.FC = () => {
   const [signFlow, setSignFlow] = useState<DocumentReviewFlow | null>(null);
   const [pdfPlacementSeed, setPdfPlacementSeed] = useState(false);
   const [profileToolsCollapsed, setProfileToolsCollapsed] = useState(false);
+  const [profileFolderRoot, setProfileFolderRoot] = useState<ProfileFolderNode>(() => createInitialProfileFolderRoot());
   const envelopeEntryRef = useRef<ViewType>('people_tab');
   const editingPacketIdRef = useRef<string | null>(null);
 
@@ -552,6 +554,8 @@ const App: React.FC = () => {
           }}
           hubTab={documentsHubTab}
           onHubTabChange={setDocumentsHubTab}
+          profileFolderRoot={profileFolderRoot}
+          onProfileFolderRootChange={setProfileFolderRoot}
         />
       )}
 
@@ -583,6 +587,7 @@ const App: React.FC = () => {
                     onReviewDocument={() => startSignFlow('e1')}
                     viewByDocuments={viewByDocuments}
                     setViewByDocuments={setViewByDocuments}
+                    profileFolderRoot={profileFolderRoot}
                   />
                 </div>
               </>

@@ -25,6 +25,7 @@ import ProfileFoldersView from './ProfileFoldersView';
 import EnvelopesListView, { type EnvelopeTableRow } from './EnvelopesListView';
 import ToolsSidePanel from './ToolsSidePanel';
 import SendReminderModal from './SendReminderModal';
+import type { ProfileFolderNode } from '../utils/profileFolderUtils';
 
 interface PeopleRow {
   id: string;
@@ -84,6 +85,8 @@ interface PeopleTabViewProps {
   onOpenDocumentsPeopleTab?: () => void;
   /** Fires when a person is removed from the list (after local list updates in this view). */
   onRemovePerson?: (personId: string) => void;
+  profileFolderRoot?: ProfileFolderNode;
+  onProfileFolderRootChange?: (next: ProfileFolderNode) => void;
 }
 
 const PeopleTabView: React.FC<PeopleTabViewProps> = ({
@@ -102,6 +105,8 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   onHubTabChange,
   onOpenDocumentsPeopleTab,
   onRemovePerson,
+  profileFolderRoot,
+  onProfileFolderRootChange,
 }) => {
   const [internalHubTab, setInternalHubTab] = useState('People');
   const activeTab = hubTabProp ?? internalHubTab;
@@ -371,7 +376,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
 
           {activeTab === 'Profile Folders' && (
             <div className="mb-8">
-              <ProfileFoldersView />
+              <ProfileFoldersView folderRoot={profileFolderRoot} onFolderRootChange={onProfileFolderRootChange} />
             </div>
           )}
 
