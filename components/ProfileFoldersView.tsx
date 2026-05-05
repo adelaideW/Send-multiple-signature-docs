@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   Filter,
@@ -52,6 +52,13 @@ const MAX_DEPTH_ROW_TOOLTIP =
 /** 8-digit hex with alpha (supported in modern browsers). */
 const primaryTint = (alphaHex: string) => `${PRIMARY_PURPLE}${alphaHex}`;
 
+const TREE_INDENT_PX = 16;
+const SIDEBAR_DEFAULT_W = 256;
+const SIDEBAR_MIN_W = 200;
+
+const FULL_WIDTH_PRIMARY_CTA =
+  'w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold text-white shadow-sm hover:opacity-95 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed';
+
 const ChevronSpacer = () => <span className="w-[14px] h-[14px] shrink-0 inline-block" aria-hidden />;
 
 const SidebarTreeRow: React.FC<{
@@ -92,15 +99,17 @@ const SidebarTreeRow: React.FC<{
               ? 'font-semibold cursor-pointer'
               : 'text-slate-600 hover:bg-white/80 border-transparent cursor-pointer'
         }`}
-        style={
-          !selectionDisabled && active
+        style={{
+          paddingLeft: `${12 + depth * TREE_INDENT_PX}px`,
+          paddingRight: '12px',
+          ...(!selectionDisabled && active
             ? {
                 backgroundColor: primaryTint('1A'),
                 color: PRIMARY_PURPLE,
                 borderLeftColor: PRIMARY_PURPLE,
               }
-            : undefined
-        }
+            : {}),
+        }}
         data-active={active ? 'true' : undefined}
       >
         {hasKids ? (
@@ -153,40 +162,36 @@ const EmptySubfoldersState: React.FC<{ onCreate: () => void; allowCreateHere: bo
   onCreate,
   allowCreateHere,
 }) => (
-  <div className="flex flex-col items-center justify-center py-24 px-6 text-center min-h-[360px]">
-    <div
-      className="w-16 h-16 rounded-full border border-slate-900/15 flex items-center justify-center mb-6"
-      aria-hidden
-    >
-      <Info size={28} strokeWidth={2} className="text-slate-900" />
-    </div>
-    <h3 className="text-[17px] font-bold text-slate-900 mb-2">No subfolder available</h3>
-    <p className="text-[14px] text-slate-500 font-medium leading-relaxed max-w-md mb-8">
+  <div className="flex flex-col items-center justify-center py-24 px-6 text-center min-h-[360px] max-w-lg mx-auto w-full">
+    <Info size={32} strokeWidth={2} className="text-slate-900 mb-5 shrink-0" aria-hidden />
+    <h3 className="text-[17px] font-bold text-slate-900 mb-3">No subfolder available</h3>
+    <p className="text-[14px] text-slate-500 font-medium leading-relaxed mb-8">
       You can create another subfolder here. A new folder will be created
       <br />
       to each selected person&apos;s profile.
     </p>
-    <button
-      type="button"
-      disabled={!allowCreateHere}
-      title={!allowCreateHere ? DISABLED_CREATE_TOOLTIP : undefined}
-      onClick={() => {
-        if (allowCreateHere) onCreate();
-      }}
-      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-[13px] font-bold text-slate-900 shadow-sm ${
-        allowCreateHere ? 'hover:bg-slate-50' : 'opacity-40 cursor-not-allowed'
-      }`}
-    >
-      <span className="inline-flex items-center justify-center rounded-full border border-slate-300 p-0.5" aria-hidden>
-        <Plus size={14} strokeWidth={2.5} />
-      </span>
-      Create
-    </button>
+    <div className="w-full max-w-md">
+      <button
+        type="button"
+        disabled={!allowCreateHere}
+        title={!allowCreateHere ? DISABLED_CREATE_TOOLTIP : undefined}
+        onClick={() => {
+          if (allowCreateHere) onCreate();
+        }}
+        className={FULL_WIDTH_PRIMARY_CTA}
+        style={{ backgroundColor: PRIMARY_PURPLE }}
+      >
+        <Plus size={18} strokeWidth={2.5} aria-hidden />
+        Create
+      </button>
+    </div>
   </div>
 );
 
 const ProfileFoldersView: React.FC = () => {
   const [folderRoot, setFolderRoot] = useState<ProfileFolderNode>(() => createInitialProfileFolderRoot());
+  const [sidebarWidthPx, setSidebarWidthPx] = useState(SIDEBAR_DEFAULT_W);
+  const resizeDragRef = useRef<{ startX: number; startW: number } | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState('all');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     all: true,
@@ -201,6 +206,38 @@ const ProfileFoldersView: React.FC = () => {
   useEffect(() => {
     setSearch('');
   }, [selectedFolderId]);
+
+  useEffect(() => {
+    const clamp = () => {
+      const max = Math.max(SIDEBAR_MIN_W, Math.floor(window.innerWidth * 0.5));
+      setSidebarWidthPx((w) => Math.min(Math.max(SIDEBAR_MIN_W, w), max));
+    };
+    clamp();
+    window.addEventListener('resize', clamp);
+    return () => window.removeEventListener('resize', clamp);
+  }, []);
+
+  const onSidebarResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      resizeDragRef.current = { startX: e.clientX, startW: sidebarWidthPx };
+      const onMove = (ev: MouseEvent) => {
+        if (!resizeDragRef.current) return;
+        const max = Math.max(SIDEBAR_MIN_W, Math.floor(window.innerWidth * 0.5));
+        const delta = ev.clientX - resizeDragRef.current.startX;
+        const next = Math.min(Math.max(SIDEBAR_MIN_W, resizeDragRef.current.startW + delta), max);
+        setSidebarWidthPx(next);
+      };
+      const onUp = () => {
+        resizeDragRef.current = null;
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    },
+    [sidebarWidthPx]
+  );
 
   const selectedFolder = findProfileFolder(folderRoot, selectedFolderId);
   const childFolders = selectedFolder?.children ?? [];
@@ -225,8 +262,15 @@ const ProfileFoldersView: React.FC = () => {
   return (
     <>
       <div className="flex min-h-[560px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <aside className="w-64 shrink-0 border-r border-slate-200 bg-[#fafafa] flex flex-col">
-          <div className="p-4 border-b border-slate-200 flex justify-start items-center">
+        <aside
+          className="relative shrink-0 border-r border-slate-200 bg-[#fafafa] flex flex-col"
+          style={{
+            width: sidebarWidthPx,
+            minWidth: SIDEBAR_MIN_W,
+            maxWidth: '50vw',
+          }}
+        >
+          <div className="p-4 border-b border-slate-200">
             <button
               type="button"
               disabled={!allowCreateHere}
@@ -234,15 +278,14 @@ const ProfileFoldersView: React.FC = () => {
               onClick={() => {
                 if (allowCreateHere) setSubView('create');
               }}
-              className={`px-3 py-2 rounded-lg text-[12px] font-bold text-white shadow-sm ${
-                allowCreateHere ? 'hover:opacity-95' : 'opacity-40 cursor-not-allowed'
-              }`}
+              className={FULL_WIDTH_PRIMARY_CTA}
               style={{ backgroundColor: PRIMARY_PURPLE }}
             >
+              <Plus size={18} strokeWidth={2.5} aria-hidden />
               Create
             </button>
           </div>
-          <nav className="flex-1 overflow-y-auto py-2">
+          <nav className="flex-1 overflow-y-auto py-2 min-h-0">
             <SidebarTreeRow
               rootFolder={folderRoot}
               node={folderRoot}
@@ -256,6 +299,12 @@ const ProfileFoldersView: React.FC = () => {
               }}
             />
           </nav>
+          <button
+            type="button"
+            aria-label="Resize folder sidebar"
+            onMouseDown={onSidebarResizeStart}
+            className="absolute top-0 right-0 z-20 h-full w-1.5 min-w-[4px] cursor-col-resize hover:bg-[#7A005D]/20 active:bg-[#7A005D]/30 border-0 p-0 bg-transparent"
+          />
         </aside>
 
         <div className="flex-1 flex flex-col min-w-0 bg-white">

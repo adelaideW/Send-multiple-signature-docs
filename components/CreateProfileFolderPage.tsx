@@ -399,7 +399,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
             <h1 className="text-[20px] font-bold text-slate-900">Create folder</h1>
             <p className="mt-2 text-[14px] text-slate-600 leading-relaxed max-w-3xl font-medium">
               Rippling will create a folder in each selected person&apos;s profile.{' '}
-              <a href="#" className="text-[#2563eb] font-bold hover:underline">
+              <a href="#" className="font-bold hover:underline" style={{ color: PRIMARY_PURPLE }}>
                 Learn more
               </a>
             </p>
@@ -485,7 +485,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
             </div>
 
             <div className="text-right">
-              <button type="button" className="text-[13px] font-bold text-[#2563eb] hover:underline">
+              <button type="button" className="text-[13px] font-bold hover:underline" style={{ color: PRIMARY_PURPLE }}>
                 Preview people &gt;
               </button>
             </div>
@@ -541,7 +541,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
 
             <p className="text-[13px] text-slate-500 font-medium">
               Specify the access level for each person.{' '}
-              <a href="#" className="text-[#2563eb] font-bold hover:underline">
+              <a href="#" className="font-bold hover:underline" style={{ color: PRIMARY_PURPLE }}>
                 Learn more
               </a>
               .
@@ -556,7 +556,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
             <p className="text-[12px] text-slate-500 mt-2 leading-relaxed font-medium">
               All documents are located in folders within each person&apos;s profile. People only see the documents they
               have access to.{' '}
-              <a href="#" className="text-[#2563eb] font-semibold hover:underline">
+              <a href="#" className="font-semibold hover:underline" style={{ color: PRIMARY_PURPLE }}>
                 Learn more
               </a>
             </p>

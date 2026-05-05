@@ -2,6 +2,12 @@ import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Search, ChevronDown, ChevronRight, Folder, Plus, FileText } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
 
+const primaryTint = (alphaHex: string) => `${PRIMARY_PURPLE}${alphaHex}`;
+const TREE_INDENT_PX = 16;
+
+const FULL_WIDTH_PRIMARY_CTA =
+  'w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold text-white shadow-sm hover:opacity-95 transition-opacity';
+
 export interface TemplateLibraryRow {
   id: string;
   name: string;
@@ -162,17 +168,28 @@ const TemplatesLibraryView: React.FC<TemplatesLibraryViewProps> = ({ onNewTempla
                 setActiveFolderId(node.id);
               }
             }}
-            className={`w-full flex items-center gap-2 py-2.5 text-left text-[13px] transition-colors cursor-pointer ${
+            className={`w-full flex items-center gap-2 py-2.5 text-left text-[13px] transition-colors cursor-pointer border-l-[3px] ${
               active
-                ? 'bg-[#e8f2ff] text-[#2563eb] font-semibold border-l-[3px] border-[#2563eb]'
-                : 'text-slate-600 hover:bg-white/80 border-l-[3px] border-transparent'
+                ? 'font-semibold'
+                : 'text-slate-600 hover:bg-white/80 border-transparent'
             }`}
-            style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: '12px' }}
+            style={{
+              paddingLeft: `${12 + depth * TREE_INDENT_PX}px`,
+              paddingRight: '12px',
+              ...(active
+                ? {
+                    backgroundColor: primaryTint('1A'),
+                    color: PRIMARY_PURPLE,
+                    borderLeftColor: PRIMARY_PURPLE,
+                  }
+                : {}),
+            }}
           >
             {hasKids ? (
               <button
                 type="button"
-                className={`p-0.5 rounded shrink-0 ${active ? 'text-[#2563eb]' : 'text-slate-400'}`}
+                className={`p-0.5 rounded shrink-0 ${active ? '' : 'text-slate-400'}`}
+                style={active ? { color: PRIMARY_PURPLE } : undefined}
                 aria-expanded={isOpen}
                 aria-label={isOpen ? 'Collapse folder' : 'Expand folder'}
                 onClick={(e) => {
@@ -185,7 +202,7 @@ const TemplatesLibraryView: React.FC<TemplatesLibraryViewProps> = ({ onNewTempla
             ) : (
               <ChevronSpacer />
             )}
-            <Folder size={16} className={`shrink-0 ${active ? 'text-[#2563eb]' : 'text-slate-400'}`} />
+            <Folder size={16} className="shrink-0 text-slate-400" style={active ? { color: PRIMARY_PURPLE } : undefined} />
             <span className="truncate flex-1 min-w-0">{node.label}</span>
           </div>
           {hasKids && isOpen ? renderFolderRows(node.children!, depth + 1) : null}
@@ -202,7 +219,7 @@ const TemplatesLibraryView: React.FC<TemplatesLibraryViewProps> = ({ onNewTempla
           <button
             type="button"
             onClick={() => setNewMenuOpen((v) => !v)}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold text-white shadow-sm hover:opacity-95 transition-opacity"
+            className={FULL_WIDTH_PRIMARY_CTA}
             style={{ backgroundColor: PRIMARY_PURPLE }}
           >
             <Plus size={18} strokeWidth={2.5} />
@@ -210,7 +227,7 @@ const TemplatesLibraryView: React.FC<TemplatesLibraryViewProps> = ({ onNewTempla
             <ChevronDown size={14} className={`opacity-90 transition-transform ${newMenuOpen ? 'rotate-180' : ''}`} />
           </button>
           {newMenuOpen && (
-            <div className="absolute left-4 right-4 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg py-1 overflow-hidden">
+            <div className="absolute left-0 right-0 mx-4 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg py-1 overflow-hidden">
               <button
                 type="button"
                 className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
@@ -271,9 +288,7 @@ const TemplatesLibraryView: React.FC<TemplatesLibraryViewProps> = ({ onNewTempla
                 <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50/80 transition-colors">
                   <td className="px-8 py-4">
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 w-9 h-9 rounded-lg bg-[#FDF2FB] border border-[#F5D0EE] flex items-center justify-center shrink-0">
-                        <FileText size={18} className="text-[#7A005D]" />
-                      </div>
+                      <FileText size={16} className="text-slate-400 shrink-0 mt-0.5" aria-hidden />
                       <div className="min-w-0">
                         <p className="font-bold text-slate-900 leading-snug">{row.name}</p>
                         <p className="text-xs text-slate-400 font-medium mt-0.5">{row.tplCode}</p>
