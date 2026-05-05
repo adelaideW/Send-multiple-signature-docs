@@ -41,6 +41,9 @@ type MenuRow =
       hasChevron?: boolean;
       tone?: 'default' | 'muted';
       submenuKey?: string;
+      avatarText?: string;
+      avatarBg?: string;
+      avatarFg?: string;
     };
 type MenuItemRow = Extract<MenuRow, { kind: 'item' }>;
 
@@ -59,6 +62,7 @@ const MENU_BASE_ROWS: MenuRow[] = [
   { kind: 'item', label: 'Level', hasChevron: true, submenuKey: 'level' },
   { kind: 'item', label: 'Employment types', hasChevron: true, submenuKey: 'employment' },
   { kind: 'section', label: 'People' },
+  { kind: 'item', label: 'View all people', hasChevron: true, submenuKey: 'people' },
   { kind: 'item', label: 'All - Employees' },
   { kind: 'item', label: 'Engineering' },
   { kind: 'item', label: 'Human Resources' },
@@ -144,6 +148,18 @@ const SUBMENU_ROWS: Record<string, MenuRow[]> = {
     { kind: 'item', label: 'Part-time' },
     { kind: 'item', label: 'Contract' },
     { kind: 'item', label: 'Intern' },
+  ],
+  people: [
+    { kind: 'item', label: 'Kale George', subtitle: 'This account profile', avatarText: 'KG', avatarBg: '#D4E4FA', avatarFg: '#185FA5' },
+    { kind: 'item', label: 'Aria Chen', subtitle: 'Senior Engineer', avatarText: 'AC', avatarBg: '#D4E4FA', avatarFg: '#185FA5' },
+    { kind: 'item', label: 'Marcus Webb', subtitle: 'Product Manager', avatarText: 'MW', avatarBg: '#E1F5EE', avatarFg: '#0F6E56' },
+    { kind: 'item', label: 'Priya Kapoor', subtitle: 'Data Analyst', avatarText: 'PK', avatarBg: '#FBEAF0', avatarFg: '#993556' },
+    { kind: 'item', label: 'Jordan Ellis', subtitle: 'Design Lead', avatarText: 'JE', avatarBg: '#FAEEDA', avatarFg: '#854F0B' },
+    { kind: 'item', label: 'Simone Adeyemi', subtitle: 'HR Business Partner', avatarText: 'SA', avatarBg: '#EEEDFE', avatarFg: '#534AB7' },
+    { kind: 'item', label: 'Luca Rossi', subtitle: 'Platform Engineer', avatarText: 'LR', avatarBg: '#EAF3DE', avatarFg: '#3B6D11' },
+    { kind: 'item', label: 'Fatima Al-Rashid', subtitle: 'Finance Manager', avatarText: 'FA', avatarBg: '#FAECE7', avatarFg: '#993C1D' },
+    { kind: 'item', label: 'Noah Tanaka', subtitle: 'IT Administrator', avatarText: 'NT', avatarBg: '#D4E4FA', avatarFg: '#185FA5' },
+    { kind: 'item', label: 'Yuki Yamamoto', subtitle: 'Benefits Specialist', avatarText: 'YY', avatarBg: '#E1F5EE', avatarFg: '#0F6E56' },
   ],
 };
 
@@ -356,9 +372,20 @@ const GroupPickerDropdown: React.FC<{
               onMouseEnter={() => onHoverIndex(itemIndex)}
               onClick={() => onPick(row)}
             >
-              <div className="min-w-0">
-                <div className="truncate">{row.label}</div>
-                {row.subtitle ? <div className="text-[12px] text-slate-400 mt-0.5">{row.subtitle}</div> : null}
+              <div className="min-w-0 flex items-center gap-3">
+                {row.avatarText ? (
+                  <span
+                    className="w-8 h-8 rounded-full inline-flex items-center justify-center text-[11px] font-semibold shrink-0"
+                    style={{ backgroundColor: row.avatarBg ?? '#E2E8F0', color: row.avatarFg ?? '#334155' }}
+                    aria-hidden
+                  >
+                    {row.avatarText}
+                  </span>
+                ) : null}
+                <div className="min-w-0">
+                  <div className="truncate">{row.label}</div>
+                  {row.subtitle ? <div className="text-[12px] text-slate-400 mt-0.5">{row.subtitle}</div> : null}
+                </div>
               </div>
               {row.hasChevron ? <ChevronRight size={13} className="text-slate-400 shrink-0" /> : null}
             </button>
@@ -470,7 +497,10 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   }, []);
 
   const openPicker = (which: PickerType) => {
-    setActivePicker((cur) => (cur === which ? null : which));
+    setActivePicker((cur) => {
+      if (cur === which) return cur;
+      return which;
+    });
     setSubmenuPath([]);
     setHighlightedIndex(0);
   };
@@ -567,6 +597,17 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
         } else {
           addChip(which, row.label);
         }
+      }
+      return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !queries[which].trim()) {
+      e.preventDefault();
+      if (which === 'include' && includeChips.length > 0) {
+        setIncludeChips((prev) => prev.slice(0, -1));
+      } else if (which === 'except' && exceptChips.length > 0) {
+        setExceptChips((prev) => prev.slice(0, -1));
+      } else if (which === 'access' && accessChips.length > 0) {
+        setAccessChips((prev) => prev.slice(0, -1));
       }
       return;
     }
