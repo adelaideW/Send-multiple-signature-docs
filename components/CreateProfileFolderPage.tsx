@@ -273,7 +273,10 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   const accessAnchorRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const activePickerRef = useRef<PickerType | null>(null);
-  activePickerRef.current = activePicker;
+
+  useEffect(() => {
+    activePickerRef.current = activePicker;
+  }, [activePicker]);
 
   const updateDropdownPosition = useCallback(() => {
     if (!activePicker) {
