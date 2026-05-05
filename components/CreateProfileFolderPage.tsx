@@ -7,6 +7,7 @@ import {
   Folder as FolderIcon,
   UserRound,
   ChevronRight,
+  ChevronLeft,
   Users,
   X,
 } from 'lucide-react';
@@ -33,22 +34,30 @@ type PickerType = 'include' | 'except' | 'access';
 
 type MenuRow =
   | { kind: 'section'; label: string }
-  | { kind: 'item'; label: string; subtitle?: string; hasChevron?: boolean; tone?: 'default' | 'muted' };
+  | {
+      kind: 'item';
+      label: string;
+      subtitle?: string;
+      hasChevron?: boolean;
+      tone?: 'default' | 'muted';
+      submenuKey?: string;
+    };
+type MenuItemRow = Extract<MenuRow, { kind: 'item' }>;
 
 const MENU_BASE_ROWS: MenuRow[] = [
   { kind: 'section', label: 'Saved Groups' },
   { kind: 'item', label: 'View all saved groups', tone: 'muted' },
   { kind: 'section', label: 'Categories' },
   { kind: 'item', label: 'All... (Managers, employees, etc.)', tone: 'muted' },
-  { kind: 'item', label: 'Admins', hasChevron: true },
-  { kind: 'item', label: 'Department', hasChevron: true },
-  { kind: 'item', label: 'State', hasChevron: true },
-  { kind: 'item', label: 'Country', hasChevron: true },
-  { kind: 'item', label: 'Location', hasChevron: true },
-  { kind: 'item', label: 'Entity', hasChevron: true },
-  { kind: 'item', label: 'Team', hasChevron: true },
-  { kind: 'item', label: 'Level', hasChevron: true },
-  { kind: 'item', label: 'Employment types', hasChevron: true },
+  { kind: 'item', label: 'Admins', hasChevron: true, submenuKey: 'admins' },
+  { kind: 'item', label: 'Department', hasChevron: true, submenuKey: 'department' },
+  { kind: 'item', label: 'State', hasChevron: true, submenuKey: 'state' },
+  { kind: 'item', label: 'Country', hasChevron: true, submenuKey: 'country' },
+  { kind: 'item', label: 'Location', hasChevron: true, submenuKey: 'location' },
+  { kind: 'item', label: 'Entity', hasChevron: true, submenuKey: 'entity' },
+  { kind: 'item', label: 'Team', hasChevron: true, submenuKey: 'team' },
+  { kind: 'item', label: 'Level', hasChevron: true, submenuKey: 'level' },
+  { kind: 'item', label: 'Employment types', hasChevron: true, submenuKey: 'employment' },
   { kind: 'section', label: 'People' },
   { kind: 'item', label: 'All - Employees' },
   { kind: 'item', label: 'Engineering' },
@@ -63,6 +72,80 @@ const ACCESS_PRESET_ROWS: MenuRow[] = [
   { kind: 'item', label: "Manager - The employee's manager" },
   { kind: 'item', label: "Peer - Employee's direct teammate" },
 ];
+
+const SUBMENU_ROWS: Record<string, MenuRow[]> = {
+  admins: [
+    { kind: 'item', label: 'All admins' },
+    { kind: 'item', label: 'Super admin' },
+    { kind: 'item', label: 'Full admin' },
+  ],
+  department: [
+    { kind: 'item', label: 'Engineering' },
+    { kind: 'item', label: 'Marketing' },
+    { kind: 'item', label: 'Finance' },
+    { kind: 'item', label: 'Human Resources' },
+    { kind: 'item', label: 'Operations' },
+    { kind: 'item', label: 'Legal' },
+    { kind: 'item', label: 'Product' },
+    { kind: 'item', label: 'Design' },
+  ],
+  state: [
+    { kind: 'item', label: 'Offer accepted' },
+    { kind: 'item', label: 'Hired' },
+    { kind: 'item', label: 'Onboarded' },
+    { kind: 'item', label: 'Active' },
+    { kind: 'item', label: 'Terminated' },
+  ],
+  country: [
+    { kind: 'item', label: 'United States' },
+    { kind: 'item', label: 'United Kingdom' },
+    { kind: 'item', label: 'Canada' },
+    { kind: 'item', label: 'Australia' },
+    { kind: 'item', label: 'Germany' },
+    { kind: 'item', label: 'France' },
+    { kind: 'item', label: 'Netherlands' },
+    { kind: 'item', label: 'Singapore' },
+    { kind: 'item', label: 'India' },
+  ],
+  location: [
+    { kind: 'item', label: 'Remote' },
+    { kind: 'item', label: 'San Francisco office' },
+    { kind: 'item', label: 'New York office' },
+    { kind: 'item', label: 'Austin office' },
+    { kind: 'item', label: 'Chicago office' },
+    { kind: 'item', label: 'London office' },
+  ],
+  entity: [
+    { kind: 'item', label: 'Parent company' },
+    { kind: 'item', label: 'Subsidiary' },
+    { kind: 'item', label: 'Division' },
+  ],
+  team: [
+    { kind: 'item', label: 'HRIS' },
+    { kind: 'item', label: 'Payroll' },
+    { kind: 'item', label: 'Finance' },
+    { kind: 'item', label: 'Platform' },
+    { kind: 'item', label: 'IT' },
+    { kind: 'item', label: 'Benefits' },
+    { kind: 'item', label: 'Data' },
+  ],
+  level: [
+    { kind: 'item', label: 'L3' },
+    { kind: 'item', label: 'L4' },
+    { kind: 'item', label: 'L5' },
+    { kind: 'item', label: 'L6' },
+    { kind: 'item', label: 'L7' },
+    { kind: 'item', label: 'Director' },
+    { kind: 'item', label: 'VP' },
+    { kind: 'item', label: 'Executive' },
+  ],
+  employment: [
+    { kind: 'item', label: 'Full-time' },
+    { kind: 'item', label: 'Part-time' },
+    { kind: 'item', label: 'Contract' },
+    { kind: 'item', label: 'Intern' },
+  ],
+};
 
 const DROPDOWN_BODY_MAX_PX = 240;
 const OVERLAY_Z = 100_000;
@@ -207,10 +290,12 @@ const GroupPickerDropdown: React.FC<{
   coords: DropdownCoords | null;
   rows: MenuRow[];
   highlightedIndex: number;
-  onPick: (opt: string) => void;
+  onPick: (row: MenuItemRow) => void;
   onHoverIndex: (idx: number) => void;
+  onBack: (() => void) | null;
+  submenuTitle?: string | null;
   dropdownRef: React.RefObject<HTMLDivElement | null>;
-}> = ({ open, coords, rows, highlightedIndex, onPick, onHoverIndex, dropdownRef }) => {
+}> = ({ open, coords, rows, highlightedIndex, onPick, onHoverIndex, onBack, submenuTitle, dropdownRef }) => {
   if (!open || !coords) return null;
 
   const { top, left, width } = coords;
@@ -229,6 +314,20 @@ const GroupPickerDropdown: React.FC<{
       }}
       role="listbox"
     >
+      {onBack && submenuTitle ? (
+        <div>
+          <button
+            type="button"
+            className="w-full px-5 py-3 text-left text-[13px] font-medium text-slate-600 border-b border-[#F0F0F0] hover:bg-slate-50 inline-flex items-center gap-2"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onBack}
+          >
+            <ChevronLeft size={14} />
+            Back
+          </button>
+          <div className="px-5 py-3 text-[15px] font-semibold text-slate-900 border-b border-[#F0F0F0]">{submenuTitle}</div>
+        </div>
+      ) : null}
       <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: DROPDOWN_BODY_MAX_PX }}>
         {rows.map((row, idx) => {
           if (row.kind === 'section') {
@@ -255,7 +354,7 @@ const GroupPickerDropdown: React.FC<{
               style={{ borderTop: '1px solid #F0F0F0' }}
               onMouseDown={(e) => e.preventDefault()}
               onMouseEnter={() => onHoverIndex(itemIndex)}
-              onClick={() => onPick(row.label)}
+              onClick={() => onPick(row)}
             >
               <div className="min-w-0">
                 <div className="truncate">{row.label}</div>
@@ -288,6 +387,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   const [accessChips, setAccessChips] = useState<string[]>([]);
 
   const [activePicker, setActivePicker] = useState<PickerType | null>(null);
+  const [submenuPath, setSubmenuPath] = useState<string[]>([]);
   const [queries, setQueries] = useState<Record<PickerType, string>>({
     include: '',
     except: '',
@@ -362,6 +462,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
         return;
       }
       setActivePicker(null);
+      setSubmenuPath([]);
       setQueries((prev) => ({ ...prev, include: '', except: '', access: '' }));
     };
     document.addEventListener('mousedown', onDown);
@@ -370,6 +471,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
 
   const openPicker = (which: PickerType) => {
     setActivePicker((cur) => (cur === which ? null : which));
+    setSubmenuPath([]);
     setHighlightedIndex(0);
   };
 
@@ -392,19 +494,21 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   }, [locationSteps]);
 
   const query = activePicker ? queries[activePicker] : '';
+  const activeSubmenuKey = submenuPath.length > 0 ? submenuPath[submenuPath.length - 1] : null;
   const menuRows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let rows: MenuRow[] = MENU_BASE_ROWS;
-    if (activePicker === 'access') {
-      rows = [...ACCESS_PRESET_ROWS, { kind: 'section', label: 'Groups' }, ...MENU_BASE_ROWS];
+    const baseRootRows =
+      activePicker === 'access' ? [...ACCESS_PRESET_ROWS, { kind: 'section', label: 'Groups' }, ...MENU_BASE_ROWS] : MENU_BASE_ROWS;
+    if (q) {
+      const pool = [...baseRootRows, ...Object.values(SUBMENU_ROWS).flat()];
+      return pool.filter((r): r is Extract<MenuRow, { kind: 'item' }> => r.kind === 'item' && r.label.toLowerCase().includes(q));
     }
-    if (!q) return rows;
-    return rows.filter((r) => r.kind === 'item' && r.label.toLowerCase().includes(q));
-  }, [activePicker, query]);
-  const selectableRows = useMemo(
-    () => menuRows.filter((r): r is Extract<MenuRow, { kind: 'item' }> => r.kind === 'item'),
-    [menuRows]
-  );
+    if (activeSubmenuKey) {
+      return SUBMENU_ROWS[activeSubmenuKey] ?? [];
+    }
+    return baseRootRows;
+  }, [activePicker, query, activeSubmenuKey]);
+  const selectableRows = useMemo(() => menuRows.filter((r): r is MenuItemRow => r.kind === 'item'), [menuRows]);
 
   const addChip = (which: PickerType, opt: string) => {
     const add = (prev: string[]) => (prev.includes(opt) ? prev : [...prev, opt]);
@@ -412,6 +516,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
     else if (which === 'except') setExceptChips(add);
     else setAccessChips(add);
     setActivePicker(null);
+    setSubmenuPath([]);
     if (which) setQueries((prev) => ({ ...prev, [which]: '' }));
     setHighlightedIndex(0);
   };
@@ -435,15 +540,39 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
       setHighlightedIndex((i) => Math.max(0, i - 1));
       return;
     }
+    if (e.key === 'ArrowRight') {
+      if (activePicker === which && selectableRows[highlightedIndex]?.submenuKey && !query.trim()) {
+        e.preventDefault();
+        const k = selectableRows[highlightedIndex]!.submenuKey!;
+        setSubmenuPath((prev) => [...prev, k]);
+        setHighlightedIndex(0);
+      }
+      return;
+    }
+    if (e.key === 'ArrowLeft') {
+      if (activePicker === which && submenuPath.length > 0 && !query.trim()) {
+        e.preventDefault();
+        setSubmenuPath((prev) => prev.slice(0, -1));
+        setHighlightedIndex(0);
+      }
+      return;
+    }
     if (e.key === 'Enter') {
       if (activePicker === which && selectableRows[highlightedIndex]) {
         e.preventDefault();
-        addChip(which, selectableRows[highlightedIndex]!.label);
+        const row = selectableRows[highlightedIndex]!;
+        if (!query.trim() && row.submenuKey) {
+          setSubmenuPath((prev) => [...prev, row.submenuKey!]);
+          setHighlightedIndex(0);
+        } else {
+          addChip(which, row.label);
+        }
       }
       return;
     }
     if (e.key === 'Escape') {
       setActivePicker(null);
+      setSubmenuPath([]);
       return;
     }
   };
@@ -647,11 +776,22 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
               coords={dropdownCoords}
               rows={menuRows}
               highlightedIndex={Math.min(highlightedIndex, Math.max(0, selectableRows.length - 1))}
-              onPick={(opt) => {
+              onPick={(row) => {
                 const cur = activePickerRef.current;
-                if (cur) addChip(cur, opt);
+                if (!cur) return;
+                if (!query.trim() && row.submenuKey) {
+                  setSubmenuPath((prev) => [...prev, row.submenuKey!]);
+                  setHighlightedIndex(0);
+                  return;
+                }
+                addChip(cur, row.label);
               }}
               onHoverIndex={setHighlightedIndex}
+              onBack={submenuPath.length > 0 && !query.trim() ? () => {
+                setSubmenuPath((prev) => prev.slice(0, -1));
+                setHighlightedIndex(0);
+              } : null}
+              submenuTitle={activeSubmenuKey ? (SUBMENU_ROWS[activeSubmenuKey] ? MENU_BASE_ROWS.find((r) => r.kind === 'item' && r.submenuKey === activeSubmenuKey)?.label ?? null : null) : null}
               dropdownRef={dropdownRef}
             />
 
