@@ -65,6 +65,12 @@ export function canCreateFolderUnderParent(
   return newDepth <= MAX_PROFILE_FOLDER_LAYERS;
 }
 
+/** Folder sits on the deepest allowed tier (cannot nest further); don’t allow selecting it in the tree/table. */
+export function isFolderAtMaxTreeDepth(root: ProfileFolderNode, folderId: string): boolean {
+  const segs = pathSegmentCountIncludingAllDocuments(root, folderId);
+  return segs != null && segs >= MAX_PROFILE_FOLDER_LAYERS;
+}
+
 export type FolderLocationStep = {
   id: string;
   label: string;
