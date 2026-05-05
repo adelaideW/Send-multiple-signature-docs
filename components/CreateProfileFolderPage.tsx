@@ -8,8 +8,10 @@ import {
   UserRound,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   Users,
   X,
+  Trash2,
 } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
 import type { ProfileFolderNode } from '../utils/profileFolderUtils';
@@ -62,13 +64,16 @@ const MENU_BASE_ROWS: MenuRow[] = [
   { kind: 'item', label: 'Level', hasChevron: true, submenuKey: 'level' },
   { kind: 'item', label: 'Employment types', hasChevron: true, submenuKey: 'employment' },
   { kind: 'section', label: 'People' },
-  { kind: 'item', label: 'View all people', hasChevron: true, submenuKey: 'people' },
-  { kind: 'item', label: 'All - Employees' },
-  { kind: 'item', label: 'Engineering' },
-  { kind: 'item', label: 'Human Resources' },
-  { kind: 'item', label: 'Finance' },
-  { kind: 'item', label: 'Product' },
-  { kind: 'item', label: 'Design' },
+  { kind: 'item', label: 'Kale George', subtitle: 'This account profile', avatarText: 'KG', avatarBg: '#D4E4FA', avatarFg: '#185FA5' },
+  { kind: 'item', label: 'Aria Chen', subtitle: 'Senior Engineer', avatarText: 'AC', avatarBg: '#D4E4FA', avatarFg: '#185FA5' },
+  { kind: 'item', label: 'Marcus Webb', subtitle: 'Product Manager', avatarText: 'MW', avatarBg: '#E1F5EE', avatarFg: '#0F6E56' },
+  { kind: 'item', label: 'Priya Kapoor', subtitle: 'Data Analyst', avatarText: 'PK', avatarBg: '#FBEAF0', avatarFg: '#993556' },
+  { kind: 'item', label: 'Jordan Ellis', subtitle: 'Design Lead', avatarText: 'JE', avatarBg: '#FAEEDA', avatarFg: '#854F0B' },
+  { kind: 'item', label: 'Simone Adeyemi', subtitle: 'HR Business Partner', avatarText: 'SA', avatarBg: '#EEEDFE', avatarFg: '#534AB7' },
+  { kind: 'item', label: 'Luca Rossi', subtitle: 'Platform Engineer', avatarText: 'LR', avatarBg: '#EAF3DE', avatarFg: '#3B6D11' },
+  { kind: 'item', label: 'Fatima Al-Rashid', subtitle: 'Finance Manager', avatarText: 'FA', avatarBg: '#FAECE7', avatarFg: '#993C1D' },
+  { kind: 'item', label: 'Noah Tanaka', subtitle: 'IT Administrator', avatarText: 'NT', avatarBg: '#D4E4FA', avatarFg: '#185FA5' },
+  { kind: 'item', label: 'Yuki Yamamoto', subtitle: 'Benefits Specialist', avatarText: 'YY', avatarBg: '#E1F5EE', avatarFg: '#0F6E56' },
 ];
 
 const ACCESS_PRESET_ROWS: MenuRow[] = [
@@ -149,25 +154,16 @@ const SUBMENU_ROWS: Record<string, MenuRow[]> = {
     { kind: 'item', label: 'Contract' },
     { kind: 'item', label: 'Intern' },
   ],
-  people: [
-    { kind: 'item', label: 'Kale George', subtitle: 'This account profile', avatarText: 'KG', avatarBg: '#D4E4FA', avatarFg: '#185FA5' },
-    { kind: 'item', label: 'Aria Chen', subtitle: 'Senior Engineer', avatarText: 'AC', avatarBg: '#D4E4FA', avatarFg: '#185FA5' },
-    { kind: 'item', label: 'Marcus Webb', subtitle: 'Product Manager', avatarText: 'MW', avatarBg: '#E1F5EE', avatarFg: '#0F6E56' },
-    { kind: 'item', label: 'Priya Kapoor', subtitle: 'Data Analyst', avatarText: 'PK', avatarBg: '#FBEAF0', avatarFg: '#993556' },
-    { kind: 'item', label: 'Jordan Ellis', subtitle: 'Design Lead', avatarText: 'JE', avatarBg: '#FAEEDA', avatarFg: '#854F0B' },
-    { kind: 'item', label: 'Simone Adeyemi', subtitle: 'HR Business Partner', avatarText: 'SA', avatarBg: '#EEEDFE', avatarFg: '#534AB7' },
-    { kind: 'item', label: 'Luca Rossi', subtitle: 'Platform Engineer', avatarText: 'LR', avatarBg: '#EAF3DE', avatarFg: '#3B6D11' },
-    { kind: 'item', label: 'Fatima Al-Rashid', subtitle: 'Finance Manager', avatarText: 'FA', avatarBg: '#FAECE7', avatarFg: '#993C1D' },
-    { kind: 'item', label: 'Noah Tanaka', subtitle: 'IT Administrator', avatarText: 'NT', avatarBg: '#D4E4FA', avatarFg: '#185FA5' },
-    { kind: 'item', label: 'Yuki Yamamoto', subtitle: 'Benefits Specialist', avatarText: 'YY', avatarBg: '#E1F5EE', avatarFg: '#0F6E56' },
-  ],
 };
 
 const DROPDOWN_BODY_MAX_PX = 240;
 const OVERLAY_Z = 100_000;
 
 const rdsTooltipSurfaceClass =
-  'rounded-xl border border-black/10 bg-[#EDEBE7] p-3 text-left text-[12px] leading-4 text-slate-900 shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.15)]';
+  'rounded-xl border border-black/10 bg-[#F3F4F6] p-3 text-left text-[12px] leading-4 text-slate-900 shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.15)]';
+
+const ACCESS_LEVEL_OPTIONS = ['Can manage files', 'Contributor', 'Viewer'] as const;
+type AccessLevel = (typeof ACCESS_LEVEL_OPTIONS)[number];
 
 /** Fixed-position RDS tooltip (portal) — matches DM Bulk Upload tooltips */
 const FloatingTooltip: React.FC<{
@@ -316,6 +312,14 @@ const GroupPickerDropdown: React.FC<{
 
   const { top, left, width } = coords;
   let itemIndex = -1;
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  useEffect(() => {
+    const target = optionRefs.current[highlightedIndex];
+    if (target) {
+      target.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightedIndex, rows]);
 
   return createPortal(
     <div
@@ -361,6 +365,9 @@ const GroupPickerDropdown: React.FC<{
           return (
             <button
               key={`row-${row.label}-${idx}`}
+              ref={(el) => {
+                optionRefs.current[itemIndex] = el;
+              }}
               type="button"
               role="option"
               aria-selected={highlighted}
@@ -422,7 +429,8 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   });
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [dropdownCoords, setDropdownCoords] = useState<DropdownCoords | null>(null);
-  const [accessRows, setAccessRows] = useState<Array<{ name: string; access: 'Manage' | 'View' }>>([]);
+  const [accessRows, setAccessRows] = useState<Array<{ name: string; access: AccessLevel }>>([]);
+  const [openAccessMenuRow, setOpenAccessMenuRow] = useState<number | null>(null);
 
   const includeAnchorRef = useRef<HTMLDivElement>(null);
   const exceptAnchorRef = useRef<HTMLDivElement>(null);
@@ -491,6 +499,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
       setActivePicker(null);
       setSubmenuPath([]);
       setQueries((prev) => ({ ...prev, include: '', except: '', access: '' }));
+      setOpenAccessMenuRow(null);
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
@@ -622,7 +631,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
     if (accessChips.length === 0) return;
     setAccessRows((prev) => [
       ...prev,
-      ...accessChips.map((name) => ({ name, access: 'Manage' as const })),
+      ...accessChips.map((name) => ({ name, access: 'Viewer' as const })),
     ]);
     setAccessChips([]);
     setQueries((prev) => ({ ...prev, access: '' }));
@@ -844,20 +853,58 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
               .
             </p>
             <div className="rounded-xl border border-slate-200 bg-white min-h-[120px] overflow-hidden">
-              <div className="grid grid-cols-[1fr_160px] items-center bg-slate-50 border-b border-slate-200">
+              <div className="grid grid-cols-[1fr_180px_44px] items-center bg-slate-50 border-b border-slate-200">
                 <div className="px-4 py-2.5 text-[12px] font-semibold text-slate-600">People with access</div>
                 <div className="px-4 py-2.5 text-[12px] font-semibold text-slate-600">Access</div>
+                <div />
               </div>
               {accessRows.length === 0 ? (
                 <div className="h-20" />
               ) : (
                 accessRows.map((row, idx) => (
-                  <div key={`${row.name}-${idx}`} className="grid grid-cols-[1fr_160px] items-center border-t border-slate-100">
+                  <div key={`${row.name}-${idx}`} className="grid grid-cols-[1fr_180px_44px] items-center border-t border-slate-100">
                     <div className="px-4 py-2.5 text-[13px] font-medium text-slate-800">{row.name}</div>
-                    <div className="px-4 py-2.5">
-                      <span className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[12px] font-semibold text-slate-700">
-                        {row.access}
-                      </span>
+                    <div className="px-4 py-2.5 relative">
+                      <button
+                        type="button"
+                        onClick={() => setOpenAccessMenuRow((r) => (r === idx ? null : idx))}
+                        className="w-full inline-flex items-center justify-between rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        <span>{row.access}</span>
+                        <ChevronDown size={13} className="text-slate-400" />
+                      </button>
+                      {openAccessMenuRow === idx && (
+                        <div className="absolute left-4 right-4 top-[calc(100%+6px)] z-30 rounded-lg border border-slate-200 bg-white shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.15)] overflow-hidden">
+                          {ACCESS_LEVEL_OPTIONS.map((opt) => (
+                            <button
+                              key={`${row.name}-${opt}`}
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-[13px] text-slate-800 hover:bg-slate-50 border-t first:border-t-0 border-[#F0F0F0]"
+                              onClick={() => {
+                                setAccessRows((prev) =>
+                                  prev.map((r, i) => (i === idx ? { ...r, access: opt } : r))
+                                );
+                                setOpenAccessMenuRow(null);
+                              }}
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-2 py-2.5">
+                      <button
+                        type="button"
+                        className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                        aria-label={`Remove ${row.name}`}
+                        onClick={() => {
+                          setAccessRows((prev) => prev.filter((_, i) => i !== idx));
+                          setOpenAccessMenuRow((r) => (r === idx ? null : r != null && r > idx ? r - 1 : r));
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </div>
                   </div>
                 ))
