@@ -145,6 +145,65 @@ export function countProfileFolders(root: ProfileFolderNode): number {
 
 /** Seed tree for Documents → Profile Folders (includes demo nesting under EE Performance Record). */
 export function createInitialProfileFolderRoot(): ProfileFolderNode {
+  const fakeChildrenByFolderId: Record<string, ProfileFolderNode[]> = {
+    'folder-confidential': [
+      {
+        id: 'folder-confidential/employee-relations',
+        name: 'Employee relations',
+        createdFor: 'All - Employees',
+        lastModified: '2026-02-04T10:22:00.000Z',
+      },
+      {
+        id: 'folder-confidential/investigation-notes',
+        name: 'Investigation notes',
+        createdFor: 'All - Employees',
+        lastModified: '2026-02-05T09:12:00.000Z',
+      },
+    ],
+    'folder-notice': [
+      {
+        id: 'folder-notice/policy-updates',
+        name: 'Policy updates',
+        createdFor: 'All - Employees',
+        lastModified: '2026-02-06T08:20:00.000Z',
+      },
+      {
+        id: 'folder-notice/team-announcements',
+        name: 'Team announcements',
+        createdFor: 'All - Employees',
+        lastModified: '2026-02-02T14:15:00.000Z',
+      },
+    ],
+    'folder-ee-performance': [
+      {
+        id: 'folder-ee-performance/performance-records',
+        name: 'Performance records',
+        createdFor: 'All - Employees',
+        lastModified: '2026-02-01T12:00:00.000Z',
+      },
+      {
+        id: 'folder-ee-performance/manager-feedback',
+        name: 'Manager feedback',
+        createdFor: 'All - Employees',
+        lastModified: '2026-02-03T11:10:00.000Z',
+      },
+    ],
+    'folder-company-policies': [
+      {
+        id: 'folder-company-policies/handbook-acknowledgements',
+        name: 'Handbook acknowledgements',
+        createdFor: 'All - Employees',
+        lastModified: '2026-02-07T10:00:00.000Z',
+      },
+      {
+        id: 'folder-company-policies/remote-work',
+        name: 'Remote work',
+        createdFor: 'All - Employees',
+        lastModified: '2026-02-08T09:40:00.000Z',
+      },
+    ],
+  };
+
   return {
     id: 'all',
     name: 'All documents',
@@ -154,17 +213,7 @@ export function createInitialProfileFolderRoot(): ProfileFolderNode {
       isDefault: f.isDefault,
       createdFor: 'All - Employees',
       lastModified: '2026-01-13T22:47:21.000Z',
-      children:
-        f.id === 'folder-ee-performance'
-          ? [
-              {
-                id: `${f.id}/performance-records`,
-                name: 'Performance records',
-                createdFor: 'All - Employees',
-                lastModified: '2026-02-01T12:00:00.000Z',
-              },
-            ]
-          : undefined,
+      children: fakeChildrenByFolderId[f.id],
     })),
   };
 }

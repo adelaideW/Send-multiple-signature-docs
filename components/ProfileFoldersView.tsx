@@ -122,7 +122,10 @@ const ProfileFoldersView: React.FC = () => {
   const [selectedFolderId, setSelectedFolderId] = useState('all');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     all: true,
+    'folder-confidential': true,
+    'folder-notice': true,
     'folder-ee-performance': true,
+    'folder-company-policies': true,
   });
   const [subView, setSubView] = useState<'list' | 'create'>('list');
   const [search, setSearch] = useState('');
@@ -143,36 +146,29 @@ const ProfileFoldersView: React.FC = () => {
     [folderRoot, selectedFolderId]
   );
 
-  if (subView === 'create') {
-    return (
-      <CreateProfileFolderPage
-        rootFolder={folderRoot}
-        parentFolderId={selectedFolderId}
-        onExit={() => setSubView('list')}
-        onCreate={({ name }) => {
-          const id = `pf-folder-${Date.now()}`;
-          const child: ProfileFolderNode = {
-            id,
-            name,
-            createdFor: 'All - Employees',
-            lastModified: new Date().toISOString(),
-          };
-          setFolderRoot((r) => addChildFolder(r, selectedFolderId, child));
-          setSubView('list');
-          setExpanded((ex) => ({ ...ex, [selectedFolderId]: true }));
-        }}
-      />
-    );
-  }
-
   return (
+    <>
     <div className="flex min-h-[560px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       <aside className="w-64 shrink-0 border-r border-slate-200 bg-[#fafafa] flex flex-col">
         <div className="p-4 border-b border-slate-200">
-          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Location</p>
-          <p className="text-[12px] text-slate-500 mt-1 font-medium leading-snug">
-            New folders are created inside the selected folder.
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Location</p>
+            <button
+              type="button"
+              disabled={!allowCreateHere}
+              title={!allowCreateHere ? DISABLED_CREATE_TOOLTIP : undefined}
+              onClick={() => {
+                if (allowCreateHere) setSubView('create');
+              }}
+              className={`px-3 py-1 rounded-md text-[12px] font-bold text-white shadow-sm ${
+                allowCreateHere ? 'hover:opacity-95' : 'opacity-40 cursor-not-allowed'
+              }`}
+              style={{ backgroundColor: PRIMARY_PURPLE }}
+            >
+              Create
+            </button>
+          </div>
+          <p className="text-[12px] text-slate-500 mt-1 font-medium leading-snug">New folders are created inside the selected folder.</p>
         </div>
         <nav className="flex-1 overflow-y-auto py-2">
           <SidebarTreeRow
@@ -214,20 +210,6 @@ const ProfileFoldersView: React.FC = () => {
               aria-label="Expand"
             >
               <Maximize2 size={18} />
-            </button>
-            <button
-              type="button"
-              disabled={!allowCreateHere}
-              title={!allowCreateHere ? DISABLED_CREATE_TOOLTIP : undefined}
-              onClick={() => {
-                if (allowCreateHere) setSubView('create');
-              }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-bold text-white shadow-sm ${
-                allowCreateHere ? 'hover:opacity-95' : 'opacity-40 cursor-not-allowed'
-              }`}
-              style={{ backgroundColor: PRIMARY_PURPLE }}
-            >
-              Create
             </button>
           </div>
         </div>
@@ -326,6 +308,28 @@ const ProfileFoldersView: React.FC = () => {
         </div>
       </div>
     </div>
+    {subView === 'create' && (
+      <div className="fixed inset-0 z-[200] bg-[#FAFAFA]">
+        <CreateProfileFolderPage
+          rootFolder={folderRoot}
+          parentFolderId={selectedFolderId}
+          onExit={() => setSubView('list')}
+          onCreate={({ name }) => {
+            const id = `pf-folder-${Date.now()}`;
+            const child: ProfileFolderNode = {
+              id,
+              name,
+              createdFor: 'All - Employees',
+              lastModified: new Date().toISOString(),
+            };
+            setFolderRoot((r) => addChildFolder(r, selectedFolderId, child));
+            setSubView('list');
+            setExpanded((ex) => ({ ...ex, [selectedFolderId]: true }));
+          }}
+        />
+      </div>
+    )}
+    </>
   );
 };
 

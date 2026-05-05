@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { HelpCircle, Menu, ArrowLeft, Folder as FolderIcon, UserRound } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { HelpCircle, Menu, ArrowLeft, Folder as FolderIcon, UserRound, Search } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
 import type { ProfileFolderNode } from '../utils/profileFolderUtils';
 import { buildFolderLocationPreview, MAX_PROFILE_FOLDER_LAYERS } from '../utils/profileFolderUtils';
@@ -13,6 +13,29 @@ export interface CreateProfileFolderPageProps {
 
 const ADMIN_DESCRIPTION_TOOLTIP =
   'This description is visible only to admins with access to this page';
+
+type PickerType = 'include' | 'except' | 'access';
+
+const PICKER_OPTIONS = [
+  'All - Employees',
+  'Engineering',
+  'Human Resources',
+  'Finance',
+  'Product',
+  'Design',
+  'People Managers',
+  'US Employees',
+  'Canada Employees',
+  'Contractors',
+  'New hires (last 90 days)',
+  'Administrators',
+  'Legal Team',
+  'Security Team',
+  'Payroll Team',
+  'Operations Team',
+  'Sales Team',
+  'Support Team',
+];
 
 const TooltipNearDescriptionLabel: React.FC = () => {
   const [open, setOpen] = useState(false);
@@ -50,6 +73,18 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   const [folderName, setFolderName] = useState('');
   const [description, setDescription] = useState('');
   const [peopleSelectionError] = useState<string | null>(null);
+  const [activePicker, setActivePicker] = useState<PickerType | null>(null);
+  const pickerContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!pickerContainerRef.current) return;
+      if (pickerContainerRef.current.contains(e.target as Node)) return;
+      setActivePicker(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
 
   const trimmedName = folderName.trim();
   const nameOk = trimmedName.length > 0;
@@ -70,7 +105,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   }, [locationSteps]);
 
   return (
-    <div className="flex flex-col min-h-[560px] bg-[#FAFAFA] rounded-2xl border border-slate-200 shadow-sm">
+    <div className="flex flex-col min-h-screen h-screen bg-[#FAFAFA]">
       <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-3">
           <button type="button" className="p-1.5 text-slate-600 hover:bg-slate-50 rounded-lg" aria-label="Menu">
@@ -88,8 +123,8 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
         </button>
       </header>
 
-      <div className="flex-1 flex flex-col lg:flex-row min-h-0 gap-0 lg:gap-6 p-6 lg:p-8 bg-[#FAFAFA]">
-        <div className="flex-1 min-w-0 space-y-8">
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0 gap-0 lg:gap-6 p-6 lg:p-8 bg-[#FAFAFA] overflow-auto">
+        <div className="flex-1 min-w-0 space-y-8" ref={pickerContainerRef}>
           <div>
             <h1 className="text-[20px] font-bold text-slate-900">Create folder</h1>
             <p className="mt-2 text-[14px] text-slate-600 leading-relaxed max-w-3xl font-medium">
@@ -109,7 +144,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
               type="text"
               value={folderName}
               onChange={(e) => setFolderName(e.target.value)}
-              placeholder="2025 Records"
+              placeholder="Enter folder name"
               className="w-full border border-slate-200 rounded-lg py-2.5 px-3 text-[14px] font-medium outline-none focus:ring-2 focus:ring-[#7A005D]/20"
             />
           </div>
@@ -141,19 +176,47 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
                 after the folders are created.
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100">
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden divide-y divide-slate-100 relative">
               <button
                 type="button"
+                onClick={() => setActivePicker((cur) => (cur === 'include' ? null : 'include'))}
                 className="w-full text-left px-4 py-3 text-[13px] text-slate-500 hover:bg-slate-50 font-medium"
               >
                 Include: Search or browse options to create groups of employees
               </button>
               <button
                 type="button"
+                onClick={() => setActivePicker((cur) => (cur === 'except' ? null : 'except'))}
                 className="w-full text-left px-4 py-3 text-[13px] text-slate-400 hover:bg-slate-50 font-medium"
               >
                 Except: Click to add exceptions
               </button>
+              {(activePicker === 'include' || activePicker === 'except') && (
+                <div className="absolute z-40 left-0 right-0 top-[calc(100%+8px)] rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+                  <div className="p-3 border-b border-slate-100">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                      <input
+                        type="text"
+                        placeholder="Search groups"
+                        className="w-full border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-[13px] font-medium outline-none focus:ring-2 focus:ring-[#7A005D]/20"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-[400px] overflow-y-auto py-1">
+                    {PICKER_OPTIONS.map((opt) => (
+                      <button
+                        key={`people-${opt}`}
+                        type="button"
+                        className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50"
+                        onClick={() => setActivePicker(null)}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="text-right">
               <button type="button" className="text-[13px] font-bold text-[#2563eb] hover:underline">
@@ -168,13 +231,14 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
               Add people who need access <span className="text-red-500">*</span>{' '}
               <HelpCircle size={14} className="inline text-slate-400 align-text-bottom" aria-hidden />
             </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                readOnly
-                placeholder="Search or browse options to create groups of people"
-                className="flex-1 border border-slate-200 rounded-lg py-2.5 px-3 text-[13px] font-medium bg-slate-50 text-slate-500"
-              />
+            <div className="flex gap-2 relative">
+              <button
+                type="button"
+                onClick={() => setActivePicker((cur) => (cur === 'access' ? null : 'access'))}
+                className="flex-1 border border-slate-200 rounded-lg py-2.5 px-3 text-[13px] font-medium bg-slate-50 text-slate-500 text-left hover:bg-slate-100/60"
+              >
+                Search or browse options to create groups of people
+              </button>
               <button
                 type="button"
                 disabled
@@ -182,6 +246,32 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
               >
                 Add
               </button>
+              {activePicker === 'access' && (
+                <div className="absolute z-40 left-0 right-0 top-[calc(100%+8px)] rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+                  <div className="p-3 border-b border-slate-100">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                      <input
+                        type="text"
+                        placeholder="Search people or groups"
+                        className="w-full border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-[13px] font-medium outline-none focus:ring-2 focus:ring-[#7A005D]/20"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-[400px] overflow-y-auto py-1">
+                    {PICKER_OPTIONS.map((opt) => (
+                      <button
+                        key={`access-${opt}`}
+                        type="button"
+                        className="w-full text-left px-4 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50"
+                        onClick={() => setActivePicker(null)}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <p className="text-[13px] text-slate-500 font-medium">
               Specify the access level for each person.{' '}
