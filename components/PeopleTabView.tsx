@@ -21,6 +21,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import TemplatesLibraryView from './TemplatesLibraryView';
+import ProfileFoldersView from './ProfileFoldersView';
 import EnvelopesListView, { type EnvelopeTableRow } from './EnvelopesListView';
 import ToolsSidePanel from './ToolsSidePanel';
 import SendReminderModal from './SendReminderModal';
@@ -189,7 +190,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
             </div>
 
             <div className="flex items-center space-x-8">
-              {['People', 'Templates', 'Documents', 'Rules', 'Settings'].map((tab) => (
+              {['People', 'Templates', 'Documents', 'Profile Folders', 'Rules', 'Settings'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -365,6 +366,12 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
           {activeTab === 'Templates' && (
             <div className="mb-8">
               <TemplatesLibraryView onNewTemplate={onNewTemplate} onCreateFolder={() => {}} />
+            </div>
+          )}
+
+          {activeTab === 'Profile Folders' && (
+            <div className="mb-8">
+              <ProfileFoldersView />
             </div>
           )}
 
