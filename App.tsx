@@ -20,6 +20,32 @@ import { createInitialProfileFolderRoot, type ProfileFolderNode } from './utils/
 
 type ViewType = 'profile' | 'envelope' | 'template_editor' | 'envelope_details' | 'document_review' | 'people_tab';
 
+/** Deep-link anchor for Documents hub → Profile Folders tab (`#profile-folders`). */
+const PROFILE_FOLDERS_HASH = 'profile-folders';
+
+function parseProfileFoldersFromLocation(): boolean {
+  try {
+    const h = window.location.hash.replace(/^#/, '').replace(/^\/+/, '').trim().toLowerCase();
+    if (h === PROFILE_FOLDERS_HASH || h === 'profile-folder') return true;
+    const raw = new URLSearchParams(window.location.search).get('tab');
+    if (!raw) return false;
+    const t = raw.trim().toLowerCase().replace(/_/g, '-');
+    return t === 'profile-folder' || t === 'profile-folders';
+  } catch {
+    return false;
+  }
+}
+
+function syncHubTabToUrl(tab: string) {
+  if (typeof window === 'undefined') return;
+  const { pathname, search } = window.location;
+  if (tab === 'Profile Folders') {
+    window.history.replaceState(null, '', `${pathname}${search}#${PROFILE_FOLDERS_HASH}`);
+  } else {
+    window.history.replaceState(null, '', `${pathname}${search}`);
+  }
+}
+
 // Define the state structure for persistent envelope creation
 interface EnvelopeState {
   selectedTemplates: string[];
@@ -238,6 +264,34 @@ const App: React.FC = () => {
   // Persistent Envelope Creation State
   const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
 
+  const syncDocumentsHubTab = useCallback((tab: string) => {
+    setDocumentsHubTab(tab);
+    syncHubTabToUrl(tab);
+  }, []);
+
+  useEffect(() => {
+    const run = (isInitial: boolean) => {
+      const wantPF = parseProfileFoldersFromLocation();
+      if (wantPF) {
+        setViewHistory(['people_tab']);
+        syncDocumentsHubTab('Profile Folders');
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            document.getElementById('profile-folders')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        });
+      } else if (!isInitial) {
+        setDocumentsHubTab((prev) => (prev === 'Profile Folders' ? 'People' : prev));
+        const { pathname, search } = window.location;
+        window.history.replaceState(null, '', `${pathname}${search}`);
+      }
+    };
+    run(true);
+    const onHashChange = () => run(false);
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [syncDocumentsHubTab]);
+
   const selectedPacket = selectedPacketId ? packetRows.find((r) => r.id === selectedPacketId) : undefined;
 
   const currentPage = viewHistory[viewHistory.length - 1];
@@ -366,7 +420,7 @@ const App: React.FC = () => {
 
   const handleExitEnvelopeDetails = () => {
     setSelectedPacketId(null);
-    setDocumentsHubTab('Documents');
+    syncDocumentsHubTab('Documents');
     setViewByDocuments(true);
     setViewHistory((prev) => {
       const i = prev.lastIndexOf('envelope_details');
@@ -405,9 +459,9 @@ const App: React.FC = () => {
   }, []);
 
   const openDocumentsPeopleHub = useCallback(() => {
-    setDocumentsHubTab('People');
+    syncDocumentsHubTab('People');
     setViewHistory(['people_tab']);
-  }, []);
+  }, [syncDocumentsHubTab]);
 
   const handleSignComplete = useCallback(
     (packetId: string) => {
@@ -428,10 +482,10 @@ const App: React.FC = () => {
         })
       );
       setSignFlow(null);
-      setDocumentsHubTab('Documents');
+      syncDocumentsHubTab('Documents');
       trimToPeopleTab();
     },
-    [trimToPeopleTab]
+    [trimToPeopleTab, syncDocumentsHubTab]
   );
 
   const handleSignPartial = useCallback(
@@ -457,10 +511,10 @@ const App: React.FC = () => {
         })
       );
       setSignFlow(null);
-      setDocumentsHubTab('Documents');
+      syncDocumentsHubTab('Documents');
       trimToPeopleTab();
     },
-    [trimToPeopleTab]
+    [trimToPeopleTab, syncDocumentsHubTab]
   );
 
   const prefillStateFromDraftRow = (row: EnvelopeTableRow): EnvelopeState => {
@@ -554,7 +608,7 @@ const App: React.FC = () => {
             setShowSuccessToast(true);
           }}
           hubTab={documentsHubTab}
-          onHubTabChange={setDocumentsHubTab}
+          onHubTabChange={syncDocumentsHubTab}
           profileFolderRoot={profileFolderRoot}
           onProfileFolderRootChange={setProfileFolderRoot}
           viewMode={currentView}

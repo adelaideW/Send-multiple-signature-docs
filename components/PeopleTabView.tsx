@@ -377,7 +377,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
           )}
 
           {activeTab === 'Profile Folders' && (
-            <div className="mb-8">
+            <div id="profile-folders" className="mb-8 scroll-mt-8">
               <ProfileFoldersView
                 folderRoot={profileFolderRoot}
                 onFolderRootChange={onProfileFolderRootChange}
