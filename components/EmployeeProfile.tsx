@@ -426,6 +426,39 @@ function buildProfileDocsTreeForKale(baseTree: ProfileRootFolder[], profileFolde
   return [...tree.filter(r => !hiddenRootIds.has(r.id)), ...customTopLevel.values()];
 }
 
+function buildProfileDocsTreeForAdmin(baseTree: ProfileRootFolder[], profileFolderRoot?: ProfileFolderNode): ProfileRootFolder[] {
+  const tree = cloneProfileDocsTree(baseTree);
+  if (!profileFolderRoot) return tree;
+
+  const rootMap = new Map(tree.map((r) => [r.id, r] as const));
+  const customTopLevel = new Map<string, ProfileRootFolder>();
+
+  const walk = (node: ProfileFolderNode, parent: ProfileFolderNode | null) => {
+    if (node.id !== 'all') {
+      if (!parent || parent.id === 'all') {
+        const knownRoot = rootMap.get(node.id);
+        if (!knownRoot && !customTopLevel.has(node.id)) {
+          customTopLevel.set(node.id, createDynamicRootFolder(node.name, node.id));
+        }
+      } else {
+        const parentRoot = rootMap.get(parent.id) ?? customTopLevel.get(parent.id);
+        if (parentRoot && !parentRoot.subfolders.some((s) => s.id === node.id)) {
+          parentRoot.subfolders.push({
+            id: node.id,
+            name: node.name,
+            files: [],
+          });
+        }
+      }
+    }
+
+    for (const child of node.children ?? []) walk(child, node);
+  };
+
+  walk(profileFolderRoot, null);
+  return [...tree, ...customTopLevel.values()];
+}
+
 function countListedDocuments(tree: ProfileRootFolder[], includeArchived: boolean): number {
   let n = 0;
   for (const root of tree) {
@@ -601,7 +634,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   }, [profileDocSnack]);
 
   const docsTree = useMemo(() => {
-    if (viewMode === 'admin') return cloneProfileDocsTree(PROFILE_DOCS_TREE);
+    if (viewMode === 'admin') return buildProfileDocsTreeForAdmin(PROFILE_DOCS_TREE, profileFolderRoot);
     return buildProfileDocsTreeForKale(PROFILE_DOCS_TREE, profileFolderRoot);
   }, [profileFolderRoot, viewMode]);
   const documentsTabTotal = useMemo(() => countListedDocuments(docsTree, false), [docsTree]);
