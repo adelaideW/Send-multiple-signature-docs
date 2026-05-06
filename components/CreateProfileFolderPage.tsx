@@ -192,7 +192,7 @@ const FloatingTooltip: React.FC<{
           left,
           top: r.top - pad,
           width: maxWidthPx,
-          zIndex: 100001,
+          zIndex: 999999,
           transform: 'translateY(-100%)',
           pointerEvents: 'none',
         });
@@ -202,7 +202,7 @@ const FloatingTooltip: React.FC<{
           left,
           top: r.bottom + pad,
           width: maxWidthPx,
-          zIndex: 100001,
+          zIndex: 999999,
           pointerEvents: 'none',
         });
       }
@@ -421,7 +421,7 @@ const GroupPickerDropdown: React.FC<{
         anchorRef={disabledItemRef}
         maxWidthPx={240}
       >
-        Access has already been granted
+        Access granted
       </FloatingTooltip>
     </>,
     document.body
