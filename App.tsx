@@ -229,8 +229,9 @@ const App: React.FC = () => {
   const [creatorCorrectingFlow, setCreatorCorrectingFlow] = useState(false);
   const [signFlow, setSignFlow] = useState<DocumentReviewFlow | null>(null);
   const [pdfPlacementSeed, setPdfPlacementSeed] = useState(false);
-  const [profileToolsCollapsed, setProfileToolsCollapsed] = useState(false);
+  const [profileToolsCollapsed, setProfileToolsCollapsed] = useState(true);
   const [profileFolderRoot, setProfileFolderRoot] = useState<ProfileFolderNode>(() => createInitialProfileFolderRoot());
+  const [currentView, setCurrentView] = useState<'admin' | 'employee'>('admin');
   const envelopeEntryRef = useRef<ViewType>('people_tab');
   const editingPacketIdRef = useRef<string | null>(null);
 
@@ -239,7 +240,7 @@ const App: React.FC = () => {
 
   const selectedPacket = selectedPacketId ? packetRows.find((r) => r.id === selectedPacketId) : undefined;
 
-  const currentView = viewHistory[viewHistory.length - 1];
+  const currentPage = viewHistory[viewHistory.length - 1];
 
   const navigateTo = useCallback((view: ViewType) => {
     setViewHistory(prev => {
@@ -519,8 +520,8 @@ const App: React.FC = () => {
     <div className="relative w-full h-screen overflow-hidden">
       <PortfolioReturnLink />
       {/* People Tab View — default entry (Documents → People hub) */}
-      {currentView === 'people_tab' && (
-        <PeopleTabView 
+      {currentPage === 'people_tab' && (
+        <PeopleTabView
           onGoHome={openDocumentsPeopleHub}
           onOpenDocumentsPeopleTab={openDocumentsPeopleHub}
           onSendDocument={() => {
@@ -556,11 +557,12 @@ const App: React.FC = () => {
           onHubTabChange={setDocumentsHubTab}
           profileFolderRoot={profileFolderRoot}
           onProfileFolderRootChange={setProfileFolderRoot}
+          viewMode={currentView}
         />
       )}
 
       {/* Profile — same Tools side panel as Documents hub */}
-      <div className={`${currentView === 'profile' ? 'block' : 'hidden'}`}>
+      <div className={`${currentPage === 'profile' ? 'block' : 'hidden'}`}>
         <div className="flex h-screen bg-[#F9FAFB] overflow-hidden">
           <ToolsSidePanel
             collapsed={profileToolsCollapsed}
@@ -569,9 +571,13 @@ const App: React.FC = () => {
             onOpenDocumentsPeopleTab={openDocumentsPeopleHub}
           />
           <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-            <Header onProfileClick={() => navigateTo('profile')} />
+            <Header
+              onProfileClick={() => navigateTo('profile')}
+              currentView={currentView}
+              onViewChange={setCurrentView}
+            />
             <main className="flex-1 overflow-y-auto custom-scrollbar relative bg-[#F9FAFB]">
-            {currentView === 'profile' && (
+            {currentPage === 'profile' && (
               <>
                 <EmployeeHeaderSection employee={MOCK_EMPLOYEE} />
                 <div className="min-w-0 px-0">
@@ -588,11 +594,12 @@ const App: React.FC = () => {
                     viewByDocuments={viewByDocuments}
                     setViewByDocuments={setViewByDocuments}
                     profileFolderRoot={profileFolderRoot}
+                    viewMode={currentView}
                   />
                 </div>
               </>
             )}
-            {['profile', 'people_tab'].includes(currentView) && (
+            {['profile', 'people_tab'].includes(currentPage) && (
               <button 
                 onClick={() => setIsAssistantOpen(!isAssistantOpen)}
                 className="fixed bottom-6 right-6 w-12 h-12 bg-[#7A005D] text-white rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-transform z-50"
@@ -612,7 +619,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {currentView === 'envelope_details' && selectedPacket && (
+      {currentPage === 'envelope_details' && selectedPacket && (
         <div className="fixed inset-0 z-[130] overflow-y-auto bg-[#F9FAFB]">
           <EnvelopeDetailsView
             packetId={selectedPacket.id}
@@ -639,7 +646,7 @@ const App: React.FC = () => {
       )}
 
       {/* Envelope Creator View */}
-      {currentView === 'envelope' && (
+      {currentPage === 'envelope' && (
         <div className="absolute inset-0 z-[100] bg-white">
           <EnvelopeCreator 
             onExit={goBack}
@@ -670,7 +677,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {currentView === 'template_editor' && (
+      {currentPage === 'template_editor' && (
         <div className="absolute inset-0 z-[110] bg-white">
           <TemplateEditor 
             onExit={() => {
@@ -716,7 +723,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {currentView === 'document_review' && signFlow && (
+      {currentPage === 'document_review' && signFlow && (
         <div className="fixed inset-0 z-[140] bg-white">
           <DocumentReviewView
             flow={signFlow}

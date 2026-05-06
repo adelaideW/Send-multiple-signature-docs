@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search,
   Filter,
@@ -12,9 +13,15 @@ import {
   LayoutGrid,
   Plus,
   Info,
+  MoreVertical,
+  Pencil,
+  Shield,
+  FolderInput,
+  Trash2,
 } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
 import CreateProfileFolderPage from './CreateProfileFolderPage';
+import { RenameFolderModal, SetPermissionModal, MoveFolderModal } from './FolderActionModals';
 import {
   addChildFolder,
   canCreateFolderUnderParent,
@@ -23,7 +30,12 @@ import {
   findParentProfileFolderId,
   isFolderAtMaxTreeDepth,
   truncateProfileFolderName,
+  renameProfileFolder,
+  updateFolderPermissions,
+  removeFolderById,
+  moveProfileFolder,
   type ProfileFolderNode,
+  type FolderPermission,
 } from '../utils/profileFolderUtils';
 
 function formatTs(ts?: string): string {
@@ -62,6 +74,141 @@ const FULL_WIDTH_PRIMARY_CTA =
 
 const ChevronSpacer = () => <span className="w-[14px] h-[14px] shrink-0 inline-block" aria-hidden />;
 
+const rdsTooltipSurfaceClass =
+  'rounded-xl border border-black/10 bg-white p-3 text-left text-[12px] leading-[18px] text-black shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.15)]';
+
+const FloatingTooltip: React.FC<{
+  open: boolean;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  children: React.ReactNode;
+  maxWidthPx: number;
+}> = ({ open, anchorRef, children, maxWidthPx }) => {
+  const [tipStyle, setTipStyle] = useState<React.CSSProperties>({});
+
+  useEffect(() => {
+    if (!open || !anchorRef.current) return;
+    const el = anchorRef.current;
+    const tick = () => {
+      const r = el.getBoundingClientRect();
+      const pad = 8;
+      let left = r.left + r.width / 2 - maxWidthPx / 2;
+      left = Math.max(pad, Math.min(left, window.innerWidth - maxWidthPx - pad));
+      const spaceAbove = r.top - pad;
+      const estH = 100;
+      const placeAbove = spaceAbove >= estH + pad;
+      if (placeAbove) {
+        setTipStyle({
+          position: 'fixed',
+          left,
+          top: r.top - pad,
+          width: maxWidthPx,
+          zIndex: 100001,
+          transform: 'translateY(-100%)',
+          pointerEvents: 'none',
+        });
+      } else {
+        setTipStyle({
+          position: 'fixed',
+          left,
+          top: r.bottom + pad,
+          width: maxWidthPx,
+          zIndex: 100001,
+          pointerEvents: 'none',
+        });
+      }
+    };
+    tick();
+    window.addEventListener('scroll', tick, true);
+    window.addEventListener('resize', tick);
+    return () => {
+      window.removeEventListener('scroll', tick, true);
+      window.removeEventListener('resize', tick);
+    };
+  }, [open, anchorRef, maxWidthPx]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div style={tipStyle} role="tooltip">
+      <div className={rdsTooltipSurfaceClass}>{children}</div>
+    </div>,
+    document.body
+  );
+};
+
+const DefaultBadge: React.FC = () => {
+  const [open, setOpen] = useState(false);
+  const badgeRef = useRef<HTMLSpanElement>(null);
+
+  return (
+    <>
+      <span
+        ref={badgeRef}
+        className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/90 text-slate-800 shrink-0 cursor-help"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        Default
+      </span>
+      <FloatingTooltip open={open} anchorRef={badgeRef} maxWidthPx={240}>
+        <p className="whitespace-normal">Default folders are system-generated that cannot be edited, moved, or have subfolders created within them.</p>
+      </FloatingTooltip>
+    </>
+  );
+};
+
+const CURRENT_EMPLOYEE = 'Kale George';
+
+const canEmployeeViewFolder = (node: ProfileFolderNode): boolean => {
+  // Default/system folders: visible unless permissions explicitly exclude Kale
+  if (node.isDefault) {
+    if (!node.permissions || node.permissions.length === 0) return true;
+    return node.permissions.some(p => p.name === CURRENT_EMPLOYEE);
+  }
+
+  // Must pass BOTH createdFor AND permissions
+  let isInCreatedFor = false;
+  const cf = node.createdFor ?? '';
+  if (!cf) {
+    isInCreatedFor = false;
+  } else if (cf === 'All - Everyone' || cf === 'All - Employees') {
+    isInCreatedFor = true;
+  } else if (cf.includes('Kale excluded')) {
+    isInCreatedFor = false;
+  } else {
+    isInCreatedFor = cf.includes(CURRENT_EMPLOYEE);
+  }
+
+  if (!isInCreatedFor) return false;
+
+  // If permissions are set, Kale must be listed
+  if (node.permissions && node.permissions.length > 0) {
+    return node.permissions.some(p => p.name === CURRENT_EMPLOYEE);
+  }
+
+  return true;
+};
+
+// Returns only folders visible to the employee; invisible parents are skipped and their
+// accessible children are promoted up to fill the gap.
+const getEmployeeVisibleChildren = (node: ProfileFolderNode): ProfileFolderNode[] => {
+  const result: ProfileFolderNode[] = [];
+  for (const child of node.children ?? []) {
+    if (canEmployeeViewFolder(child)) {
+      result.push({ ...child, children: getEmployeeVisibleChildren(child) });
+    } else {
+      // Parent hidden → promote grandchildren so they appear at this level
+      result.push(...getEmployeeVisibleChildren(child));
+    }
+  }
+  return result;
+};
+
+const filterFolderTreeForEmployee = (node: ProfileFolderNode): ProfileFolderNode | null => {
+  // Root "All documents" always acts as container; filter its children
+  return { ...node, children: getEmployeeVisibleChildren(node) };
+};
+
 const SidebarTreeRow: React.FC<{
   rootFolder: ProfileFolderNode;
   node: ProfileFolderNode;
@@ -71,7 +218,8 @@ const SidebarTreeRow: React.FC<{
   selectedId: string;
   onSelect: (id: string) => void;
 }> = ({ rootFolder, node, depth, expanded, setExpanded, selectedId, onSelect }) => {
-  const hasKids = !!(node.children && node.children.length > 0);
+  // Default (system) folders cannot be expanded to show subfolders
+  const hasKids = !!(node.children && node.children.length > 0) && !node.isDefault;
   const isOpen = expanded[node.id] ?? depth < 2;
   const active = selectedId === node.id;
   const selectionDisabled = isFolderAtMaxTreeDepth(rootFolder, node.id);
@@ -159,39 +307,51 @@ const SidebarTreeRow: React.FC<{
   );
 };
 
-const EmptySubfoldersState: React.FC<{ onCreate: () => void; allowCreateHere: boolean }> = ({
+const EmptySubfoldersState: React.FC<{ onCreate: () => void; allowCreateHere: boolean; isSystemFolder?: boolean }> = ({
   onCreate,
   allowCreateHere,
-}) => (
-  <div className="flex flex-col items-center justify-center py-24 px-6 text-center min-h-[360px] max-w-lg mx-auto w-full">
-    <Info size={32} strokeWidth={2} className="text-slate-900 mb-5 shrink-0" aria-hidden />
-    <h3 className="text-[17px] font-bold text-slate-900 mb-3">No subfolder available</h3>
-    <p className="text-[14px] text-slate-500 font-medium leading-relaxed mb-8 max-w-[576px]">
-      You can create another subfolder here. A new folder will be created to each selected person&apos;s profile.
-    </p>
-    <div className="w-auto max-w-full">
-      <button
-        type="button"
-        disabled={!allowCreateHere}
-        title={!allowCreateHere ? DISABLED_CREATE_TOOLTIP : undefined}
-        onClick={() => {
-          if (allowCreateHere) onCreate();
-        }}
-        className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-[14px] border border-slate-300 bg-white text-[14px] font-semibold text-slate-900 shadow-sm ${
-          allowCreateHere ? 'hover:bg-slate-50' : 'opacity-40 cursor-not-allowed'
-        }`}
-      >
-        <Plus size={18} strokeWidth={2.5} aria-hidden />
-        New
-      </button>
+  isSystemFolder = false,
+}) => {
+  const title = isSystemFolder ? 'No subfolders allowed' : 'No subfolder available';
+  const subtitle = isSystemFolder
+    ? 'This folder is system-generated and does not allow the creation of subfolders.'
+    : 'You can create another subfolder here. A new folder will be created to each selected person\'s profile.';
+  const canCreate = !isSystemFolder && allowCreateHere;
+
+  return (
+    <div className="flex flex-col items-center justify-center py-24 px-6 text-center min-h-[360px] max-w-lg mx-auto w-full">
+      <Info size={32} strokeWidth={2} className="text-slate-900 mb-5 shrink-0" aria-hidden />
+      <h3 className="text-[17px] font-bold text-slate-900 mb-3">{title}</h3>
+      <p className="text-[14px] text-slate-500 font-medium leading-relaxed mb-8 max-w-[576px]">
+        {subtitle}
+      </p>
+      {!isSystemFolder && (
+        <div className="w-auto max-w-full">
+          <button
+            type="button"
+            disabled={!canCreate}
+            title={!canCreate ? DISABLED_CREATE_TOOLTIP : undefined}
+            onClick={() => {
+              if (canCreate) onCreate();
+            }}
+            className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-[14px] border border-slate-300 bg-white text-[14px] font-semibold text-slate-900 shadow-sm ${
+              canCreate ? 'hover:bg-slate-50' : 'opacity-40 cursor-not-allowed'
+            }`}
+          >
+            <Plus size={18} strokeWidth={2.5} aria-hidden />
+            New
+          </button>
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 const ProfileFoldersView: React.FC<{
   folderRoot?: ProfileFolderNode;
   onFolderRootChange?: (next: ProfileFolderNode) => void;
-}> = ({ folderRoot: folderRootProp, onFolderRootChange }) => {
+  viewMode?: 'admin' | 'employee';
+}> = ({ folderRoot: folderRootProp, onFolderRootChange, viewMode = 'admin' }) => {
   const [localFolderRoot, setLocalFolderRoot] = useState<ProfileFolderNode>(() => createInitialProfileFolderRoot());
   const folderRoot = folderRootProp ?? localFolderRoot;
   const setFolderRoot = useCallback(
@@ -202,6 +362,14 @@ const ProfileFoldersView: React.FC<{
     },
     [folderRoot, folderRootProp, onFolderRootChange]
   );
+
+  const displayFolderRoot = useMemo(() => {
+    if (viewMode === 'employee') {
+      const filtered = filterFolderTreeForEmployee(folderRoot);
+      return filtered ?? folderRoot;
+    }
+    return folderRoot;
+  }, [folderRoot, viewMode]);
   const [sidebarWidthPx, setSidebarWidthPx] = useState(SIDEBAR_DEFAULT_W);
   const resizeDragRef = useRef<{ startX: number; startW: number } | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState('all');
@@ -212,12 +380,30 @@ const ProfileFoldersView: React.FC<{
     'folder-ee-performance': true,
     'folder-company-policies': true,
   });
-  const [subView, setSubView] = useState<'list' | 'create'>('list');
+  const [subView, setSubView] = useState<'list' | 'create' | 'edit'>('list');
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+
+  // Action dropdown + modals
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
+  const [activeModal, setActiveModal] = useState<{ type: 'rename' | 'set_permission' | 'move' | 'edit'; folderId: string } | null>(null);
+  const dropdownMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setSearch('');
   }, [selectedFolderId]);
+
+  useEffect(() => {
+    if (!openDropdownId) return;
+    const onDown = (e: MouseEvent) => {
+      if (dropdownMenuRef.current?.contains(e.target as Node)) return;
+      setOpenDropdownId(null);
+      setDropdownPos(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [openDropdownId]);
 
   useEffect(() => {
     const clamp = () => {
@@ -251,7 +437,7 @@ const ProfileFoldersView: React.FC<{
     [sidebarWidthPx]
   );
 
-  const selectedFolder = findProfileFolder(folderRoot, selectedFolderId);
+  const selectedFolder = findProfileFolder(displayFolderRoot, selectedFolderId);
   const childFolders = selectedFolder?.children ?? [];
 
   const tableRows = useMemo(() => {
@@ -267,7 +453,7 @@ const ProfileFoldersView: React.FC<{
 
   const selectedHeading = truncateProfileFolderName(selectedFolder?.name ?? 'All documents');
   const childCountLabel = `${childFolders.length}`;
-  const selectedParentId = findParentProfileFolderId(folderRoot, selectedFolderId);
+  const selectedParentId = findParentProfileFolderId(displayFolderRoot, selectedFolderId);
   const showBackToParent = selectedFolderId !== 'all' && !!selectedParentId;
 
   const showEmptyNoSubfolders = childFolders.length === 0;
@@ -302,7 +488,7 @@ const ProfileFoldersView: React.FC<{
           <nav className="flex-1 overflow-y-auto py-2 min-h-0">
             <SidebarTreeRow
               rootFolder={folderRoot}
-              node={folderRoot}
+              node={displayFolderRoot}
               depth={0}
               expanded={expanded}
               setExpanded={setExpanded}
@@ -324,19 +510,6 @@ const ProfileFoldersView: React.FC<{
         <div className="flex-1 flex flex-col min-w-0 bg-white">
           <div className="px-8 pt-6 pb-4 flex flex-wrap items-start justify-between gap-4 border-b border-slate-100">
             <div className="flex items-center gap-2 min-w-0">
-              {showBackToParent && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (selectedParentId) setSelectedFolderId(selectedParentId);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 shrink-0"
-                  aria-label="Back to parent folder"
-                >
-                  <ChevronRight size={13} className="rotate-180" />
-                  Back
-                </button>
-              )}
               <h2 className="text-[15px] font-bold text-slate-900 shrink-0 truncate" title={selectedFolder?.name}>
                 {selectedHeading} · {childCountLabel}
               </h2>
@@ -349,6 +522,20 @@ const ProfileFoldersView: React.FC<{
               </button>
             </div>
             <div className="flex items-center gap-2">
+              {selectedFolderId !== 'all' && !selectedFolder?.isDefault && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setOpenDropdownId(openDropdownId ? null : selectedFolderId);
+                    setDropdownPos({ top: rect.bottom + 8, left: rect.left });
+                  }}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-lg border border-transparent hover:border-slate-200"
+                  aria-label="More actions"
+                >
+                  <MoreVertical size={18} />
+                </button>
+              )}
               <button
                 type="button"
                 className="p-2 text-slate-400 hover:text-slate-600 rounded-lg border border-transparent hover:border-slate-200"
@@ -383,9 +570,50 @@ const ProfileFoldersView: React.FC<{
             </button>
           </div>
 
+          {selectedFolderId !== 'all' && (
+            <div className="px-8 py-3 flex items-center gap-2 border-b border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedFolderId('all')}
+                className="text-[13px] font-medium text-slate-700 hover:text-slate-900 hover:underline"
+              >
+                All documents
+              </button>
+              {(() => {
+                const path: Array<{ id: string; name: string }> = [];
+                let current = selectedFolderId;
+                while (current && current !== 'all') {
+                  const node = findProfileFolder(folderRoot, current);
+                  if (node) {
+                    path.unshift({ id: node.id, name: node.name });
+                    current = findParentProfileFolderId(folderRoot, current);
+                  } else {
+                    break;
+                  }
+                }
+                return path.map((item) => (
+                  <React.Fragment key={item.id}>
+                    <span className="text-slate-400">/</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFolderId(item.id)}
+                      className="text-[13px] font-medium text-slate-700 hover:text-slate-900 hover:underline"
+                    >
+                      {truncateProfileFolderName(item.name)}
+                    </button>
+                  </React.Fragment>
+                ));
+              })()}
+            </div>
+          )}
+
           <div className="flex-1 overflow-x-auto px-8 pb-8 flex flex-col min-h-[400px]">
             {showEmptyNoSubfolders ? (
-              <EmptySubfoldersState onCreate={() => setSubView('create')} allowCreateHere={allowCreateHere} />
+              <EmptySubfoldersState
+                onCreate={() => setSubView('create')}
+                allowCreateHere={allowCreateHere}
+                isSystemFolder={selectedFolder?.isDefault ?? false}
+              />
             ) : (
               <>
                 <table className="w-full text-left border-collapse min-w-[720px]">
@@ -409,20 +637,22 @@ const ProfileFoldersView: React.FC<{
                           <ChevronDown size={14} className="text-slate-300" />
                         </span>
                       </th>
-                      <th className="py-3 w-10 text-right">
+                      <th className="py-3 w-10 text-right pr-2">
                         <Columns size={16} className="inline text-slate-300 ml-auto" aria-hidden />
                       </th>
+                      <th className="py-3 w-12" />
                     </tr>
                   </thead>
                   <tbody className="text-[13px]">
                     {tableRows.map((row) => {
                       const active = selectedFolderId === row.id;
                       const rowMaxDepth = isFolderAtMaxTreeDepth(folderRoot, row.id);
+                      const isDropdownOpen = openDropdownId === row.id;
                       return (
                         <tr
                           key={row.id}
                           title={rowMaxDepth ? MAX_DEPTH_ROW_TOOLTIP : undefined}
-                          className={`border-b border-slate-100 transition-colors ${
+                          className={`border-b border-slate-100 transition-colors group ${
                             rowMaxDepth
                               ? 'opacity-55 cursor-not-allowed'
                               : 'cursor-pointer hover:bg-slate-50/80'
@@ -454,24 +684,43 @@ const ProfileFoldersView: React.FC<{
                                 >
                                   {truncateProfileFolderName(row.name)}
                                 </span>
-                                {row.isDefault && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/90 text-slate-800 shrink-0">
-                                    Default
-                                  </span>
-                                )}
+                                {row.isDefault && <DefaultBadge />}
                               </div>
                             </div>
                           </td>
                           <td className="py-4 pr-4 text-slate-700 font-medium">
                             <span className="inline-flex items-center gap-1.5">
                               <Users size={14} className="text-slate-400 shrink-0" />
-                              {row.createdFor ?? '—'}
+                              {row.createdFor === 'All - Employees' ? 'All - Everyone' : (row.createdFor ?? '—')}
                             </span>
                           </td>
                           <td className="py-4 text-slate-500 font-medium whitespace-nowrap">
                             {formatTs(row.lastModified)}
                           </td>
-                          <td className="py-4" />
+                          <td className="py-4 pr-2" />
+                          {/* Action column — hidden for system-default folders */}
+                          <td className="py-4 pr-3 text-right" onClick={(e) => e.stopPropagation()}>
+                            {!row.isDefault && (
+                              <button
+                                type="button"
+                                aria-label="More actions"
+                                className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition-colors ${isDropdownOpen ? 'bg-slate-200/70 text-slate-700' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (isDropdownOpen) {
+                                    setOpenDropdownId(null);
+                                    setDropdownPos(null);
+                                  } else {
+                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                    setDropdownPos({ top: rect.bottom + 4, left: rect.right });
+                                    setOpenDropdownId(row.id);
+                                  }
+                                }}
+                              >
+                                <MoreVertical size={16} />
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -487,30 +736,137 @@ const ProfileFoldersView: React.FC<{
           </div>
         </div>
       </div>
+
+      {/* ... More actions dropdown portal */}
+      {openDropdownId && dropdownPos && (() => {
+        const targetFolder = findProfileFolder(folderRoot, openDropdownId);
+        if (!targetFolder) return null;
+        return createPortal(
+          <div
+            ref={dropdownMenuRef}
+            className="fixed z-[400] bg-white border border-black/10 rounded-lg shadow-xl py-1 w-48 overflow-hidden"
+            style={{ top: dropdownPos.top, right: window.innerWidth - dropdownPos.left }}
+          >
+            {!targetFolder.isDefault && (
+              <>
+                {[
+                  { label: 'Rename', icon: <Pencil size={16} />, action: 'rename' as const },
+                  { label: 'Edit', icon: <Pencil size={16} />, action: 'edit' as const },
+                  { label: 'Set permission', icon: <Shield size={16} />, action: 'set_permission' as const },
+                  { label: 'Move', icon: <FolderInput size={16} />, action: 'move' as const },
+                ].map(({ label, icon, action }) => (
+                  <button
+                    key={action}
+                    type="button"
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-slate-800 hover:bg-slate-50 transition-colors"
+                    onClick={() => {
+                      setActiveModal({ type: action, folderId: openDropdownId });
+                      setOpenDropdownId(null);
+                      setDropdownPos(null);
+                    }}
+                  >
+                    <span className="text-slate-500 shrink-0">{icon}</span>
+                    {label}
+                  </button>
+                ))}
+                <div className="my-1 border-t border-slate-100" />
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#e4633c] hover:bg-red-50 transition-colors"
+                  onClick={() => {
+                    setFolderRoot((r) => removeFolderById(r, openDropdownId));
+                    if (selectedFolderId === openDropdownId) setSelectedFolderId('all');
+                    setOpenDropdownId(null);
+                    setDropdownPos(null);
+                  }}
+                >
+                  <span className="shrink-0"><Trash2 size={16} /></span>
+                  Remove
+                </button>
+              </>
+            )}
+            {targetFolder.isDefault && (
+              <div className="px-4 py-2.5 text-[12px] text-slate-500">
+                No actions available for system folders
+              </div>
+            )}
+          </div>,
+          document.body
+        );
+      })()}
+
+      {/* Modals */}
+      {activeModal && (() => {
+        const targetFolder = findProfileFolder(folderRoot, activeModal.folderId);
+        if (!targetFolder) return null;
+
+        if (activeModal.type === 'rename') {
+          return (
+            <RenameFolderModal
+              folder={targetFolder}
+              onSave={(id, newName, newDesc) => {
+                setFolderRoot((r) => renameProfileFolder(r, id, newName, newDesc));
+                setActiveModal(null);
+              }}
+              onClose={() => setActiveModal(null)}
+            />
+          );
+        }
+        if (activeModal.type === 'set_permission') {
+          return (
+            <SetPermissionModal
+              folder={targetFolder}
+              onSave={(id, permissions) => {
+                setFolderRoot((r) => updateFolderPermissions(r, id, permissions));
+                setActiveModal(null);
+              }}
+              onClose={() => setActiveModal(null)}
+            />
+          );
+        }
+        if (activeModal.type === 'move') {
+          return (
+            <MoveFolderModal
+              folder={targetFolder}
+              folderRoot={folderRoot}
+              onMove={(folderId, newParentId) => {
+                setFolderRoot((r) => moveProfileFolder(r, folderId, newParentId));
+                if (selectedFolderId === folderId) setSelectedFolderId(newParentId);
+                setActiveModal(null);
+              }}
+              onClose={() => setActiveModal(null)}
+            />
+          );
+        }
+        if (activeModal.type === 'edit') {
+          setSubView('edit');
+          setEditingFolderId(activeModal.folderId);
+          setActiveModal(null);
+          return null;
+        }
+        return null;
+      })()}
+
       {subView === 'create' && (
         <div className="fixed inset-0 z-[200] bg-[#FAFAFA]">
           <CreateProfileFolderPage
             rootFolder={folderRoot}
             parentFolderId={selectedFolderId}
             onExit={() => setSubView('list')}
-            onCreate={({ name, include, except }) => {
+            onCreate={({ name, description, include, except, permissions }) => {
               const id = `pf-folder-${Date.now()}`;
-              const includeSet = new Set(include);
               const exceptSet = new Set(except);
-              const includesAllEmployees = include.length === 0 || includeSet.has('All... (Managers, employees, etc.)');
-              const kaleIncluded = includesAllEmployees || includeSet.has('Kale George');
-              const kaleExcluded = exceptSet.has('Kale George');
-              const createdFor =
-                !kaleIncluded || kaleExcluded
-                  ? 'Selected users (Kale excluded)'
-                  : include.length === 0
-                    ? 'All - Employees'
-                    : include.join(', ');
+              const allEmployees = include.length === 0;
+              const createdFor = allEmployees
+                ? (exceptSet.size > 0 ? `All - Employees (${[...exceptSet].join(', ')} excluded)` : 'All - Employees')
+                : include.join(', ');
               const child: ProfileFolderNode = {
                 id,
                 name,
+                description: description || undefined,
                 createdFor,
                 lastModified: new Date().toISOString(),
+                permissions: permissions.length > 0 ? (permissions as FolderPermission[]) : undefined,
               };
               setFolderRoot((r) => addChildFolder(r, selectedFolderId, child));
               setSubView('list');
@@ -519,6 +875,40 @@ const ProfileFoldersView: React.FC<{
           />
         </div>
       )}
+
+      {subView === 'edit' && editingFolderId && (() => {
+        const folderToEdit = findProfileFolder(folderRoot, editingFolderId);
+        if (!folderToEdit) return null;
+        return (
+          <div className="fixed inset-0 z-[200] bg-[#FAFAFA]">
+            <CreateProfileFolderPage
+              rootFolder={folderRoot}
+              parentFolderId={folderToEdit.id}
+              editingFolder={folderToEdit}
+              onExit={() => {
+                setSubView('list');
+                setEditingFolderId(null);
+              }}
+              onCreate={({ name, description, include, except, permissions }) => {
+                const exceptSet = new Set(except);
+                const allEmployees = include.length === 0;
+                const createdFor = allEmployees
+                  ? (exceptSet.size > 0 ? `All - Employees (${[...exceptSet].join(', ')} excluded)` : 'All - Employees')
+                  : include.join(', ');
+                setFolderRoot((r) => renameProfileFolder(r, editingFolderId, name, description));
+                setFolderRoot((r) => updateFolderPermissions(r, editingFolderId, permissions as FolderPermission[]));
+                setFolderRoot((r) => {
+                  const updated = findProfileFolder(r, editingFolderId);
+                  if (updated) updated.createdFor = createdFor;
+                  return r;
+                });
+                setSubView('list');
+                setEditingFolderId(null);
+              }}
+            />
+          </div>
+        );
+      })()}
     </>
   );
 };

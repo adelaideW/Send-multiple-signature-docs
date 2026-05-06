@@ -116,6 +116,7 @@ interface DocumentsSectionProps {
   viewByDocuments: boolean;
   setViewByDocuments: (val: boolean) => void;
   profileFolderRoot?: ProfileFolderNode;
+  viewMode?: 'admin' | 'employee';
 }
 
 type ProfileDocTab = 'action_required' | 'documents';
@@ -336,10 +337,26 @@ const PROFILE_DOCS_TREE: ProfileRootFolder[] = [
 ];
 
 function kaleCanAccessFolder(node: ProfileFolderNode): boolean {
+  // Default/system folders: visible unless permissions explicitly exclude Kale
+  if (node.isDefault) {
+    if (!node.permissions || node.permissions.length === 0) return true;
+    return node.permissions.some(p => p.name === 'Kale George');
+  }
+
+  // Must pass BOTH createdFor AND permissions
   const createdFor = (node.createdFor ?? '').toLowerCase();
   if (!createdFor) return false;
   if (createdFor.includes('kale excluded')) return false;
-  return createdFor.includes('all') || createdFor.includes('kale george');
+
+  const isInCreatedFor = createdFor.includes('all') || createdFor.includes('kale george');
+  if (!isInCreatedFor) return false;
+
+  // If permissions are explicitly set, Kale must be listed
+  if (node.permissions && node.permissions.length > 0) {
+    return node.permissions.some(p => p.name === 'Kale George');
+  }
+
+  return true;
 }
 
 function createDynamicRootFolder(name: string, seedId: string): ProfileRootFolder {
@@ -365,10 +382,14 @@ function buildProfileDocsTreeForKale(baseTree: ProfileRootFolder[], profileFolde
 
   const rootMap = new Map(tree.map((r) => [r.id, r] as const));
   const customTopLevel = new Map<string, ProfileRootFolder>();
+  const hiddenRootIds = new Set<string>();
 
   const walk = (node: ProfileFolderNode, parent: ProfileFolderNode | null) => {
     if (node.id !== 'all') {
       const visible = kaleCanAccessFolder(node);
+      if (!visible && rootMap.has(node.id)) {
+        hiddenRootIds.add(node.id);
+      }
       if (visible) {
         const parentVisible = parent ? kaleCanAccessFolder(parent) : false;
         if (!parent || parent.id === 'all') {
@@ -386,6 +407,7 @@ function buildProfileDocsTreeForKale(baseTree: ProfileRootFolder[], profileFolde
             });
           }
         } else if (!customTopLevel.has(node.id)) {
+          // Parent not visible but child is — promote to top level
           customTopLevel.set(node.id, createDynamicRootFolder(node.name, node.id));
         }
       }
@@ -395,7 +417,7 @@ function buildProfileDocsTreeForKale(baseTree: ProfileRootFolder[], profileFolde
   };
 
   walk(profileFolderRoot, null);
-  return [...tree, ...customTopLevel.values()];
+  return [...tree.filter(r => !hiddenRootIds.has(r.id)), ...customTopLevel.values()];
 }
 
 function countListedDocuments(tree: ProfileRootFolder[], includeArchived: boolean): number {
@@ -538,6 +560,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
     [setViewByDocuments]
   );
 
+  const [leftPanelOpen, setLeftPanelOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [expandedPackets, setExpandedPackets] = useState<Record<string, boolean>>({});
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
@@ -610,35 +633,45 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   return (
     <div className="pr-8 pb-8 pl-4 pt-0">
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm min-h-[500px] overflow-hidden relative flex">
-        <aside className="w-[220px] shrink-0 bg-white border-r border-slate-200 py-4 px-2 overflow-y-auto max-h-[min(900px,calc(100vh-12rem))] custom-scrollbar">
-          <nav className="space-y-0.5" aria-label="Employee profile sections">
-            {PROFILE_LEFT_NAV_PRIMARY.map((label) => {
-              const isDocuments = label === 'Documents';
-              return (
+        <aside className={`shrink-0 bg-white border-r border-slate-200 relative transition-all duration-200 ${leftPanelOpen ? 'w-[220px]' : 'w-[40px]'}`}>
+          <button
+            type="button"
+            onClick={() => setLeftPanelOpen((v) => !v)}
+            className="absolute top-3 right-2 z-10 p-1 rounded hover:bg-slate-100 text-slate-500"
+            aria-label={leftPanelOpen ? 'Collapse panel' : 'Expand panel'}
+          >
+            <ChevronRight size={14} className={`transition-transform duration-200 ${leftPanelOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {leftPanelOpen && (
+            <nav className="py-4 px-2 overflow-y-auto max-h-[min(900px,calc(100vh-12rem))] custom-scrollbar pt-10 space-y-0.5" aria-label="Employee profile sections">
+              {PROFILE_LEFT_NAV_PRIMARY.map((label) => {
+                const isDocuments = label === 'Documents';
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 rounded-md text-[13px] leading-snug transition-colors ${
+                      isDocuments
+                        ? 'bg-[#F3EBF0] text-[#7A005D] font-semibold'
+                        : 'text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+              <div className="h-4" aria-hidden />
+              {PROFILE_LEFT_NAV_SECONDARY.map((label) => (
                 <button
                   key={label}
                   type="button"
-                  className={`w-full text-left px-3 py-2 rounded-md text-[13px] leading-snug transition-colors ${
-                    isDocuments
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-900 hover:bg-slate-50'
-                  }`}
+                  className="w-full text-left px-3 py-2 rounded-md text-[13px] leading-snug text-slate-900 hover:bg-slate-50 transition-colors"
                 >
                   {label}
                 </button>
-              );
-            })}
-            <div className="h-4" aria-hidden />
-            {PROFILE_LEFT_NAV_SECONDARY.map((label) => (
-              <button
-                key={label}
-                type="button"
-                className="w-full text-left px-3 py-2 rounded-md text-[13px] leading-snug text-slate-900 hover:bg-slate-50 transition-colors"
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
+              ))}
+            </nav>
+          )}
         </aside>
 
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
@@ -799,7 +832,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                       <button
                         type="button"
                         onClick={() => setDocNavPath(c.path)}
-                        className="font-bold text-[#2563eb] hover:underline bg-transparent border-none p-0 cursor-pointer"
+                        className="font-bold text-[#7A005D] hover:underline bg-transparent border-none p-0 cursor-pointer"
                       >
                         {c.label}
                       </button>
@@ -1000,7 +1033,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                         )}
                         <button
                           type="button"
-                          className="text-[#2563eb] font-bold cursor-pointer hover:underline truncate text-left bg-transparent border-none p-0"
+                          className="text-[#7A005D] font-bold cursor-pointer hover:underline truncate text-left bg-transparent border-none p-0"
                           onClick={() => {
                             if (row.kind === 'folder') {
                               setDocNavPath(row.navPath);

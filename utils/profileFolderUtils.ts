@@ -4,6 +4,11 @@ export const PROFILE_FOLDER_NAME_MAX_DISPLAY = 20;
 /** Max folder segments from “All documents” through the new folder (inclusive). */
 export const MAX_PROFILE_FOLDER_LAYERS = 10;
 
+export type FolderPermission = {
+  name: string;
+  access: 'Can manage files' | 'Contributor' | 'Viewer';
+};
+
 export type ProfileFolderNode = {
   id: string;
   name: string;
@@ -11,6 +16,8 @@ export type ProfileFolderNode = {
   createdFor?: string;
   lastModified?: string;
   children?: ProfileFolderNode[];
+  description?: string;
+  permissions?: FolderPermission[];
 };
 
 export function truncateProfileFolderName(name: string, maxLen = PROFILE_FOLDER_NAME_MAX_DISPLAY): string {
@@ -162,34 +169,6 @@ export function countProfileFolders(root: ProfileFolderNode): number {
 /** Seed tree for Documents → Profile Folders (includes demo nesting under EE Performance Record). */
 export function createInitialProfileFolderRoot(): ProfileFolderNode {
   const fakeChildrenByFolderId: Record<string, ProfileFolderNode[]> = {
-    'folder-confidential': [
-      {
-        id: 'folder-confidential/employee-relations',
-        name: 'Employee relations',
-        createdFor: 'All - Employees',
-        lastModified: '2026-02-04T10:22:00.000Z',
-      },
-      {
-        id: 'folder-confidential/investigation-notes',
-        name: 'Investigation notes',
-        createdFor: 'All - Employees',
-        lastModified: '2026-02-05T09:12:00.000Z',
-      },
-    ],
-    'folder-notice': [
-      {
-        id: 'folder-notice/policy-updates',
-        name: 'Policy updates',
-        createdFor: 'All - Employees',
-        lastModified: '2026-02-06T08:20:00.000Z',
-      },
-      {
-        id: 'folder-notice/team-announcements',
-        name: 'Team announcements',
-        createdFor: 'All - Employees',
-        lastModified: '2026-02-02T14:15:00.000Z',
-      },
-    ],
     'folder-ee-performance': [
       {
         id: 'folder-ee-performance/performance-records',
@@ -249,4 +228,82 @@ export function addChildFolder(
     ...root,
     children: (root.children ?? []).map((c) => addChildFolder(c, parentId, child)),
   };
+}
+
+export function renameProfileFolder(
+  root: ProfileFolderNode,
+  id: string,
+  newName: string,
+  newDescription: string
+): ProfileFolderNode {
+  if (root.id === id) {
+    return { ...root, name: newName, description: newDescription, lastModified: new Date().toISOString() };
+  }
+  return {
+    ...root,
+    children: (root.children ?? []).map((c) => renameProfileFolder(c, id, newName, newDescription)),
+  };
+}
+
+export function updateFolderPermissions(
+  root: ProfileFolderNode,
+  id: string,
+  permissions: FolderPermission[]
+): ProfileFolderNode {
+  if (root.id === id) {
+    return { ...root, permissions, lastModified: new Date().toISOString() };
+  }
+  return {
+    ...root,
+    children: (root.children ?? []).map((c) => updateFolderPermissions(c, id, permissions)),
+  };
+}
+
+export function removeFolderById(
+  root: ProfileFolderNode,
+  id: string
+): ProfileFolderNode {
+  return {
+    ...root,
+    children: (root.children ?? [])
+      .filter((c) => c.id !== id)
+      .map((c) => removeFolderById(c, id)),
+  };
+}
+
+/** Returns the set of ids for a folder and all its descendants. */
+export function getSubtreeFolderIds(root: ProfileFolderNode, folderId: string): Set<string> {
+  const target = findProfileFolder(root, folderId);
+  if (!target) return new Set();
+  const ids = new Set<string>();
+  function collect(node: ProfileFolderNode) {
+    ids.add(node.id);
+    (node.children ?? []).forEach(collect);
+  }
+  collect(target);
+  return ids;
+}
+
+export function moveProfileFolder(
+  root: ProfileFolderNode,
+  folderId: string,
+  newParentId: string
+): ProfileFolderNode {
+  let extracted: ProfileFolderNode | null = null;
+
+  function extract(node: ProfileFolderNode): ProfileFolderNode {
+    const newChildren = (node.children ?? [])
+      .filter((c) => {
+        if (c.id === folderId) { extracted = c; return false; }
+        return true;
+      })
+      .map(extract);
+    return { ...node, children: newChildren.length > 0 ? newChildren : undefined };
+  }
+
+  const withoutFolder = extract(root);
+  if (!extracted) return root;
+
+  const moved: ProfileFolderNode = { ...(extracted as ProfileFolderNode), lastModified: new Date().toISOString() };
+  return addChildFolder(withoutFolder, newParentId, moved);
 }

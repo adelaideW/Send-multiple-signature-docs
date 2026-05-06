@@ -1,12 +1,27 @@
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Search, HelpCircle, Bell, Accessibility, Grid } from 'lucide-react';
 
 interface HeaderProps {
   onProfileClick?: () => void;
+  currentView?: 'admin' | 'employee';
+  onViewChange?: (view: 'admin' | 'employee') => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onProfileClick }) => {
+const Header: React.FC<HeaderProps> = ({ onProfileClick, currentView = 'admin', onViewChange }) => {
+  const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
+  const viewMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!viewMenuRef.current?.contains(e.target as Node)) {
+        setIsViewMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
     <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-20">
       <div className="w-1/3 shrink-0" aria-hidden />
@@ -39,19 +54,56 @@ const Header: React.FC<HeaderProps> = ({ onProfileClick }) => {
         
         <div className="h-6 w-px bg-slate-200 mx-1"></div>
 
-        <button
-          type="button"
-          onClick={() => onProfileClick?.()}
-          className="flex items-center space-x-3 cursor-pointer rounded-lg p-1 -mr-1 hover:bg-slate-50 transition-colors text-left"
-          aria-label="Open user profile"
-        >
-          <div className="text-right hidden sm:block">
-            <p className="text-sm font-semibold text-slate-700 leading-tight">Acme</p>
-          </div>
-          <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 shrink-0">
-            <img src="https://picsum.photos/id/64/100/100" alt="User Profile" />
-          </div>
-        </button>
+        <div className="relative" ref={viewMenuRef}>
+          <button
+            type="button"
+            onClick={() => setIsViewMenuOpen(!isViewMenuOpen)}
+            className="flex items-center space-x-3 cursor-pointer rounded-lg p-1 -mr-1 hover:bg-slate-50 transition-colors text-left"
+            aria-label="Open user profile"
+          >
+            <div className="text-right hidden sm:block">
+              <p className="text-sm font-semibold text-slate-700 leading-tight">Acme</p>
+            </div>
+            <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 shrink-0">
+              <img src="https://picsum.photos/id/64/100/100" alt="User Profile" />
+            </div>
+          </button>
+
+          {isViewMenuOpen && (
+            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-50">
+              <button
+                type="button"
+                onClick={() => {
+                  onViewChange?.('admin');
+                  setIsViewMenuOpen(false);
+                  onProfileClick?.();
+                }}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  currentView === 'admin'
+                    ? 'bg-slate-100 text-slate-900 font-semibold'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Admin view
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onViewChange?.('employee');
+                  setIsViewMenuOpen(false);
+                  onProfileClick?.();
+                }}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                  currentView === 'employee'
+                    ? 'bg-slate-100 text-slate-900 font-semibold'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Employee view
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

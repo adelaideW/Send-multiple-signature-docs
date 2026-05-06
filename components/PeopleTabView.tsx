@@ -87,6 +87,7 @@ interface PeopleTabViewProps {
   onRemovePerson?: (personId: string) => void;
   profileFolderRoot?: ProfileFolderNode;
   onProfileFolderRootChange?: (next: ProfileFolderNode) => void;
+  viewMode?: 'admin' | 'employee';
 }
 
 const PeopleTabView: React.FC<PeopleTabViewProps> = ({
@@ -107,6 +108,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   onRemovePerson,
   profileFolderRoot,
   onProfileFolderRootChange,
+  viewMode = 'admin',
 }) => {
   const [internalHubTab, setInternalHubTab] = useState('People');
   const activeTab = hubTabProp ?? internalHubTab;
@@ -114,7 +116,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   const [peopleRows, setPeopleRows] = useState<PeopleRow[]>(PEOPLE_DATA);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [toolsSideCollapsed, setToolsSideCollapsed] = useState(false);
+  const [toolsSideCollapsed, setToolsSideCollapsed] = useState(true);
   const [sendReminderOpen, setSendReminderOpen] = useState(false);
 
   useEffect(() => {
@@ -376,7 +378,11 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
 
           {activeTab === 'Profile Folders' && (
             <div className="mb-8">
-              <ProfileFoldersView folderRoot={profileFolderRoot} onFolderRootChange={onProfileFolderRootChange} />
+              <ProfileFoldersView
+                folderRoot={profileFolderRoot}
+                onFolderRootChange={onProfileFolderRootChange}
+                viewMode={viewMode}
+              />
             </div>
           )}
 

@@ -21,7 +21,8 @@ export interface CreateProfileFolderPageProps {
   rootFolder: ProfileFolderNode;
   parentFolderId: string;
   onExit: () => void;
-  onCreate?: (payload: { name: string; description: string; include: string[]; except: string[] }) => void;
+  onCreate?: (payload: { name: string; description: string; include: string[]; except: string[]; permissions: Array<{ name: string; access: 'Can manage files' | 'Contributor' | 'Viewer' }> }) => void;
+  editingFolder?: ProfileFolderNode;
 }
 
 /** Tooltip — DM Bulk Upload node 7302:210847 */
@@ -53,7 +54,7 @@ const MENU_BASE_ROWS: MenuRow[] = [
   { kind: 'section', label: 'Saved Groups' },
   { kind: 'item', label: 'View all saved groups', tone: 'muted' },
   { kind: 'section', label: 'Categories' },
-  { kind: 'item', label: 'All... (Managers, employees, etc.)', tone: 'muted' },
+  { kind: 'item', label: 'All - Everyone', tone: 'muted' },
   { kind: 'item', label: 'Admins', hasChevron: true, submenuKey: 'admins' },
   { kind: 'item', label: 'Department', hasChevron: true, submenuKey: 'department' },
   { kind: 'item', label: 'State', hasChevron: true, submenuKey: 'state' },
@@ -160,7 +161,7 @@ const DROPDOWN_BODY_MAX_PX = 240;
 const OVERLAY_Z = 100_000;
 
 const rdsTooltipSurfaceClass =
-  'rounded-xl border border-black/10 bg-[#F3F4F6] p-3 text-left text-[12px] leading-4 text-slate-900 shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.15)]';
+  'rounded-xl border border-black/10 bg-white p-3 text-left text-[12px] leading-[18px] text-black shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.15)]';
 
 const ACCESS_LEVEL_OPTIONS = ['Can manage files', 'Contributor', 'Viewer'] as const;
 type AccessLevel = (typeof ACCESS_LEVEL_OPTIONS)[number];
@@ -307,11 +308,11 @@ const GroupPickerDropdown: React.FC<{
   onBack: (() => void) | null;
   submenuTitle?: string | null;
   dropdownRef: React.RefObject<HTMLDivElement | null>;
-}> = ({ open, coords, rows, highlightedIndex, onPick, onHoverIndex, onBack, submenuTitle, dropdownRef }) => {
-  if (!open || !coords) return null;
-
-  const { top, left, width } = coords;
-  let itemIndex = -1;
+  disabledItems?: Set<string>;
+  activePickerType?: PickerType | null;
+}> = ({ open, coords, rows, highlightedIndex, onPick, onHoverIndex, onBack, submenuTitle, dropdownRef, disabledItems = new Set(), activePickerType }) => {
+  const [hoveredDisabledItem, setHoveredDisabledItem] = useState<string | null>(null);
+  const disabledItemRef = useRef<HTMLButtonElement | null>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
@@ -321,88 +322,108 @@ const GroupPickerDropdown: React.FC<{
     }
   }, [highlightedIndex, rows]);
 
+  if (!open || !coords) return null;
+
+  const { top, left, width } = coords;
+  let itemIndex = -1;
+
   return createPortal(
-    <div
-      ref={dropdownRef}
-      className="fixed rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden"
-      style={{
-        top,
-        left,
-        width,
-        zIndex: OVERLAY_Z,
-        maxHeight: DROPDOWN_BODY_MAX_PX,
-      }}
-      role="listbox"
-    >
-      {onBack && submenuTitle ? (
-        <div>
-          <button
-            type="button"
-            className="w-full px-5 py-3 text-left text-[13px] font-medium text-slate-600 border-b border-[#F0F0F0] hover:bg-slate-50 inline-flex items-center gap-2"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={onBack}
-          >
-            <ChevronLeft size={14} />
-            Back
-          </button>
-          <div className="px-5 py-3 text-[15px] font-semibold text-slate-900 border-b border-[#F0F0F0]">{submenuTitle}</div>
-        </div>
-      ) : null}
-      <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: DROPDOWN_BODY_MAX_PX }}>
-        {rows.map((row, idx) => {
-          if (row.kind === 'section') {
-            return (
-              <div
-                key={`sec-${row.label}-${idx}`}
-                className="px-5 pt-4 pb-2 text-[11px] font-semibold tracking-[0.08em] uppercase text-slate-400"
-              >
-                {row.label}
-              </div>
-            );
-          }
-          itemIndex += 1;
-          const highlighted = itemIndex === highlightedIndex;
-          return (
+    <>
+      <div
+        ref={dropdownRef}
+        className="fixed rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden"
+        style={{
+          top,
+          left,
+          width,
+          zIndex: OVERLAY_Z,
+          maxHeight: DROPDOWN_BODY_MAX_PX,
+        }}
+        role="listbox"
+      >
+        {onBack && submenuTitle ? (
+          <div>
             <button
-              key={`row-${row.label}-${idx}`}
-              ref={(el) => {
-                optionRefs.current[itemIndex] = el;
-              }}
               type="button"
-              role="option"
-              aria-selected={highlighted}
-              className={`w-full text-left px-5 py-3 text-[15px] transition-colors flex items-center justify-between gap-3 ${
-                highlighted ? 'bg-slate-50' : 'hover:bg-slate-50'
-              } ${row.tone === 'muted' ? 'text-slate-700' : 'text-slate-800'}`}
-              style={{ borderTop: '1px solid #F0F0F0' }}
+              className="w-full px-5 py-3 text-left text-[13px] font-medium text-slate-600 border-b border-[#F0F0F0] hover:bg-slate-50 inline-flex items-center gap-2"
               onMouseDown={(e) => e.preventDefault()}
-              onMouseEnter={() => onHoverIndex(itemIndex)}
-              onClick={() => onPick(row)}
+              onClick={onBack}
             >
-              <div className="min-w-0 flex items-center gap-3">
-                {row.avatarText ? (
-                  <span
-                    className="w-8 h-8 rounded-full inline-flex items-center justify-center text-[11px] font-semibold shrink-0"
-                    style={{ backgroundColor: row.avatarBg ?? '#E2E8F0', color: row.avatarFg ?? '#334155' }}
-                    aria-hidden
-                  >
-                    {row.avatarText}
-                  </span>
-                ) : null}
-                <div className="min-w-0">
-                  <div className="truncate">{row.label}</div>
-                  {row.subtitle ? <div className="text-[12px] text-slate-400 mt-0.5">{row.subtitle}</div> : null}
-                </div>
-              </div>
-              {row.hasChevron ? <ChevronRight size={13} className="text-slate-400 shrink-0" /> : null}
+              <ChevronLeft size={14} />
+              Back
             </button>
-          );
-        })}
-        {rows.length === 0 && (
-          <div className="px-4 py-6 text-center text-[13px] text-slate-500 font-medium">No matches</div>
-        )}
+            <div className="px-5 py-3 text-[15px] font-semibold text-slate-900 border-b border-[#F0F0F0]">{submenuTitle}</div>
+          </div>
+        ) : null}
+        <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: DROPDOWN_BODY_MAX_PX }}>
+          {rows.map((row, idx) => {
+            if (row.kind === 'section') {
+              return (
+                <div
+                  key={`sec-${row.label}-${idx}`}
+                  className="px-5 pt-4 pb-2 text-[11px] font-semibold tracking-[0.08em] uppercase text-slate-400"
+                >
+                  {row.label}
+                </div>
+              );
+            }
+            itemIndex += 1;
+            const highlighted = itemIndex === highlightedIndex;
+            const isDisabled = activePickerType === 'access' && disabledItems.has(row.label);
+            return (
+              <button
+                key={`row-${row.label}-${idx}`}
+                ref={(el) => {
+                  optionRefs.current[itemIndex] = el;
+                  if (isDisabled && row.label === hoveredDisabledItem) {
+                    disabledItemRef.current = el;
+                  }
+                }}
+                type="button"
+                role="option"
+                aria-selected={highlighted}
+                disabled={isDisabled}
+                className={`w-full text-left px-5 py-3 text-[15px] transition-colors flex items-center justify-between gap-3 ${
+                  isDisabled ? 'opacity-50 cursor-not-allowed' : highlighted ? 'bg-slate-50' : 'hover:bg-slate-50'
+                } ${row.tone === 'muted' ? 'text-slate-700' : 'text-slate-800'}`}
+                style={{ borderTop: '1px solid #F0F0F0' }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => !isDisabled && onPick(row)}
+                onMouseEnter={() => isDisabled && setHoveredDisabledItem(row.label)}
+                onMouseLeave={() => setHoveredDisabledItem(null)}
+              >
+                <div className="min-w-0 flex items-center gap-3">
+                  {row.avatarText ? (
+                    <span
+                      className="w-8 h-8 rounded-full inline-flex items-center justify-center text-[11px] font-semibold shrink-0"
+                      style={{ backgroundColor: row.avatarBg ?? '#E2E8F0', color: row.avatarFg ?? '#334155' }}
+                      aria-hidden
+                    >
+                      {row.avatarText}
+                    </span>
+                  ) : null}
+                  <div className="min-w-0">
+                    <div className="truncate">{row.label}</div>
+                    {row.subtitle ? <div className="text-[12px] text-slate-400 mt-0.5">{row.subtitle}</div> : null}
+                  </div>
+                </div>
+                {row.hasChevron ? <ChevronRight size={13} className="text-slate-400 shrink-0" /> : null}
+              </button>
+            );
+          })}
+          {rows.length === 0 && (
+            <div className="px-4 py-6 text-center text-[13px] text-slate-500 font-medium">No matches</div>
+          )}
+        </div>
       </div>
-    </div>,
+      <FloatingTooltip
+        open={hoveredDisabledItem !== null}
+        anchorRef={disabledItemRef}
+        maxWidthPx={240}
+      >
+        Access has already been granted
+      </FloatingTooltip>
+    </>,
     document.body
   );
 };
@@ -412,9 +433,10 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   parentFolderId,
   onExit,
   onCreate,
+  editingFolder,
 }) => {
-  const [folderName, setFolderName] = useState('');
-  const [description, setDescription] = useState('');
+  const [folderName, setFolderName] = useState(editingFolder?.name || '');
+  const [description, setDescription] = useState(editingFolder?.description || '');
   const [peopleSelectionError] = useState<string | null>(null);
   const [includeChips, setIncludeChips] = useState<string[]>([]);
   const [exceptChips, setExceptChips] = useState<string[]>([]);
@@ -429,8 +451,36 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   });
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [dropdownCoords, setDropdownCoords] = useState<DropdownCoords | null>(null);
-  const [accessRows, setAccessRows] = useState<Array<{ name: string; access: AccessLevel }>>([]);
+  const [accessRows, setAccessRows] = useState<Array<{ name: string; access: AccessLevel }>>(
+    editingFolder?.permissions ? editingFolder.permissions.map(p => ({ name: p.name, access: p.access as AccessLevel })) : []
+  );
   const [openAccessMenuRow, setOpenAccessMenuRow] = useState<number | null>(null);
+  const [accessMenuCoords, setAccessMenuCoords] = useState<DropdownCoords | null>(null);
+  const [highlightedAccessRow, setHighlightedAccessRow] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editingFolder?.createdFor) return;
+
+    const createdFor = editingFolder.createdFor;
+
+    if (createdFor === 'All - Everyone' || createdFor === 'All - Employees' || createdFor === 'All... (Managers, employees, etc.)') {
+      setIncludeChips(['All - Everyone']);
+    } else if (createdFor === 'Selected users (Kale excluded)') {
+      setExceptChips(['Kale George']);
+    } else if (createdFor.includes('(Kale excluded)')) {
+      setExceptChips(['Kale George']);
+      const namesStr = createdFor.replace(' (Kale excluded)', '');
+      if (namesStr.trim()) {
+        const names = namesStr.split(',').map(n => n.trim());
+        setIncludeChips(names);
+      }
+    } else {
+      const names = createdFor.split(',').map(n => n.trim()).filter(n => n.length > 0);
+      if (names.length > 0) {
+        setIncludeChips(names);
+      }
+    }
+  }, [editingFolder?.createdFor]);
 
   const includeAnchorRef = useRef<HTMLDivElement>(null);
   const exceptAnchorRef = useRef<HTMLDivElement>(null);
@@ -440,10 +490,32 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   const accessInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const activePickerRef = useRef<PickerType | null>(null);
+  const accessMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const accessMenuPortalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     activePickerRef.current = activePicker;
   }, [activePicker]);
+
+  useLayoutEffect(() => {
+    if (openAccessMenuRow === null || !accessMenuButtonRef.current) {
+      setAccessMenuCoords(null);
+      return;
+    }
+    const rect = accessMenuButtonRef.current.getBoundingClientRect();
+    const dropdownH = ACCESS_LEVEL_OPTIONS.length * 36 + 2;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    let top = rect.bottom + 6;
+    if (spaceBelow < dropdownH + 8) {
+      top = Math.max(8, rect.top - dropdownH - 6);
+    }
+    setAccessMenuCoords({
+      top,
+      left: rect.left,
+      width: rect.width + 8,
+    });
+  }, [openAccessMenuRow]);
 
   const updateDropdownPosition = useCallback(() => {
     if (!activePicker) {
@@ -489,10 +561,12 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (dropdownRef.current?.contains(t)) return;
+      if (accessMenuPortalRef.current?.contains(t)) return;
       if (
         includeAnchorRef.current?.contains(t) ||
         exceptAnchorRef.current?.contains(t) ||
-        accessAnchorRef.current?.contains(t)
+        accessAnchorRef.current?.contains(t) ||
+        accessMenuButtonRef.current?.contains(t)
       ) {
         return;
       }
@@ -529,6 +603,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
       description: description.trim(),
       include: includeChips,
       except: exceptChips,
+      permissions: accessRows,
     });
   };
 
@@ -634,10 +709,16 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
 
   const handleAccessAdd = () => {
     if (accessChips.length === 0) return;
+    const existingNames = new Set(accessRows.map(r => r.name));
+    const newChips = accessChips.filter(name => !existingNames.has(name));
+    if (newChips.length === 0) return;
     setAccessRows((prev) => [
       ...prev,
-      ...accessChips.map((name) => ({ name, access: 'Viewer' as const })),
+      ...newChips.map((name) => ({ name, access: 'Viewer' as const })),
     ]);
+    if (newChips.length > 0) {
+      setHighlightedAccessRow(newChips[0]);
+    }
     setAccessChips([]);
     setQueries((prev) => ({ ...prev, access: '' }));
   };
@@ -649,7 +730,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
           <button type="button" className="p-1.5 text-slate-600 hover:bg-slate-50 rounded-lg" aria-label="Menu">
             <Menu size={22} strokeWidth={2} />
           </button>
-          <h2 className="text-[15px] font-bold text-slate-900">Create folder</h2>
+          <h2 className="text-[15px] font-bold text-slate-900">{editingFolder ? 'Edit folder' : 'Create folder'}</h2>
         </div>
         <button
           type="button"
@@ -664,9 +745,11 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
       <div className="flex-1 flex flex-col lg:flex-row min-h-0 gap-0 bg-[#FAFAFA] overflow-auto">
         <div className="flex-1 min-w-0 space-y-8 pt-10 px-6 lg:px-10 xl:px-16 max-w-[860px] mx-auto">
           <div>
-            <h1 className="text-[20px] font-bold text-slate-900">Create folder</h1>
+            <h1 className="text-[20px] font-bold text-slate-900">{editingFolder ? 'Edit folder' : 'Create folder'}</h1>
             <p className="mt-2 text-[14px] text-slate-600 leading-relaxed max-w-3xl font-medium">
-              Rippling will create a folder in each selected person&apos;s profile.{' '}
+              {editingFolder
+                ? 'Update the folder settings and who has access to this folder.'
+                : "Rippling will create a folder in each selected person's profile."}{' '}
               <a href="#" className="font-bold hover:underline" style={{ color: PRIMARY_PURPLE }}>
                 Learn more
               </a>
@@ -848,6 +931,8 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
               } : null}
               submenuTitle={activeSubmenuKey ? (SUBMENU_ROWS[activeSubmenuKey] ? MENU_BASE_ROWS.find((r) => r.kind === 'item' && r.submenuKey === activeSubmenuKey)?.label ?? null : null) : null}
               dropdownRef={dropdownRef}
+              disabledItems={new Set(accessRows.map(r => r.name))}
+              activePickerType={activePicker}
             />
 
             <p className="text-[13px] text-slate-500 font-medium">
@@ -857,20 +942,23 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
               </a>
               .
             </p>
-            <div className="rounded-xl border border-slate-200 bg-white min-h-[120px] overflow-hidden">
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
               <div className="grid grid-cols-[1fr_180px_44px] items-center bg-slate-50 border-b border-slate-200">
                 <div className="px-4 py-2.5 text-[12px] font-semibold text-slate-600">People with access</div>
                 <div className="px-4 py-2.5 text-[12px] font-semibold text-slate-600">Access</div>
                 <div />
               </div>
-              {accessRows.length === 0 ? (
-                <div className="h-20" />
-              ) : (
+              {accessRows.length === 0 ? null : (
                 accessRows.map((row, idx) => (
-                  <div key={`${row.name}-${idx}`} className="grid grid-cols-[1fr_180px_44px] items-center border-t border-slate-100">
+                  <div key={`${row.name}-${idx}`} className={`grid grid-cols-[1fr_180px_44px] items-center border-t border-slate-100 ${highlightedAccessRow === row.name ? 'bg-blue-50' : ''}`} onMouseEnter={() => setHighlightedAccessRow(null)}>
                     <div className="px-4 py-2.5 text-[13px] font-medium text-slate-800">{row.name}</div>
-                    <div className="px-4 py-2.5 relative">
+                    <div className="px-4 py-2.5">
                       <button
+                        ref={(el) => {
+                          if (openAccessMenuRow === idx) {
+                            accessMenuButtonRef.current = el;
+                          }
+                        }}
                         type="button"
                         onClick={() => setOpenAccessMenuRow((r) => (r === idx ? null : idx))}
                         className="w-full inline-flex items-center justify-between rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"
@@ -878,30 +966,11 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
                         <span>{row.access}</span>
                         <ChevronDown size={13} className="text-slate-400" />
                       </button>
-                      {openAccessMenuRow === idx && (
-                        <div className="absolute left-4 right-4 top-[calc(100%+6px)] z-30 rounded-lg border border-slate-200 bg-white shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.15)] overflow-hidden">
-                          {ACCESS_LEVEL_OPTIONS.map((opt) => (
-                            <button
-                              key={`${row.name}-${opt}`}
-                              type="button"
-                              className="w-full text-left px-3 py-2 text-[13px] text-slate-800 hover:bg-slate-50 border-t first:border-t-0 border-[#F0F0F0]"
-                              onClick={() => {
-                                setAccessRows((prev) =>
-                                  prev.map((r, i) => (i === idx ? { ...r, access: opt } : r))
-                                );
-                                setOpenAccessMenuRow(null);
-                              }}
-                            >
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
                     <div className="px-2 py-2.5">
                       <button
                         type="button"
-                        className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                        className="p-1.5 rounded-md text-slate-400 hover:text-[#DC2626] hover:bg-red-50"
                         aria-label={`Remove ${row.name}`}
                         onClick={() => {
                           setAccessRows((prev) => prev.filter((_, i) => i !== idx));
@@ -915,6 +984,36 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
                 ))
               )}
             </div>
+
+            {openAccessMenuRow !== null && accessMenuCoords && createPortal(
+              <div
+                ref={accessMenuPortalRef}
+                className="fixed rounded-lg border border-slate-200 bg-white shadow-[0px_4px_6px_-1px_rgba(0,0,0,0.15)] overflow-hidden"
+                style={{
+                  top: accessMenuCoords.top,
+                  left: accessMenuCoords.left,
+                  width: accessMenuCoords.width,
+                  zIndex: OVERLAY_Z - 1,
+                }}
+              >
+                {ACCESS_LEVEL_OPTIONS.map((opt) => (
+                  <button
+                    key={`access-menu-${openAccessMenuRow}-${opt}`}
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-[13px] text-slate-800 hover:bg-slate-50 border-t first:border-t-0 border-[#F0F0F0]"
+                    onClick={() => {
+                      setAccessRows((prev) =>
+                        prev.map((r, i) => (i === openAccessMenuRow ? { ...r, access: opt } : r))
+                      );
+                      setOpenAccessMenuRow(null);
+                    }}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
           </div>
         </div>
 
@@ -980,7 +1079,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
           }`}
           style={{ backgroundColor: PRIMARY_PURPLE }}
         >
-          Create
+          {editingFolder ? 'Save' : 'Create'}
         </button>
       </footer>
     </div>
