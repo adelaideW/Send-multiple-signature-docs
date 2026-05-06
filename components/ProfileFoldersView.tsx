@@ -158,6 +158,9 @@ const DefaultBadge: React.FC = () => {
 };
 
 const CURRENT_EMPLOYEE = 'Kale George';
+const NEW_FOLDER_ID_PREFIX = 'pf-folder-';
+
+const isNewlyCreatedFolder = (node: ProfileFolderNode): boolean => node.id.startsWith(NEW_FOLDER_ID_PREFIX);
 
 const canEmployeeViewFolder = (node: ProfileFolderNode): boolean => {
   // Default/system folders remain visible unless permissions explicitly exclude Kale.
@@ -166,7 +169,8 @@ const canEmployeeViewFolder = (node: ProfileFolderNode): boolean => {
     return node.permissions.some(p => p.name === CURRENT_EMPLOYEE);
   }
 
-  // Employee view filters by explicit access grants only.
+  // Keep all existing folders visible; only newly created folders are filtered by access rows.
+  if (!isNewlyCreatedFolder(node)) return true;
   if (!node.permissions || node.permissions.length === 0) return false;
   return node.permissions.some(p => p.name === CURRENT_EMPLOYEE);
 };

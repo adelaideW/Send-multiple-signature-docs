@@ -336,6 +336,12 @@ const PROFILE_DOCS_TREE: ProfileRootFolder[] = [
   },
 ];
 
+const NEW_FOLDER_ID_PREFIX = 'pf-folder-';
+
+function isNewlyCreatedFolder(node: ProfileFolderNode): boolean {
+  return node.id.startsWith(NEW_FOLDER_ID_PREFIX);
+}
+
 function kaleCanAccessFolder(node: ProfileFolderNode): boolean {
   // Default/system folders: visible unless permissions explicitly exclude Kale.
   if (node.isDefault) {
@@ -343,7 +349,8 @@ function kaleCanAccessFolder(node: ProfileFolderNode): boolean {
     return node.permissions.some(p => p.name === 'Kale George');
   }
 
-  // Employee visibility should respect explicit access grants.
+  // Existing folders stay visible; only new folders obey access-input filtering.
+  if (!isNewlyCreatedFolder(node)) return true;
   if (!node.permissions || node.permissions.length === 0) return false;
   return node.permissions.some(p => p.name === 'Kale George');
 }
