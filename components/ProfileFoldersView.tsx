@@ -160,34 +160,15 @@ const DefaultBadge: React.FC = () => {
 const CURRENT_EMPLOYEE = 'Kale George';
 
 const canEmployeeViewFolder = (node: ProfileFolderNode): boolean => {
-  // Default/system folders: visible unless permissions explicitly exclude Kale
+  // Default/system folders remain visible unless permissions explicitly exclude Kale.
   if (node.isDefault) {
     if (!node.permissions || node.permissions.length === 0) return true;
     return node.permissions.some(p => p.name === CURRENT_EMPLOYEE);
   }
 
-  // Must pass BOTH createdFor AND permissions
-  let isInCreatedFor = false;
-  const cf = node.createdFor ?? '';
-  if (!cf) {
-    isInCreatedFor = false;
-  } else if (cf === 'All - Everyone' || cf === 'All - Employees') {
-    isInCreatedFor = true;
-  } else if (cf.includes('Kale excluded')) {
-    isInCreatedFor = false;
-  } else {
-    isInCreatedFor = cf.includes(CURRENT_EMPLOYEE);
-  }
-
-  if (!isInCreatedFor) return false;
-
-  // If permissions are explicitly set, Kale must be listed (even if empty list = no access)
-  if (node.permissions) {
-    if (node.permissions.length === 0) return false;
-    return node.permissions.some(p => p.name === CURRENT_EMPLOYEE);
-  }
-
-  return true;
+  // Employee view filters by explicit access grants only.
+  if (!node.permissions || node.permissions.length === 0) return false;
+  return node.permissions.some(p => p.name === CURRENT_EMPLOYEE);
 };
 
 // Returns only folders visible to the employee; invisible parents are skipped and their

@@ -329,7 +329,7 @@ const GroupPickerDropdown: React.FC<{
     }
     // Find the disabled button element that matches the hovered item
     if (dropdownRef.current) {
-      const buttons = dropdownRef.current.querySelectorAll('button[role="option"][disabled]');
+      const buttons = dropdownRef.current.querySelectorAll('button[role="option"][aria-disabled="true"]');
       for (const btn of buttons) {
         const text = btn.textContent?.trim();
         if (text === hoveredDisabledItem) {
@@ -397,14 +397,19 @@ const GroupPickerDropdown: React.FC<{
                 type="button"
                 role="option"
                 aria-selected={highlighted}
-                disabled={isDisabled}
+                aria-disabled={isDisabled}
                 className={`w-full text-left px-5 py-3 text-[15px] transition-colors flex items-center justify-between gap-3 ${
                   isDisabled ? 'opacity-50 cursor-not-allowed' : highlighted ? 'bg-slate-50' : 'hover:bg-slate-50'
                 } ${row.tone === 'muted' ? 'text-slate-700' : 'text-slate-800'}`}
                 style={{ borderTop: '1px solid #F0F0F0' }}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => !isDisabled && onPick(row)}
-                onMouseEnter={() => isDisabled && setHoveredDisabledItem(row.label)}
+                onMouseEnter={() => {
+                  if (isDisabled) {
+                    setHoveredDisabledItem(row.label);
+                    disabledItemRef.current = optionRefs.current[itemIndex] ?? null;
+                  }
+                }}
                 onMouseLeave={() => setHoveredDisabledItem(null)}
               >
                 <div className="min-w-0 flex items-center gap-3">
@@ -605,6 +610,9 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
 
   const trimmedName = folderName.trim();
   const nameOk = trimmedName.length > 0;
+  const peopleSelectionOk = includeChips.length > 0 || exceptChips.length > 0;
+  const accessPeopleOk = accessRows.length > 0;
+  const canSubmit = nameOk && peopleSelectionOk && accessPeopleOk;
 
   const locationSteps = useMemo(
     () => buildFolderLocationPreview(rootFolder, parentFolderId, trimmedName || 'New folder'),
@@ -612,7 +620,7 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   );
 
   const handleSubmit = () => {
-    if (!nameOk) return;
+    if (!canSubmit) return;
     onCreate?.({
       name: trimmedName,
       description: description.trim(),
@@ -1087,10 +1095,10 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
         </button>
         <button
           type="button"
-          disabled={!nameOk}
+          disabled={!canSubmit}
           onClick={handleSubmit}
           className={`px-5 py-2.5 rounded-lg text-[13px] font-bold text-white shadow-sm ${
-            nameOk ? 'hover:opacity-95' : 'opacity-40 cursor-not-allowed'
+            canSubmit ? 'hover:opacity-95' : 'opacity-40 cursor-not-allowed'
           }`}
           style={{ backgroundColor: PRIMARY_PURPLE }}
         >

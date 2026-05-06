@@ -337,26 +337,15 @@ const PROFILE_DOCS_TREE: ProfileRootFolder[] = [
 ];
 
 function kaleCanAccessFolder(node: ProfileFolderNode): boolean {
-  // Default/system folders: visible unless permissions explicitly exclude Kale
+  // Default/system folders: visible unless permissions explicitly exclude Kale.
   if (node.isDefault) {
     if (!node.permissions || node.permissions.length === 0) return true;
     return node.permissions.some(p => p.name === 'Kale George');
   }
 
-  // Must pass BOTH createdFor AND permissions
-  const createdFor = (node.createdFor ?? '').toLowerCase();
-  if (!createdFor) return false;
-  if (createdFor.includes('kale excluded')) return false;
-
-  const isInCreatedFor = createdFor.includes('all') || createdFor.includes('kale george');
-  if (!isInCreatedFor) return false;
-
-  // If permissions are explicitly set, Kale must be listed
-  if (node.permissions && node.permissions.length > 0) {
-    return node.permissions.some(p => p.name === 'Kale George');
-  }
-
-  return true;
+  // Employee visibility should respect explicit access grants.
+  if (!node.permissions || node.permissions.length === 0) return false;
+  return node.permissions.some(p => p.name === 'Kale George');
 }
 
 function createDynamicRootFolder(name: string, seedId: string): ProfileRootFolder {
@@ -551,6 +540,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   viewByDocuments,
   setViewByDocuments,
   profileFolderRoot,
+  viewMode = 'admin',
 }) => {
   const profileTab: ProfileDocTab = viewByDocuments ? 'documents' : 'action_required';
   const setProfileTab = useCallback(
@@ -593,10 +583,10 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
     return () => clearTimeout(t);
   }, [profileDocSnack]);
 
-  const docsTree = useMemo(
-    () => buildProfileDocsTreeForKale(PROFILE_DOCS_TREE, profileFolderRoot),
-    [profileFolderRoot]
-  );
+  const docsTree = useMemo(() => {
+    if (viewMode === 'admin') return cloneProfileDocsTree(PROFILE_DOCS_TREE);
+    return buildProfileDocsTreeForKale(PROFILE_DOCS_TREE, profileFolderRoot);
+  }, [profileFolderRoot, viewMode]);
   const documentsTabTotal = useMemo(() => countListedDocuments(docsTree, false), [docsTree]);
 
   const visibleDocumentRows = useMemo(
