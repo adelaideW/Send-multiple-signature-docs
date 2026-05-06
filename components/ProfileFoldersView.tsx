@@ -181,8 +181,9 @@ const canEmployeeViewFolder = (node: ProfileFolderNode): boolean => {
 
   if (!isInCreatedFor) return false;
 
-  // If permissions are set, Kale must be listed
-  if (node.permissions && node.permissions.length > 0) {
+  // If permissions are explicitly set, Kale must be listed (even if empty list = no access)
+  if (node.permissions) {
+    if (node.permissions.length === 0) return false;
     return node.permissions.some(p => p.name === CURRENT_EMPLOYEE);
   }
 
