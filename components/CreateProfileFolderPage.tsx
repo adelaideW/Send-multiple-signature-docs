@@ -322,6 +322,24 @@ const GroupPickerDropdown: React.FC<{
     }
   }, [highlightedIndex, rows]);
 
+  useEffect(() => {
+    if (!hoveredDisabledItem) {
+      disabledItemRef.current = null;
+      return;
+    }
+    // Find the disabled button element that matches the hovered item
+    if (dropdownRef.current) {
+      const buttons = dropdownRef.current.querySelectorAll('button[role="option"][disabled]');
+      for (const btn of buttons) {
+        const text = btn.textContent?.trim();
+        if (text === hoveredDisabledItem) {
+          disabledItemRef.current = btn as HTMLButtonElement;
+          return;
+        }
+      }
+    }
+  }, [hoveredDisabledItem, dropdownRef]);
+
   if (!open || !coords) return null;
 
   const { top, left, width } = coords;
@@ -375,9 +393,6 @@ const GroupPickerDropdown: React.FC<{
                 key={`row-${row.label}-${idx}`}
                 ref={(el) => {
                   optionRefs.current[itemIndex] = el;
-                  if (isDisabled && row.label === hoveredDisabledItem) {
-                    disabledItemRef.current = el;
-                  }
                 }}
                 type="button"
                 role="option"
