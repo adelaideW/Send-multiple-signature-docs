@@ -960,7 +960,7 @@ export const RemoveFolderModal: React.FC<{
         <button
           type="button"
           onClick={onConfirm}
-          className="px-5 py-2.5 rounded-lg text-[14px] font-bold text-white bg-[#e4633c] hover:opacity-95 transition-opacity"
+          className="px-5 py-2.5 rounded-lg text-[14px] font-bold text-white bg-[#C3402C] hover:opacity-95 transition-opacity"
         >
           Remove
         </button>
