@@ -916,3 +916,55 @@ export const MoveFolderModal: React.FC<{
     </ModalBackdrop>
   );
 };
+
+// ─── REMOVE FOLDER CONFIRMATION ──────────────────────────────────────────────
+
+const REMOVE_BODY =
+  'Removing this folder will delete its subfolder structure, but no employee documents will be deleted. All documents will be moved to the parent folder, which may change who has access to them.';
+
+export const RemoveFolderModal: React.FC<{
+  onConfirm: () => void;
+  onClose: () => void;
+}> = ({ onConfirm, onClose }) => (
+  <ModalBackdrop onClose={onClose}>
+    <div
+      className="bg-white rounded-[14px] shadow-2xl w-[min(100vw-48px,480px)] flex flex-col overflow-hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="remove-folder-title"
+    >
+      <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-1">
+        <h2 id="remove-folder-title" className="text-[18px] font-bold text-slate-900 leading-tight">
+          Remove folder
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+          aria-label="Close"
+        >
+          <X size={18} strokeWidth={2} />
+        </button>
+      </div>
+      <div className="px-6 pb-5 pt-3">
+        <p className="text-[14px] text-slate-900 leading-[1.5] font-normal">{REMOVE_BODY}</p>
+      </div>
+      <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-4 py-2.5 rounded-lg text-[13px] font-bold border border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="px-5 py-2.5 rounded-lg text-[14px] font-bold text-white bg-[#e4633c] hover:opacity-95 transition-opacity"
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  </ModalBackdrop>
+);

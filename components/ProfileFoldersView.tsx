@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
 import CreateProfileFolderPage from './CreateProfileFolderPage';
-import { RenameFolderModal, SetPermissionModal, MoveFolderModal } from './FolderActionModals';
+import { RenameFolderModal, SetPermissionModal, MoveFolderModal, RemoveFolderModal } from './FolderActionModals';
 import {
   addChildFolder,
   canCreateFolderUnderParent,
@@ -381,7 +381,7 @@ const ProfileFoldersView: React.FC<{
   // Action dropdown + modals
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
-  const [activeModal, setActiveModal] = useState<{ type: 'rename' | 'set_permission' | 'move' | 'edit'; folderId: string } | null>(null);
+  const [activeModal, setActiveModal] = useState<{ type: 'rename' | 'set_permission' | 'move' | 'edit' | 'remove'; folderId: string } | null>(null);
   const dropdownMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -768,8 +768,7 @@ const ProfileFoldersView: React.FC<{
                   type="button"
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-[14px] text-[#e4633c] hover:bg-red-50 transition-colors"
                   onClick={() => {
-                    setFolderRoot((r) => removeFolderById(r, openDropdownId));
-                    if (selectedFolderId === openDropdownId) setSelectedFolderId('all');
+                    setActiveModal({ type: 'remove', folderId: openDropdownId });
                     setOpenDropdownId(null);
                     setDropdownPos(null);
                   }}
@@ -837,6 +836,19 @@ const ProfileFoldersView: React.FC<{
           setEditingFolderId(activeModal.folderId);
           setActiveModal(null);
           return null;
+        }
+        if (activeModal.type === 'remove') {
+          return (
+            <RemoveFolderModal
+              onClose={() => setActiveModal(null)}
+              onConfirm={() => {
+                const id = activeModal.folderId;
+                setFolderRoot((r) => removeFolderById(r, id));
+                if (selectedFolderId === id) setSelectedFolderId('all');
+                setActiveModal(null);
+              }}
+            />
+          );
         }
         return null;
       })()}
