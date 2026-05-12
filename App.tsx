@@ -3,7 +3,7 @@ import { PortfolioReturnLink } from './components/PortfolioReturnLink';
 import { Check, X } from 'lucide-react';
 import Header from './components/Header';
 import ToolsSidePanel from './components/ToolsSidePanel';
-import { EmployeeHeaderSection, EmployeeDocumentsSection } from './components/EmployeeProfile';
+import { EmployeeHeaderSection, EmployeeDocumentsSection, type ActionPacketRow } from './components/EmployeeProfile';
 import EnvelopeCreator from './components/EnvelopeCreator';
 import TemplateEditor from './components/TemplateEditor';
 import EnvelopeDetailsView from './components/EnvelopeDetailsView';
@@ -263,6 +263,9 @@ const App: React.FC = () => {
 
   // Persistent Envelope Creation State
   const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
+  // Envelopes sent in-session that include Kale George ("u-kale") as a "Needs to complete" recipient.
+  // Surfaced in the Employee profile → Action required tab so the prototype reflects the just-sent envelope.
+  const [kaleActionRequiredPackets, setKaleActionRequiredPackets] = useState<ActionPacketRow[]>([]);
 
   const syncDocumentsHubTab = useCallback((tab: string) => {
     setDocumentsHubTab(tab);
@@ -382,11 +385,39 @@ const App: React.FC = () => {
     );
   }, []);
 
+  const recordKaleActionRequiredIfRecipient = useCallback(
+    (envelopeName: string, st: EnvelopeState) => {
+      const kaleIsRecipient = st.recipients.some(
+        (r: any) => r?.user?.id === 'u-kale' && r?.action === 'Needs to complete'
+      );
+      if (!kaleIsRecipient) return;
+      const ts = new Date().toISOString();
+      const docs = childrenFromEnvelopeState(st);
+      const packet: ActionPacketRow = {
+        id: `kale-pkt-${Date.now()}`,
+        name: envelopeName,
+        status: 'Yet to sign',
+        dotClass: 'bg-slate-400',
+        lastModified: ts,
+        children: docs.map((d, i) => ({
+          id: `kale-${d.id}-${i}`,
+          name: d.name,
+          status: 'Yet to sign',
+          dotClass: 'bg-slate-400',
+          needsKaleSignature: true,
+        })),
+      };
+      setKaleActionRequiredPackets((prev) => [packet, ...prev]);
+    },
+    []
+  );
+
   const handleEnvelopeContinue = (name: string) => {
     const editId = editingPacketIdRef.current;
     const prevRow = editId ? packetRows.find((r) => r.id === editId) : undefined;
     if (prevRow?.status === 'correcting') {
       applyResendToInProgress(editId!, name);
+      recordKaleActionRequiredIfRecipient(name, envelopeState);
       editingPacketIdRef.current = null;
       setCreatorCorrectingFlow(false);
       setEnvelopeState(INITIAL_ENVELOPE_STATE);
@@ -399,6 +430,7 @@ const App: React.FC = () => {
       setShowSuccessToast(true);
       return;
     }
+    recordKaleActionRequiredIfRecipient(name, envelopeState);
     setSentEnvelopeName(name);
     setShowSuccessToast(true);
     setEnvelopeState(INITIAL_ENVELOPE_STATE);
@@ -649,6 +681,7 @@ const App: React.FC = () => {
                     setViewByDocuments={setViewByDocuments}
                     profileFolderRoot={profileFolderRoot}
                     viewMode={currentView}
+                    extraActionRequiredPackets={kaleActionRequiredPackets}
                   />
                 </div>
               </>

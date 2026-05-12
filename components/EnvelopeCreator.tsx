@@ -174,6 +174,7 @@ const TEMPLATES = [
 ];
 
 const MOCK_USERS = [
+  { id: 'u-kale', name: 'Kale George', email: 'kale.george@acme.com' },
   { id: 'u1', name: 'David Gonzales', email: 'david.g@acme.com' },
   { id: 'u2', name: 'Sarah Jenkins', email: 'sarah.j@acme.com' },
   { id: 'u3', name: 'Michael Chen', email: 'm.chen@acme.com' },

@@ -117,11 +117,13 @@ interface DocumentsSectionProps {
   setViewByDocuments: (val: boolean) => void;
   profileFolderRoot?: ProfileFolderNode;
   viewMode?: 'admin' | 'employee';
+  /** Envelope packets sent in-session that include Kale George as a "Needs to complete" recipient. */
+  extraActionRequiredPackets?: ActionPacketRow[];
 }
 
 type ProfileDocTab = 'action_required' | 'documents';
 
-interface ActionChildRow {
+export interface ActionChildRow {
   id: string;
   name: string;
   status: string;
@@ -130,7 +132,7 @@ interface ActionChildRow {
   needsKaleSignature: boolean;
 }
 
-interface ActionPacketRow {
+export interface ActionPacketRow {
   id: string;
   name: string;
   status: string;
@@ -183,10 +185,8 @@ const ACTION_REQUIRED_PACKETS: ActionPacketRow[] = [
   },
 ];
 
-const ACTION_REQUIRED_BADGE = ACTION_REQUIRED_PACKETS.reduce(
-  (n, p) => n + p.children.filter((c) => c.needsKaleSignature).length,
-  0
-);
+const countPendingKaleSignatures = (packets: ActionPacketRow[]): number =>
+  packets.reduce((n, p) => n + p.children.filter((c) => c.needsKaleSignature).length, 0);
 
 /** Left profile rail (prototype: only Documents is active; matches reference layout). */
 const PROFILE_LEFT_NAV_PRIMARY = [
@@ -591,7 +591,16 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   setViewByDocuments,
   profileFolderRoot,
   viewMode = 'admin',
+  extraActionRequiredPackets,
 }) => {
+  const actionRequiredPackets = useMemo<ActionPacketRow[]>(
+    () => [...(extraActionRequiredPackets ?? []), ...ACTION_REQUIRED_PACKETS],
+    [extraActionRequiredPackets]
+  );
+  const actionRequiredBadge = useMemo(
+    () => countPendingKaleSignatures(actionRequiredPackets),
+    [actionRequiredPackets]
+  );
   const profileTab: ProfileDocTab = viewByDocuments ? 'documents' : 'action_required';
   const setProfileTab = useCallback(
     (t: ProfileDocTab) => {
@@ -732,7 +741,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                   profileTab === 'action_required' ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
                 }`}
               >
-                {ACTION_REQUIRED_BADGE}
+                {actionRequiredBadge}
               </span>
             </button>
             <button
@@ -908,7 +917,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                 </tr>
               </thead>
               <tbody className="text-[13px] text-slate-700">
-                {ACTION_REQUIRED_PACKETS.map((packet) => {
+                {actionRequiredPackets.map((packet) => {
                   const pending = packet.children.filter((c) => c.needsKaleSignature);
                   if (pending.length === 0) return null;
                   const open = expandedPackets[packet.id] ?? true;
