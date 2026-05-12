@@ -13,7 +13,7 @@ import GeminiAssistant from './components/GeminiAssistant';
 import { MOCK_EMPLOYEE, ENVELOPE_NAME_MAX_LENGTH } from './constants';
 import { SNACKBAR_AUTO_DISMISS_MS } from './constants/snackbar';
 import type { UploadedFileItem } from './types';
-import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus } from './components/EnvelopesListView';
+import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus, EnvelopeRecipientRow } from './components/EnvelopesListView';
 import { cloneInitialEnvelopeRows } from './components/EnvelopesListView';
 import type { DocumentReviewFlow } from './components/DocumentReviewView';
 import { createInitialProfileFolderRoot, type ProfileFolderNode } from './utils/profileFolderUtils';
@@ -116,6 +116,52 @@ function computeDraftDisplayTitle(st: EnvelopeState): string {
     return n.length > 50 ? `${n.slice(0, 47)}...` : n;
   }
   return 'Untitled draft';
+}
+
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+/** Format a Date as M/D/YYYY h:mm AM/PM for the envelope-details "Sent on" column. */
+function formatRecipientSentOn(d: Date): string {
+  const date = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+  const hours = d.getHours();
+  const minutes = d.getMinutes();
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const displayHour = ((hours + 11) % 12) + 1;
+  const displayMinute = minutes < 10 ? `0${minutes}` : `${minutes}`;
+  return `${date} ${displayHour}:${displayMinute} ${period}`;
+}
+
+/** Map the envelope creator's recipient slots into the envelope-details recipient row shape. */
+function recipientsForDetails(st: EnvelopeState, sentAt: Date): EnvelopeRecipientRow[] {
+  const sentOn = formatRecipientSentOn(sentAt);
+  const filled = st.recipients.filter((r: any) => r && r.user);
+  const groupsById = new Map<string, number>();
+  if (st.signingOrderEnabled && st.signingOrderGroups.length > 0) {
+    st.signingOrderGroups.forEach((group, idx) => {
+      group.forEach((id) => groupsById.set(id, idx + 1));
+    });
+  }
+  return filled.map((r: any, i: number): EnvelopeRecipientRow => {
+    const name = r.user?.name ?? `Recipient ${i + 1}`;
+    const order = groupsById.get(r.id) ?? (st.signingOrderEnabled ? i + 1 : 1);
+    const isCC = r.action === 'CC recipient';
+    return {
+      id: r.id,
+      order,
+      name,
+      email: r.user?.email ?? '',
+      initials: initialsFromName(name),
+      status: 'In progress',
+      action: isCC ? 'To view' : 'To sign',
+      sentOn,
+      completedOn: '—',
+    };
+  });
 }
 
 function childrenFromEnvelopeState(st: EnvelopeState): EnvelopeDocumentRow[] {
@@ -445,12 +491,14 @@ const App: React.FC = () => {
    */
   const recordSentEnvelopeInDocuments = useCallback(
     (envelopeName: string, st: EnvelopeState, editingId: string | null) => {
-      const ts = new Date().toISOString();
+      const now = new Date();
+      const ts = now.toISOString();
       const children = childrenFromEnvelopeState(st).map((c) => ({
         ...c,
         status: 'yet to sign' as DocumentSigningStatus,
         lastModified: ts,
       }));
+      const recipientRows = recipientsForDetails(st, now);
       setPacketRows((prev) => {
         if (editingId) {
           const idx = prev.findIndex((r) => r.id === editingId);
@@ -462,6 +510,7 @@ const App: React.FC = () => {
               status: 'in progress' as EnvelopeStatus,
               lastModified: ts,
               children: children.length > 0 ? children : next[idx].children,
+              recipients: recipientRows.length > 0 ? recipientRows : next[idx].recipients,
             };
             return next;
           }
@@ -473,6 +522,7 @@ const App: React.FC = () => {
           lastModified: ts,
           adminIsSigner: true,
           children: children.length > 0 ? children : undefined,
+          recipients: recipientRows.length > 0 ? recipientRows : undefined,
         };
         return [row, ...prev];
       });
@@ -804,6 +854,7 @@ const App: React.FC = () => {
               name: c.name,
               status: selectedPacket.status === 'voided' ? ('voided' as DocumentSigningStatus) : c.status,
             }))}
+            recipients={selectedPacket.recipients}
             isVoided={selectedPacket.status === 'voided'}
             onExit={handleExitEnvelopeDetails}
             onSign={() => startSignFlow(selectedPacket.id)}

@@ -46,6 +46,20 @@ export interface EnvelopeDocumentRow {
   lastModified: string;
 }
 
+/** Recipient row shape used by both the Envelope Details view and any newly-sent envelopes. */
+export interface EnvelopeRecipientRow {
+  id: string;
+  order: number;
+  name: string;
+  email: string;
+  avatar?: string;
+  initials?: string;
+  status: 'Completed' | 'In progress' | 'Waiting';
+  action: 'To sign' | 'To view' | '—';
+  sentOn: string;
+  completedOn: string;
+}
+
 export interface EnvelopeTableRow {
   id: string;
   name: string;
@@ -54,6 +68,8 @@ export interface EnvelopeTableRow {
   /** When false, "voided" envelopes are hidden unless "Show voided" is on */
   adminIsSigner: boolean;
   children?: EnvelopeDocumentRow[];
+  /** Recipients captured at send time so the details view shows the real list, not the seeded mock. */
+  recipients?: EnvelopeRecipientRow[];
 }
 
 const DANGER = '#B03E1E';

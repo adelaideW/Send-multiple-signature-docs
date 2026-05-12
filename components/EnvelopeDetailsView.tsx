@@ -17,26 +17,16 @@ import {
   Share2,
   X,
 } from 'lucide-react';
-import type { EnvelopeStatus, DocumentSigningStatus } from './EnvelopesListView';
+import type { EnvelopeStatus, DocumentSigningStatus, EnvelopeRecipientRow } from './EnvelopesListView';
 import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
 import SendReminderModal from './SendReminderModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
 
-export interface DetailRecipientRow {
-  id: string;
-  order: number;
-  name: string;
-  email: string;
-  avatar?: string;
-  initials?: string;
-  status: 'Completed' | 'In progress' | 'Waiting';
-  action: 'To sign' | 'To view' | '—';
-  sentOn: string;
-  completedOn: string;
-}
+/** Backwards-compatible alias — recipient row shape now lives on `EnvelopesListView`. */
+export type DetailRecipientRow = EnvelopeRecipientRow;
 
-const DEFAULT_RECIPIENTS: DetailRecipientRow[] = [
+const DEFAULT_RECIPIENTS: EnvelopeRecipientRow[] = [
   {
     id: 'r1',
     order: 1,
@@ -131,7 +121,7 @@ interface EnvelopeDetailsViewProps {
   sentOn: string;
   sentBy: string;
   documents: { id: string; name: string; status: DocumentSigningStatus }[];
-  recipients?: DetailRecipientRow[];
+  recipients?: EnvelopeRecipientRow[];
   isVoided?: boolean;
   onExit: () => void;
   onSign?: () => void;
@@ -154,7 +144,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
   sentOn,
   sentBy,
   documents,
-  recipients = DEFAULT_RECIPIENTS,
+  recipients,
   isVoided = false,
   onExit,
   onSign,
@@ -162,7 +152,10 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
   onResend,
 }) => {
   const badge = headerBadgeForStatus(packetStatus);
-  const recipientRows = isVoided ? recipients.map((r) => ({ ...r, action: '—' as const })) : recipients;
+  const effectiveRecipients = recipients && recipients.length > 0 ? recipients : DEFAULT_RECIPIENTS;
+  const recipientRows = isVoided
+    ? effectiveRecipients.map((r) => ({ ...r, action: '—' as const }))
+    : effectiveRecipients;
 
   const showSign = packetStatus !== 'voided' && packetStatus !== 'completed' && packetStatus !== 'draft' && packetStatus !== 'correcting';
   const canSign = showSign && adminIsSigner;
