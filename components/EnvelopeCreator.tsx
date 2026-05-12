@@ -802,7 +802,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const signingOrderGroups: string[][] = persistentState?.signingOrderGroups ?? [];
   const customTemplates: Array<{ name: string; body: string }> = persistentState?.customTemplates ?? [];
   const customMessageSubject = persistentState?.customMessageSubject ?? 'Action required for documents';
-  const customMessageBody = persistentState?.customMessageBody ?? 'Please review and send the documents\n• {Document names}';
+  const customMessageBody = persistentState?.customMessageBody ?? 'Please review and complete the documents below\n• {Document names}';
   const advancedTags: string[] = persistentState?.advancedTags ?? [];
   const expirationEnabled = persistentState?.expirationEnabled ?? false;
   const expirationAfterPreset: ExpireAfterPreset = persistentState?.expirationAfterPreset ?? '5_days';
@@ -2367,7 +2367,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                 }}
                                 className={`w-full text-left px-5 py-3 text-sm font-semibold ${TEXT_LINK} hover:bg-slate-50 transition-colors`}
                               >
-                                Create a template
+                                Creating a one-off document
                               </button>
                             )}
                           </div>
@@ -2513,7 +2513,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                       <button type="button" onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>
                                     )}
                                   </div>
-                                  <div className="flex items-center space-x-3 relative">
+                                  <div className="flex items-start space-x-3 relative">
                                     <div
                                       draggable
                                       onDragStart={(e) => {
@@ -2526,13 +2526,15 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                         setDraggingRecipientId(null);
                                         setDropTargetZone(null);
                                       }}
-                                      className="shrink-0 p-2 cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50"
+                                      className="shrink-0 h-12 px-2 flex items-center justify-center cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50"
                                       title="Drag to reorder or combine signing steps"
                                     >
                                       <GripVertical size={20} />
                                     </div>
-                                    <div className="shrink-0 w-5 h-5 rounded-full bg-[#7A005D] text-white text-[11px] font-bold flex items-center justify-center shadow-sm">
-                                      {stepNum}
+                                    <div className="shrink-0 h-12 flex items-center justify-center">
+                                      <div className="w-5 h-5 rounded-full bg-[#7A005D] text-white text-[11px] font-bold flex items-center justify-center shadow-sm">
+                                        {stepNum}
+                                      </div>
                                     </div>
                                     <div className="flex-1 min-w-0 space-y-3">
                                       <div className="flex items-center space-x-3 relative min-w-0 flex-wrap sm:flex-nowrap">
@@ -2564,21 +2566,23 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                           </button>
                                           {recipientRowMenuId === recipient.id && (
                                             <div className="absolute right-0 top-full mt-1 z-[130] w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-xl text-left">
-                                              <button
-                                                type="button"
-                                                className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
-                                                onClick={() => {
-                                                  setRecipientRowMenuId(null);
-                                                  setExternalRecipientModal({
-                                                    slotId: recipient.id,
-                                                    email: recipient.user?.email || 'jane.smith@external-partner.com',
-                                                    fullName: recipient.user?.name || 'Jane Smith',
-                                                    title: 'Edit recipient',
-                                                  });
-                                                }}
-                                              >
-                                                Edit recipient
-                                              </button>
+                                              {recipient.user?.id?.startsWith('ext-') && (
+                                                <button
+                                                  type="button"
+                                                  className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
+                                                  onClick={() => {
+                                                    setRecipientRowMenuId(null);
+                                                    setExternalRecipientModal({
+                                                      slotId: recipient.id,
+                                                      email: recipient.user?.email || 'jane.smith@external-partner.com',
+                                                      fullName: recipient.user?.name || 'Jane Smith',
+                                                      title: 'Edit recipient',
+                                                    });
+                                                  }}
+                                                >
+                                                  Edit recipient
+                                                </button>
+                                              )}
                                               <button
                                                 type="button"
                                                 className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
@@ -2710,21 +2714,23 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                 </button>
                                 {recipientRowMenuId === recipient.id && (
                                   <div className="absolute right-0 top-full mt-1 z-[130] w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-xl text-left">
-                                    <button
-                                      type="button"
-                                      className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
-                                      onClick={() => {
-                                        setRecipientRowMenuId(null);
-                                        setExternalRecipientModal({
-                                          slotId: recipient.id,
-                                          email: recipient.user?.email || 'jane.smith@external-partner.com',
-                                          fullName: recipient.user?.name || 'Jane Smith',
-                                          title: 'Edit recipient',
-                                        });
-                                      }}
-                                    >
-                                      Edit recipient
-                                    </button>
+                                    {recipient.user?.id?.startsWith('ext-') && (
+                                      <button
+                                        type="button"
+                                        className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"
+                                        onClick={() => {
+                                          setRecipientRowMenuId(null);
+                                          setExternalRecipientModal({
+                                            slotId: recipient.id,
+                                            email: recipient.user?.email || 'jane.smith@external-partner.com',
+                                            fullName: recipient.user?.name || 'Jane Smith',
+                                            title: 'Edit recipient',
+                                          });
+                                        }}
+                                      >
+                                        Edit recipient
+                                      </button>
+                                    )}
                                     <button
                                       type="button"
                                       className="w-full px-4 py-2.5 text-left text-sm text-slate-900 hover:bg-slate-50"

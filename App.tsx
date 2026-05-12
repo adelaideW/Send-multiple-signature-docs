@@ -140,7 +140,7 @@ const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   signingOrderGroups: [],
   customTemplates: [],
   customMessageSubject: 'Action required for documents',
-  customMessageBody: 'Please review and send the documents\n• {Document names}',
+  customMessageBody: 'Please review and complete the documents below\n• {Document names}',
   advancedTags: [],
   expirationEnabled: false,
   expirationAfterPreset: '5_days',
