@@ -10,6 +10,9 @@ import {
 
 export const PRIMARY_PURPLE = '#7A005D';
 
+/** Cap envelope-name auto-fill at this many chars so the sub-header stays single-line. */
+export const ENVELOPE_NAME_MAX_LENGTH = 50;
+
 /** Folders under “All documents” — shared by the send-flow location picker and the employee profile Documents tab. */
 export type ProfileFolderLocation = { id: string; name: string; isDefault: boolean };
 

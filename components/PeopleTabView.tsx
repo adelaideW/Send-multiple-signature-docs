@@ -68,9 +68,17 @@ const ProgressBar: React.FC<{ completed: number; total: number }> = ({ completed
   );
 };
 
+/** Person handed off to the envelope creator when "Send document" is chosen from a row. */
+export interface SendDocumentPerson {
+  id: string;
+  name: string;
+  email: string;
+}
+
 interface PeopleTabViewProps {
   onGoHome: () => void;
-  onSendDocument?: () => void;
+  /** Optional `person` is supplied when the user picks "Send document" from a row dropdown so the creator can pre-fill the first recipient. */
+  onSendDocument?: (person?: SendDocumentPerson) => void;
   onProfileClick?: () => void;
   onNewTemplate?: () => void;
   onSendDocuments?: () => void;
@@ -328,11 +336,16 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                             
                             {activeMenuId === row.id && (
                               <div className="absolute right-0 top-full mt-1 w-60 bg-white border border-slate-200 rounded-xl shadow-xl z-[120] py-2 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                                <button 
-                                  onClick={() => { 
-                                    onSendDocument?.(); 
-                                    setActiveMenuId(null); 
-                                  }} 
+                                <button
+                                  onClick={() => {
+                                    const emailSlug = row.name.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
+                                    onSendDocument?.({
+                                      id: `person-${row.id}`,
+                                      name: row.name,
+                                      email: `${emailSlug || 'recipient'}@acme.com`,
+                                    });
+                                    setActiveMenuId(null);
+                                  }}
                                   className="w-full flex items-center space-x-4 px-5 py-3 text-slate-900 hover:bg-slate-50 transition-colors text-left"
                                 >
                                   <Send size={18} className="text-slate-800" />

@@ -50,7 +50,7 @@ import {
   Folder,
 } from 'lucide-react';
 import type { UploadedFileItem } from '../types';
-import { PROFILE_DOCUMENT_FOLDER_LOCATIONS } from '../constants';
+import { PROFILE_DOCUMENT_FOLDER_LOCATIONS, ENVELOPE_NAME_MAX_LENGTH } from '../constants';
 
 interface EnvelopeCreatorProps {
   onExit: () => void;
@@ -812,6 +812,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const expirationAlertPreset: AlertBeforePreset = persistentState?.expirationAlertPreset ?? 'do_not_send';
   const expirationAlertCustomAmount = Math.max(1, persistentState?.expirationAlertCustomAmount ?? 1);
   const expirationAlertCustomUnit: ExpirationTimeUnit = persistentState?.expirationAlertCustomUnit ?? 'day';
+  const envelopeName: string = persistentState?.envelopeName ?? '';
+  const envelopeNameTouched: boolean = persistentState?.envelopeNameTouched ?? false;
 
   const updateState = (updates: any) => {
     onUpdateState?.({
@@ -832,6 +834,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       expirationAlertPreset,
       expirationAlertCustomAmount,
       expirationAlertCustomUnit,
+      envelopeName,
+      envelopeNameTouched,
       ...updates
     });
   };
@@ -1307,6 +1311,99 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const hasDocuments = selectedTemplates.length > 0 || uploadedFiles.length > 0;
   const canContinue = hasDocuments;
 
+  /** Doc-derived envelope name, computed only when user hasn't manually edited it. */
+  const derivedEnvelopeName = useMemo(() => {
+    const docNames = [
+      ...selectedTemplates.map((t: string) => String(t).replace(/\.pdf$/i, '').trim()),
+      ...uploadedFiles.map((f: { name: string }) => f.name.replace(/\.pdf$/i, '').trim()),
+    ].filter((n) => n.length > 0);
+    if (docNames.length === 0) return '';
+    const joined = docNames.join('; ');
+    return joined.length > ENVELOPE_NAME_MAX_LENGTH
+      ? `${joined.slice(0, ENVELOPE_NAME_MAX_LENGTH - 1)}…`
+      : joined;
+  }, [selectedTemplates, uploadedFiles]);
+
+  /** What we render in the sub-header; falls back to the bracket placeholder when no docs + no edit. */
+  const displayedEnvelopeName = envelopeNameTouched
+    ? envelopeName || derivedEnvelopeName || '[Envelope Name]'
+    : derivedEnvelopeName || envelopeName || '[Envelope Name]';
+
+  const commitEnvelopeName = (next: string) => {
+    const trimmed = next.trim().slice(0, ENVELOPE_NAME_MAX_LENGTH);
+    if (trimmed === '') {
+      updateState({ envelopeName: '', envelopeNameTouched: false });
+    } else {
+      updateState({ envelopeName: trimmed, envelopeNameTouched: true });
+    }
+  };
+
+  const [isEditingEnvelopeName, setIsEditingEnvelopeName] = useState(false);
+  const [envelopeNameDraft, setEnvelopeNameDraft] = useState('');
+  const envelopeNameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (isEditingEnvelopeName) {
+      envelopeNameInputRef.current?.focus();
+      envelopeNameInputRef.current?.select();
+    }
+  }, [isEditingEnvelopeName]);
+
+  const beginEditingEnvelopeName = () => {
+    const seed = envelopeNameTouched
+      ? envelopeName
+      : derivedEnvelopeName || envelopeName || '';
+    setEnvelopeNameDraft(seed);
+    setIsEditingEnvelopeName(true);
+  };
+
+  const renderEnvelopeNameField = () => {
+    if (isEditingEnvelopeName) {
+      return (
+        <div className="flex items-center space-x-2">
+          <input
+            ref={envelopeNameInputRef}
+            type="text"
+            value={envelopeNameDraft}
+            onChange={(e) => setEnvelopeNameDraft(e.target.value.slice(0, ENVELOPE_NAME_MAX_LENGTH))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitEnvelopeName(envelopeNameDraft);
+                setIsEditingEnvelopeName(false);
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setIsEditingEnvelopeName(false);
+              }
+            }}
+            onBlur={() => {
+              commitEnvelopeName(envelopeNameDraft);
+              setIsEditingEnvelopeName(false);
+            }}
+            maxLength={ENVELOPE_NAME_MAX_LENGTH}
+            placeholder="[Envelope Name]"
+            aria-label="Envelope name"
+            className="text-sm font-bold text-slate-800 px-2 py-0.5 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-[#7A005D]/30 bg-white min-w-[200px]"
+          />
+          <span className="text-[11px] text-slate-400 tabular-nums">
+            {envelopeNameDraft.length}/{ENVELOPE_NAME_MAX_LENGTH}
+          </span>
+        </div>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={beginEditingEnvelopeName}
+        className="flex items-center space-x-2 group rounded-md px-1.5 py-0.5 hover:bg-slate-50 transition-colors"
+        title="Rename envelope"
+        aria-label="Edit envelope name"
+      >
+        <span className="text-sm font-bold text-slate-800 truncate max-w-[460px]">{displayedEnvelopeName}</span>
+        <Pencil size={14} className="text-slate-400 group-hover:text-slate-600" />
+      </button>
+    );
+  };
+
   const handleContinue = () => {
     if (!hasDocuments) return;
     const allRecipientsFilled = recipients.every((r) => r.user !== null);
@@ -1319,7 +1416,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       setCurrentStep('placement');
       setTimeout(() => setActiveCoachmark(1), 600);
     } else {
-      onContinue?.(selectedTemplates[0] || uploadedFiles[0]?.name || "[Envelope Name]");
+      const finalName =
+        (envelopeNameTouched && envelopeName.trim()) ||
+        derivedEnvelopeName ||
+        selectedTemplates[0] ||
+        uploadedFiles[0]?.name ||
+        '[Envelope Name]';
+      onContinue?.(finalName);
     }
   };
 
@@ -1727,8 +1830,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
         {/* Sub Header */}
         <div className="h-12 border-b border-slate-100 flex items-center justify-between px-4 shrink-0 bg-white">
           <div className="flex items-center space-x-2 ml-4">
-            <span className="text-sm font-bold text-slate-800">[Envelope Name]</span>
-            <Pencil size={14} className="text-slate-400 cursor-pointer" />
+            {renderEnvelopeNameField()}
           </div>
           <div className="flex items-center space-x-4 mr-4">
             <button type="button" onClick={exitSavingDraft} className="flex items-center space-x-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
@@ -2205,8 +2307,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
       <div className="h-12 border-b border-slate-100 flex items-center justify-between px-4 shrink-0 bg-white z-[90]">
         <div className="flex items-center space-x-2">
-          <span className="text-sm font-bold text-slate-800">[Envelope Name]</span>
-          <Pencil size={14} className="text-slate-400 cursor-pointer hover:text-slate-600" />
+          {renderEnvelopeNameField()}
         </div>
         <div className="flex items-center space-x-4">
           <button type="button" onClick={exitSavingDraft} className="flex items-center space-x-2 text-sm font-semibold text-slate-700 hover:text-slate-900">

@@ -8,9 +8,9 @@ import EnvelopeCreator from './components/EnvelopeCreator';
 import TemplateEditor from './components/TemplateEditor';
 import EnvelopeDetailsView from './components/EnvelopeDetailsView';
 import DocumentReviewView from './components/DocumentReviewView';
-import PeopleTabView from './components/PeopleTabView';
+import PeopleTabView, { type SendDocumentPerson } from './components/PeopleTabView';
 import GeminiAssistant from './components/GeminiAssistant';
-import { MOCK_EMPLOYEE } from './constants';
+import { MOCK_EMPLOYEE, ENVELOPE_NAME_MAX_LENGTH } from './constants';
 import { SNACKBAR_AUTO_DISMISS_MS } from './constants/snackbar';
 import type { UploadedFileItem } from './types';
 import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus } from './components/EnvelopesListView';
@@ -76,9 +76,34 @@ interface EnvelopeState {
     | 'custom';
   expirationAlertCustomAmount?: number;
   expirationAlertCustomUnit?: 'day' | 'week' | 'month' | 'year';
+  /** Human-readable envelope name. Auto-derived from doc names unless the user has manually edited it. */
+  envelopeName?: string;
+  /** True after the user has manually edited the envelope name; prevents auto-derivation from clobbering. */
+  envelopeNameTouched?: boolean;
+}
+
+/** Join template + uploaded doc names (stripping `.pdf`) with `; ` and truncate to `ENVELOPE_NAME_MAX_LENGTH`. */
+export function deriveEnvelopeNameFromDocs(
+  selectedTemplates: string[],
+  uploadedFiles: UploadedFileItem[]
+): string {
+  const docNames = [
+    ...selectedTemplates.map((t) => String(t).replace(/\.pdf$/i, '').trim()),
+    ...uploadedFiles.map((f) => f.name.replace(/\.pdf$/i, '').trim()),
+  ].filter((n) => n.length > 0);
+  if (docNames.length === 0) return '';
+  const joined = docNames.join('; ');
+  return joined.length > ENVELOPE_NAME_MAX_LENGTH
+    ? `${joined.slice(0, ENVELOPE_NAME_MAX_LENGTH - 1)}…`
+    : joined;
 }
 
 function computeDraftDisplayTitle(st: EnvelopeState): string {
+  if (st.envelopeNameTouched && st.envelopeName && st.envelopeName.trim()) {
+    return st.envelopeName.trim();
+  }
+  const derived = deriveEnvelopeNameFromDocs(st.selectedTemplates, st.uploadedFiles);
+  if (derived) return derived;
   const fromTemplates = st.selectedTemplates
     .map((t) => String(t).replace(/\.pdf$/i, ''))
     .join(', ');
@@ -149,6 +174,8 @@ const INITIAL_ENVELOPE_STATE: EnvelopeState = {
   expirationAlertPreset: 'do_not_send',
   expirationAlertCustomAmount: 1,
   expirationAlertCustomUnit: 'day',
+  envelopeName: '',
+  envelopeNameTouched: false,
 };
 
 const DraftSavedSnackbar: React.FC<{
@@ -412,6 +439,47 @@ const App: React.FC = () => {
     []
   );
 
+  /**
+   * Prepend a freshly-sent envelope to the Documents tab list so it shows up immediately,
+   * or promote a previously-saved draft row to "in progress" in place when applicable.
+   */
+  const recordSentEnvelopeInDocuments = useCallback(
+    (envelopeName: string, st: EnvelopeState, editingId: string | null) => {
+      const ts = new Date().toISOString();
+      const children = childrenFromEnvelopeState(st).map((c) => ({
+        ...c,
+        status: 'yet to sign' as DocumentSigningStatus,
+        lastModified: ts,
+      }));
+      setPacketRows((prev) => {
+        if (editingId) {
+          const idx = prev.findIndex((r) => r.id === editingId);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx],
+              name: envelopeName,
+              status: 'in progress' as EnvelopeStatus,
+              lastModified: ts,
+              children: children.length > 0 ? children : next[idx].children,
+            };
+            return next;
+          }
+        }
+        const row: EnvelopeTableRow = {
+          id: `sent-${Date.now()}`,
+          name: envelopeName,
+          status: 'in progress' as EnvelopeStatus,
+          lastModified: ts,
+          adminIsSigner: true,
+          children: children.length > 0 ? children : undefined,
+        };
+        return [row, ...prev];
+      });
+    },
+    []
+  );
+
   const handleEnvelopeContinue = (name: string) => {
     const editId = editingPacketIdRef.current;
     const prevRow = editId ? packetRows.find((r) => r.id === editId) : undefined;
@@ -431,6 +499,7 @@ const App: React.FC = () => {
       return;
     }
     recordKaleActionRequiredIfRecipient(name, envelopeState);
+    recordSentEnvelopeInDocuments(name, envelopeState, editingPacketIdRef.current);
     setSentEnvelopeName(name);
     setShowSuccessToast(true);
     setEnvelopeState(INITIAL_ENVELOPE_STATE);
@@ -610,11 +679,26 @@ const App: React.FC = () => {
         <PeopleTabView
           onGoHome={openDocumentsPeopleHub}
           onOpenDocumentsPeopleTab={openDocumentsPeopleHub}
-          onSendDocument={() => {
+          onSendDocument={(person?: SendDocumentPerson) => {
             editingPacketIdRef.current = null;
             setPdfPlacementSeed(false);
             setCreatorCorrectingFlow(false);
-            setEnvelopeState(INITIAL_ENVELOPE_STATE);
+            setEnvelopeState(
+              person
+                ? {
+                    ...INITIAL_ENVELOPE_STATE,
+                    recipients: [
+                      {
+                        id: '1',
+                        user: { id: person.id, name: person.name, email: person.email },
+                        action: 'Needs to complete',
+                        searchTerm: '',
+                        isActionDropdownOpen: false,
+                      },
+                    ],
+                  }
+                : INITIAL_ENVELOPE_STATE
+            );
             goToEnvelopeCreator('people_tab');
           }}
           onProfileClick={() => navigateTo('profile')}
