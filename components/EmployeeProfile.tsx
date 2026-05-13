@@ -1030,14 +1030,14 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                   // even though no signatures remain pending from her.
                   if (pending.length === 0 && !signedByKale) return null;
                   const open = expandedPackets[packet.id] ?? false;
-                  // Once Kale has signed but the envelope isn't fully completed,
-                  // surface "In Progress" on both the envelope row and any
-                  // still-pending document rows so the status matches the
-                  // multi-recipient signing state.
+                  // Action required reflects Kale's personal signing share,
+                  // not the envelope's multi-recipient state. Once she has
+                  // signed everything she needed to on this envelope, show
+                  // "Completed" on both the envelope row and any pending
+                  // document rows — even if other recipients are still
+                  // working through theirs.
                   const promoteToInProgress = (label: string) =>
-                    signedByKale && label.trim().toLowerCase() === 'yet to sign'
-                      ? 'In progress'
-                      : label;
+                    signedByKale ? 'Completed' : label;
                   const displayPacketStatus = promoteToInProgress(packet.status);
                   return (
                     <React.Fragment key={packet.id}>

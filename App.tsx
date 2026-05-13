@@ -643,6 +643,22 @@ const App: React.FC = () => {
     });
   }, []);
 
+  /**
+   * After a profile-driven sign flow, return to the employee's profile
+   * page (not the Documents hub). If "profile" isn't in the current
+   * history we fall back to the people tab so we never strand the user
+   * on a now-closed document review screen.
+   */
+  const trimToProfile = useCallback(() => {
+    setViewHistory((prev) => {
+      const i = prev.lastIndexOf('profile');
+      if (i >= 0) return prev.slice(0, i + 1);
+      const j = prev.indexOf('people_tab');
+      if (j >= 0) return [...prev.slice(0, j + 1), 'profile'];
+      return ['people_tab', 'profile'];
+    });
+  }, []);
+
   const openDocumentsPeopleHub = useCallback(() => {
     syncDocumentsHubTab('People');
     setViewHistory(['people_tab']);
@@ -759,8 +775,15 @@ const App: React.FC = () => {
         markKaleSignedForPacket(packetId);
       }
       setSignFlow(null);
-      syncDocumentsHubTab('Documents');
-      trimToPeopleTab();
+      // When Kale signs from her profile, drop her back on the profile
+      // (Action required is still her current tab). All other sign
+      // flows return to the Documents tab as before.
+      if (signerUserId === 'u-kale') {
+        trimToProfile();
+      } else {
+        syncDocumentsHubTab('Documents');
+        trimToPeopleTab();
+      }
     },
     [
       signFlow,
@@ -768,6 +791,7 @@ const App: React.FC = () => {
       deriveEnvelopeStatus,
       markKaleSignedForPacket,
       trimToPeopleTab,
+      trimToProfile,
       syncDocumentsHubTab,
     ]
   );
@@ -775,6 +799,7 @@ const App: React.FC = () => {
   const handleSignPartial = useCallback(
     (packetId: string, _completedDocIds: string[]) => {
       const ts = new Date().toISOString();
+      const signerUserId = signFlow?.signerUserId;
       // Partial sign means the signer hasn't finished. We intentionally leave
       // document statuses and the recipient row alone — only the envelope's
       // lastModified is bumped and we re-derive its status (which will stay
@@ -791,10 +816,14 @@ const App: React.FC = () => {
         })
       );
       setSignFlow(null);
-      syncDocumentsHubTab('Documents');
-      trimToPeopleTab();
+      if (signerUserId === 'u-kale') {
+        trimToProfile();
+      } else {
+        syncDocumentsHubTab('Documents');
+        trimToPeopleTab();
+      }
     },
-    [deriveEnvelopeStatus, trimToPeopleTab, syncDocumentsHubTab]
+    [signFlow, deriveEnvelopeStatus, trimToPeopleTab, trimToProfile, syncDocumentsHubTab]
   );
 
   const prefillStateFromDraftRow = (row: EnvelopeTableRow): EnvelopeState => {
