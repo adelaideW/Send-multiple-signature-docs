@@ -88,6 +88,20 @@ export interface EnvelopeTableRow {
   recipients?: EnvelopeRecipientRow[];
 }
 
+/**
+ * A single document that's been fully signed (its parent envelope is
+ * `completed`). Used to surface signed documents as standalone rows
+ * outside their envelope — in both the Documents hub and Kale's
+ * profile Documents tab.
+ */
+export interface CompletedEnvelopeDoc {
+  /** Stable unique id for the loose row — `${envelopeId}:${doc.id}`. */
+  rowId: string;
+  envelopeId: string;
+  envelopeName: string;
+  doc: EnvelopeDocumentRow;
+}
+
 const DANGER = '#B03E1E';
 
 const MOCK_ENVELOPES: EnvelopeTableRow[] = [
@@ -474,6 +488,12 @@ interface EnvelopesListViewProps {
   onEditEnvelope?: (packetId: string) => void;
   onSignEnvelope?: (packetId: string) => void;
   onResendEnvelope?: (packetId: string) => void;
+  /**
+   * Documents from fully-completed envelopes that should also be shown
+   * as standalone rows below the envelope list. The component still
+   * renders the parent envelope normally — these rows are additional.
+   */
+  completedEnvelopeDocs?: CompletedEnvelopeDoc[];
 }
 
 const btnOutline =
@@ -493,6 +513,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
   onEditEnvelope,
   onSignEnvelope,
   onResendEnvelope,
+  completedEnvelopeDocs = [],
 }) => {
   const [fallbackRows, setFallbackRows] = useState<EnvelopeTableRow[]>(() => structuredClone(MOCK_ENVELOPES));
   const rows = rowsProp ?? fallbackRows;
@@ -615,9 +636,34 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
     return [...list].sort((a, b) => compareRows(a, b, sortKey, sortDir));
   }, [rows, search, showVoided, sortKey, sortDir]);
 
+  /**
+   * Loose document rows surfaced below the envelope table: every doc
+   * inside a completed envelope is also rendered as its own row so
+   * users can interact with the signed deliverable directly.
+   */
+  const filteredLooseDocs = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = (completedEnvelopeDocs ?? []).filter((d) =>
+      !q ? true : d.doc.name.toLowerCase().includes(q) || d.envelopeName.toLowerCase().includes(q)
+    );
+    return [...list].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'lastModified') {
+        cmp = new Date(a.doc.lastModified).getTime() - new Date(b.doc.lastModified).getTime();
+      } else if (sortKey === 'name') {
+        cmp = a.doc.name.localeCompare(b.doc.name, undefined, { sensitivity: 'base' });
+      } else {
+        cmp = 0;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [completedEnvelopeDocs, search, sortKey, sortDir]);
+
   const visibleCount = useMemo(
-    () => rows.filter((r) => showVoided || r.status !== 'voided').length,
-    [rows, showVoided]
+    () =>
+      rows.filter((r) => showVoided || r.status !== 'voided').length +
+      filteredLooseDocs.length,
+    [rows, showVoided, filteredLooseDocs.length]
   );
 
   const SortHeader: React.FC<{ label: string; colKey: SortKey }> = ({ label, colKey }) => (
@@ -948,9 +994,60 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                   ))}
               </React.Fragment>
             ))}
+            {filteredLooseDocs.map((loose) => (
+              <tr
+                key={`loose-${loose.rowId}`}
+                className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors"
+              >
+                <td className="px-6 py-4 align-middle">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-[22px] shrink-0 inline-block" />
+                    <FileText size={18} className="text-slate-500 shrink-0" strokeWidth={2} />
+                    <button
+                      type="button"
+                      className="font-bold truncate max-w-[min(280px,100%)] min-w-0 cursor-pointer text-left bg-transparent border-none p-0 hover:underline"
+                      style={{ color: PRIMARY_PURPLE }}
+                      title={`${loose.doc.name} — from ${loose.envelopeName}`}
+                      onClick={() => setPreviewDoc({ name: loose.doc.name })}
+                    >
+                      {loose.doc.name}
+                    </button>
+                  </div>
+                </td>
+                <td className="px-4 py-4 align-middle">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${documentStatusDotClass('completed')}`} />
+                    <span className="font-semibold capitalize">Completed</span>
+                  </div>
+                </td>
+                <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
+                  {formatLastModified(loose.doc.lastModified)}
+                </td>
+                <td className="px-6 py-4 align-middle text-right whitespace-nowrap">
+                  <div className="inline-flex items-center justify-end gap-1 flex-nowrap">
+                    <button
+                      type="button"
+                      className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
+                      aria-label="View document"
+                      onClick={() => setPreviewDoc({ name: loose.doc.name })}
+                    >
+                      <Eye size={18} strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      className="p-2 text-slate-700 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
+                      aria-label="Download document"
+                      onClick={() => setDocSnack('Document downloaded')}
+                    >
+                      <Download size={18} strokeWidth={2} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
-        {filteredRoots.length === 0 && (
+        {filteredRoots.length === 0 && filteredLooseDocs.length === 0 && (
           <div className="py-20 text-center text-slate-500 text-sm font-medium">No documents match your filters.</div>
         )}
       </div>

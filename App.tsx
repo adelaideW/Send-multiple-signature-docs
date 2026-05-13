@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { PortfolioReturnLink } from './components/PortfolioReturnLink';
 import { Check, X } from 'lucide-react';
 import Header from './components/Header';
@@ -13,7 +13,7 @@ import GeminiAssistant from './components/GeminiAssistant';
 import { MOCK_EMPLOYEE, ENVELOPE_NAME_MAX_LENGTH } from './constants';
 import { SNACKBAR_AUTO_DISMISS_MS } from './constants/snackbar';
 import type { UploadedFileItem } from './types';
-import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus, EnvelopeRecipientRow } from './components/EnvelopesListView';
+import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus, EnvelopeRecipientRow, CompletedEnvelopeDoc } from './components/EnvelopesListView';
 import { cloneInitialEnvelopeRows } from './components/EnvelopesListView';
 import type { DocumentReviewFlow } from './components/DocumentReviewView';
 import { createInitialProfileFolderRoot, type ProfileFolderNode } from './utils/profileFolderUtils';
@@ -379,6 +379,65 @@ const App: React.FC = () => {
   }, [syncDocumentsHubTab]);
 
   const selectedPacket = selectedPacketId ? packetRows.find((r) => r.id === selectedPacketId) : undefined;
+
+  /**
+   * Track which envelopes have reached the "completed" status — every
+   * required signer is done and every document is `completed`. Used to
+   * filter completed envelopes out of Kale's Action required tab.
+   */
+  const completedEnvelopeIds = useMemo<Set<string>>(() => {
+    const out = new Set<string>();
+    for (const r of packetRows) {
+      if (r.status === 'completed') out.add(r.id);
+    }
+    return out;
+  }, [packetRows]);
+
+  /**
+   * Flatten every completed envelope's child documents into standalone
+   * rows so the Documents hub and Kale's profile Documents tab can
+   * surface them outside their envelope. `voided`/`draft` children are
+   * skipped — they aren't real "signed deliverables".
+   */
+  const completedEnvelopeDocs = useMemo<CompletedEnvelopeDoc[]>(() => {
+    const out: CompletedEnvelopeDoc[] = [];
+    for (const r of packetRows) {
+      if (r.status !== 'completed') continue;
+      for (const c of r.children ?? []) {
+        if (c.status === 'voided' || c.status === 'draft') continue;
+        out.push({
+          rowId: `${r.id}:${c.id}`,
+          envelopeId: r.id,
+          envelopeName: r.name,
+          doc: c,
+        });
+      }
+    }
+    return out;
+  }, [packetRows]);
+
+  /**
+   * Subset of completed-envelope docs that Kale was a recipient of, so
+   * her profile only shows docs that were actually sent to her.
+   */
+  const completedEnvelopeDocsForKale = useMemo<CompletedEnvelopeDoc[]>(() => {
+    const out: CompletedEnvelopeDoc[] = [];
+    for (const r of packetRows) {
+      if (r.status !== 'completed') continue;
+      const isKaleRecipient = (r.recipients ?? []).some((rcp) => rcp.userId === 'u-kale');
+      if (!isKaleRecipient) continue;
+      for (const c of r.children ?? []) {
+        if (c.status === 'voided' || c.status === 'draft') continue;
+        out.push({
+          rowId: `${r.id}:${c.id}`,
+          envelopeId: r.id,
+          envelopeName: r.name,
+          doc: c,
+        });
+      }
+    }
+    return out;
+  }, [packetRows]);
 
   const currentPage = viewHistory[viewHistory.length - 1];
 
@@ -939,6 +998,7 @@ const App: React.FC = () => {
           profileFolderRoot={profileFolderRoot}
           onProfileFolderRootChange={setProfileFolderRoot}
           viewMode={currentView}
+          completedEnvelopeDocs={completedEnvelopeDocs}
         />
       )}
 
@@ -981,6 +1041,8 @@ const App: React.FC = () => {
                     viewMode={currentView}
                     extraActionRequiredPackets={kaleActionRequiredPackets}
                     kaleSignedEnvelopeIds={kaleSignedEnvelopeIds}
+                    completedEnvelopeIds={completedEnvelopeIds}
+                    completedEnvelopeDocs={completedEnvelopeDocsForKale}
                   />
                 </div>
               </>

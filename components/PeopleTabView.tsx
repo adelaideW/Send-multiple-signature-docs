@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import TemplatesLibraryView from './TemplatesLibraryView';
 import ProfileFoldersView from './ProfileFoldersView';
-import EnvelopesListView, { type EnvelopeTableRow } from './EnvelopesListView';
+import EnvelopesListView, { type EnvelopeTableRow, type CompletedEnvelopeDoc } from './EnvelopesListView';
 import ToolsSidePanel from './ToolsSidePanel';
 import SendReminderModal from './SendReminderModal';
 import type { ProfileFolderNode } from '../utils/profileFolderUtils';
@@ -88,6 +88,7 @@ interface PeopleTabViewProps {
   onEditDocumentPacket?: (packetId: string) => void;
   onSignDocumentPacket?: (packetId: string) => void;
   onResendEnvelope?: (packetId: string) => void;
+  completedEnvelopeDocs?: CompletedEnvelopeDoc[];
   hubTab?: string;
   onHubTabChange?: (tab: string) => void;
   onOpenDocumentsPeopleTab?: () => void;
@@ -110,6 +111,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   onEditDocumentPacket,
   onSignDocumentPacket,
   onResendEnvelope,
+  completedEnvelopeDocs,
   hubTab: hubTabProp,
   onHubTabChange,
   onOpenDocumentsPeopleTab,
@@ -409,6 +411,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                 onEditEnvelope={onEditDocumentPacket}
                 onSignEnvelope={onSignDocumentPacket}
                 onResendEnvelope={onResendEnvelope}
+                completedEnvelopeDocs={completedEnvelopeDocs}
               />
             </div>
           )}

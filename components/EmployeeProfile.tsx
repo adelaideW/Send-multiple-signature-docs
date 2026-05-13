@@ -31,6 +31,7 @@ import { PRIMARY_PURPLE } from '../constants';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
 import type { ProfileFolderNode } from '../utils/profileFolderUtils';
+import type { CompletedEnvelopeDoc } from './EnvelopesListView';
 
 interface EmployeeProfileProps {
   employee: Employee;
@@ -135,6 +136,18 @@ interface DocumentsSectionProps {
    * longer contribute to the pending-signature badge.
    */
   kaleSignedEnvelopeIds?: ReadonlySet<string>;
+  /**
+   * Envelope ids whose status is "completed" (every recipient is done).
+   * Completed envelopes are dropped from the Action required list so the
+   * row doesn't linger after the work is finished.
+   */
+  completedEnvelopeIds?: ReadonlySet<string>;
+  /**
+   * Signed documents from completed envelopes that Kale was a recipient
+   * of. Surfaced at the root of the Documents tab as loose files,
+   * outside any of the folder structure.
+   */
+  completedEnvelopeDocs?: CompletedEnvelopeDoc[];
 }
 
 type ProfileDocTab = 'action_required' | 'documents';
@@ -561,13 +574,14 @@ function buildDocumentsListRows(
   tree: ProfileRootFolder[],
   navPath: string[],
   showArchive: boolean,
-  search: string
+  search: string,
+  looseRootFiles: Array<{ id: string; name: string; lastModified: string }> = []
 ): DocumentsListRow[] {
   const q = search.trim().toLowerCase();
   const match = (name: string) => !q || name.toLowerCase().includes(q);
 
   if (navPath.length === 0) {
-    const rows: DocumentsListRow[] = tree.map((root) => {
+    const folderRows: DocumentsListRow[] = tree.map((root) => {
       const dates: string[] = [
         ...root.files.map((f) => f.lastModified),
         ...root.subfolders.flatMap((s) => s.files.map((f) => f.lastModified)),
@@ -582,7 +596,16 @@ function buildDocumentsListRows(
         navPath: [root.id],
       };
     });
-    return rows.filter((r) => match(r.name));
+    // Loose files from completed envelopes render after the folder
+    // rows at the root level — they live outside the folder structure.
+    const looseRows: DocumentsListRow[] = looseRootFiles.map((f) => ({
+      id: f.id,
+      kind: 'file',
+      name: f.name,
+      dateLabel: formatProfileTs(f.lastModified),
+      archived: false,
+    }));
+    return [...folderRows.filter((r) => match(r.name)), ...looseRows.filter((r) => match(r.name))];
   }
 
   const root = tree.find((t) => t.id === navPath[0]);
@@ -658,6 +681,8 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   viewMode = 'admin',
   extraActionRequiredPackets,
   kaleSignedEnvelopeIds,
+  completedEnvelopeIds,
+  completedEnvelopeDocs,
 }) => {
   const signedEnvelopeIds = kaleSignedEnvelopeIds ?? new Set<string>();
   const actionRequiredPackets = useMemo<ActionPacketRow[]>(
@@ -665,7 +690,12 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
       const merged = [...(extraActionRequiredPackets ?? []), ...ACTION_REQUIRED_PACKETS];
       // Newest envelope first, regardless of status. Ties keep original order
       // (in-session sent rows already arrive ahead of the seeded ones).
+      // Drop any envelope that's already fully completed — the work is
+      // done and the doc has moved to the Documents tab as a loose row.
+      const isCompleted = (envelopeId?: string) =>
+        !!envelopeId && !!completedEnvelopeIds && completedEnvelopeIds.has(envelopeId);
       return merged
+        .filter((p) => !isCompleted(p.envelopeId))
         .map((p, i) => ({ p, i }))
         .sort((a, b) => {
           const r = packetLastModifiedTs(b.p) - packetLastModifiedTs(a.p);
@@ -673,7 +703,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
         })
         .map(({ p }) => p);
     },
-    [extraActionRequiredPackets]
+    [extraActionRequiredPackets, completedEnvelopeIds]
   );
   const actionRequiredBadge = useMemo(
     () => countPendingKaleSignatures(actionRequiredPackets, signedEnvelopeIds),
@@ -751,11 +781,28 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
     if (viewMode === 'admin') return buildProfileDocsTreeForAdmin(PROFILE_DOCS_TREE, profileFolderRoot);
     return buildProfileDocsTreeForKale(PROFILE_DOCS_TREE, profileFolderRoot);
   }, [profileFolderRoot, viewMode]);
-  const documentsTabTotal = useMemo(() => countListedDocuments(docsTree, false), [docsTree]);
+  /**
+   * Map every completed-envelope doc into a flat root-level file row.
+   * The id is namespaced so it never collides with seed file ids and
+   * the click handler can recognize it as a loose preview.
+   */
+  const looseRootFiles = useMemo(
+    () =>
+      (completedEnvelopeDocs ?? []).map((d) => ({
+        id: `completed-${d.rowId}`,
+        name: d.doc.name,
+        lastModified: d.doc.lastModified,
+      })),
+    [completedEnvelopeDocs]
+  );
+  const documentsTabTotal = useMemo(
+    () => countListedDocuments(docsTree, false) + looseRootFiles.length,
+    [docsTree, looseRootFiles.length]
+  );
 
   const visibleDocumentRows = useMemo(
-    () => buildDocumentsListRows(docsTree, docNavPath, showArchive, listSearch),
-    [docsTree, docNavPath, showArchive, listSearch]
+    () => buildDocumentsListRows(docsTree, docNavPath, showArchive, listSearch, looseRootFiles),
+    [docsTree, docNavPath, showArchive, listSearch, looseRootFiles]
   );
 
   const docCrumbs = useMemo(() => breadcrumbForPath(docsTree, docNavPath), [docsTree, docNavPath]);
