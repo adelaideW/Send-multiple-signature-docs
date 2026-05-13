@@ -359,10 +359,24 @@ const TEXT_LINK = 'text-[#1D4ED8]';
 
 const RECIPIENT_FIELD_PALETTE = ['#6DB3E8', '#9BB8E8', '#7DC9B8', '#E8A4B8', '#E8C97A', '#88C5D8', '#D8B8E8'];
 
-function recipientFieldAccent(rid: string): string {
+/** Convert a `#RRGGBB` hex to an `rgba()` string with the given alpha so we can paint soft tints inline. */
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return hex;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function hashString(s: string): number {
   let h = 0;
-  for (let i = 0; i < rid.length; i++) h = (h * 31 + rid.charCodeAt(i)) | 0;
-  return RECIPIENT_FIELD_PALETTE[Math.abs(h) % RECIPIENT_FIELD_PALETTE.length];
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function recipientFieldAccent(rid: string): string {
+  return RECIPIENT_FIELD_PALETTE[hashString(rid) % RECIPIENT_FIELD_PALETTE.length];
 }
 
 interface RecipientSlot {
@@ -963,6 +977,19 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       const i = recipients.findIndex((r) => r.id === rid);
       if (i < 0) return 'Recipient';
       return recipients[i].user?.name ?? `Recipient ${i + 1}`;
+    },
+    [recipients]
+  );
+
+  /**
+   * Resolve a recipient slot id to a stable accent hex, keyed off the assigned user id when present
+   * so the same person keeps the same color regardless of which slot they're sitting in.
+   */
+  const accentForSlot = useCallback(
+    (rid: string) => {
+      const slot = recipients.find((r) => r.id === rid);
+      const key = slot?.user?.id ?? rid;
+      return recipientFieldAccent(key);
     },
     [recipients]
   );
@@ -1984,7 +2011,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                 <div className="absolute inset-0 pointer-events-none p-24">
                   <div className="relative w-full h-full pointer-events-auto">
                     {placementFields.map((f) => {
-                      const accent = recipientFieldAccent(f.recipientSlotId);
+                      const accent = accentForSlot(f.recipientSlotId);
                       const selected = selectedPlacementFieldId === f.id;
                       return (
                         <div
@@ -1996,13 +2023,14 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             setSelectedPlacementFieldId(f.id);
                           }}
                           onMouseDown={(e) => onPlacementFieldMouseDown(e, f.id)}
-                          className="absolute rounded-md border-2 bg-white/95 flex flex-col justify-center items-stretch px-1.5 py-1 shadow-sm cursor-move"
+                          className="absolute rounded-md border-2 flex flex-col justify-center items-stretch px-1.5 py-1 shadow-sm cursor-move"
                           style={{
                             left: f.x,
                             top: f.y,
                             width: f.w,
                             height: f.h,
                             borderColor: accent,
+                            backgroundColor: hexToRgba(accent, 0.22),
                             boxShadow: selected ? `0 0 0 2px ${accent}99` : undefined,
                           }}
                         >
@@ -2084,8 +2112,18 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
               </div>
               <div className="p-4 space-y-4 border-b border-slate-100">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Recipient</p>
+                {(() => {
+                  const panelAccent = accentForSlot(selectedField.recipientSlotId);
+                  return (
                 <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/50">
-                  <div className="w-10 h-10 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 text-xs font-bold shrink-0">
+                  <div
+                    className="w-10 h-10 rounded-full border flex items-center justify-center text-xs font-bold shrink-0"
+                    style={{
+                      backgroundColor: hexToRgba(panelAccent, 0.28),
+                      borderColor: panelAccent,
+                      color: panelAccent,
+                    }}
+                  >
                     {placementRecipientLabel(selectedField.recipientSlotId).slice(0, 1)}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -2093,6 +2131,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     <p className="text-xs text-slate-500">Assigned signer</p>
                   </div>
                 </div>
+                  );
+                })()}
                 <label className="flex items-center gap-2 text-sm font-medium text-slate-800 cursor-pointer">
                   <input
                     type="checkbox"
