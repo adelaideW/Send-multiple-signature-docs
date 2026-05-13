@@ -318,23 +318,103 @@ const TooltipNearAddPeopleLabel: React.FC = () => {
   );
 };
 
-function SelectionChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+const INHERITED_LOCK_TOOLTIP =
+  'Groups inherited from parent folders cannot be removed.';
+
+function SelectionChip({
+  label,
+  onRemove,
+  locked,
+}: {
+  label: string;
+  onRemove: () => void;
+  locked?: boolean;
+}) {
+  const [tipOpen, setTipOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
   return (
     <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[12px] font-semibold text-slate-800 shrink-0">
       <Users size={13} className="text-slate-500 shrink-0" aria-hidden />
       <span className="max-w-[200px] truncate">{label}</span>
       <button
+        ref={btnRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
+          if (locked) return;
           onRemove();
         }}
-        className="p-0.5 rounded hover:bg-slate-200/80 text-slate-500"
-        aria-label={`Remove ${label}`}
+        onMouseEnter={() => {
+          if (locked) setTipOpen(true);
+        }}
+        onMouseLeave={() => setTipOpen(false)}
+        onFocus={() => {
+          if (locked) setTipOpen(true);
+        }}
+        onBlur={() => setTipOpen(false)}
+        className={`p-0.5 rounded text-slate-500 ${
+          locked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-200/80'
+        }`}
+        aria-label={
+          locked
+            ? `${label} is inherited from the parent folder and cannot be removed`
+            : `Remove ${label}`
+        }
+        aria-disabled={locked || undefined}
       >
         <X size={12} strokeWidth={2.5} />
       </button>
+      <FloatingTooltip open={tipOpen} anchorRef={btnRef} maxWidthPx={240}>
+        {INHERITED_LOCK_TOOLTIP}
+      </FloatingTooltip>
     </span>
+  );
+}
+
+function AccessRowRemoveButton({
+  name,
+  locked,
+  onRemove,
+}: {
+  name: string;
+  locked: boolean;
+  onRemove: () => void;
+}) {
+  const [tipOpen, setTipOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className={`p-1.5 rounded-md text-slate-400 ${
+          locked ? 'opacity-40 cursor-not-allowed' : 'hover:text-[#DC2626] hover:bg-red-50'
+        }`}
+        aria-label={
+          locked
+            ? `${name} is inherited from the parent folder and cannot be removed`
+            : `Remove ${name}`
+        }
+        aria-disabled={locked || undefined}
+        onClick={() => {
+          if (locked) return;
+          onRemove();
+        }}
+        onMouseEnter={() => {
+          if (locked) setTipOpen(true);
+        }}
+        onMouseLeave={() => setTipOpen(false)}
+        onFocus={() => {
+          if (locked) setTipOpen(true);
+        }}
+        onBlur={() => setTipOpen(false)}
+      >
+        <Trash2 size={15} />
+      </button>
+      <FloatingTooltip open={tipOpen} anchorRef={btnRef} maxWidthPx={240}>
+        {INHERITED_LOCK_TOOLTIP}
+      </FloatingTooltip>
+    </>
   );
 }
 
@@ -517,6 +597,30 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
     const source = editingFolder?.permissions ?? inheritanceSource?.permissions;
     return source ? source.map((p) => ({ name: p.name, access: p.access as AccessLevel })) : [];
   }, [editingFolder?.permissions, inheritanceSource?.permissions]);
+
+  /**
+   * Entries that were seeded from the parent folder. Users can keep adding
+   * more groups but cannot remove these — the remove control is rendered
+   * disabled with a tooltip explaining why. Editing the folder itself is
+   * not subject to this lock; inheritance only applies on first-time
+   * subfolder creation.
+   */
+  const inheritedCreatedFor = useMemo(
+    () => parseCreatedFor(inheritanceSource?.createdFor),
+    [inheritanceSource?.createdFor]
+  );
+  const inheritedIncludeSet = useMemo(
+    () => new Set(inheritedCreatedFor.include),
+    [inheritedCreatedFor.include]
+  );
+  const inheritedExceptSet = useMemo(
+    () => new Set(inheritedCreatedFor.except),
+    [inheritedCreatedFor.except]
+  );
+  const inheritedAccessSet = useMemo(
+    () => new Set((inheritanceSource?.permissions ?? []).map((p) => p.name)),
+    [inheritanceSource?.permissions]
+  );
 
   const [folderName, setFolderName] = useState(editingFolder?.name || '');
   const [description, setDescription] = useState(editingFolder?.description || '');
@@ -751,11 +855,25 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && !queries[which].trim()) {
       e.preventDefault();
+      // Find the most recent chip that isn't locked by parent-folder
+      // inheritance, so Backspace stops being able to wipe out the
+      // entries we render with a disabled X.
+      const popLastUnlocked = (prev: string[], locked: Set<string>) => {
+        for (let i = prev.length - 1; i >= 0; i -= 1) {
+          if (!locked.has(prev[i])) {
+            return [...prev.slice(0, i), ...prev.slice(i + 1)];
+          }
+        }
+        return prev;
+      };
       if (which === 'include' && includeChips.length > 0) {
-        setIncludeChips((prev) => prev.slice(0, -1));
+        setIncludeChips((prev) => popLastUnlocked(prev, inheritedIncludeSet));
       } else if (which === 'except' && exceptChips.length > 0) {
-        setExceptChips((prev) => prev.slice(0, -1));
+        setExceptChips((prev) => popLastUnlocked(prev, inheritedExceptSet));
       } else if (which === 'access' && accessChips.length > 0) {
+        // The Add-access search field only holds chips the user is
+        // about to attach, so nothing in it is inherited; pop the last
+        // one normally.
         setAccessChips((prev) => prev.slice(0, -1));
       }
       return;
@@ -870,7 +988,12 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
                 <span className="text-[13px] font-bold text-slate-800 shrink-0">Include:</span>
                 <span className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
                   {includeChips.map((c) => (
-                    <SelectionChip key={c} label={c} onRemove={() => setIncludeChips((x) => x.filter((y) => y !== c))} />
+                    <SelectionChip
+                      key={c}
+                      label={c}
+                      locked={inheritedIncludeSet.has(c)}
+                      onRemove={() => setIncludeChips((x) => x.filter((y) => y !== c))}
+                    />
                   ))}
                   <input
                     ref={includeInputRef}
@@ -898,7 +1021,12 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
                 <span className="text-[13px] font-bold text-slate-800 shrink-0">Except:</span>
                 <span className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
                   {exceptChips.map((c) => (
-                    <SelectionChip key={c} label={c} onRemove={() => setExceptChips((x) => x.filter((y) => y !== c))} />
+                    <SelectionChip
+                      key={c}
+                      label={c}
+                      locked={inheritedExceptSet.has(c)}
+                      onRemove={() => setExceptChips((x) => x.filter((y) => y !== c))}
+                    />
                   ))}
                   <input
                     ref={exceptInputRef}
@@ -1028,17 +1156,14 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
                       </button>
                     </div>
                     <div className="px-2 py-2.5">
-                      <button
-                        type="button"
-                        className="p-1.5 rounded-md text-slate-400 hover:text-[#DC2626] hover:bg-red-50"
-                        aria-label={`Remove ${row.name}`}
-                        onClick={() => {
+                      <AccessRowRemoveButton
+                        name={row.name}
+                        locked={inheritedAccessSet.has(row.name)}
+                        onRemove={() => {
                           setAccessRows((prev) => prev.filter((_, i) => i !== idx));
                           setOpenAccessMenuRow((r) => (r === idx ? null : r != null && r > idx ? r - 1 : r));
                         }}
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      />
                     </div>
                   </div>
                 ))
