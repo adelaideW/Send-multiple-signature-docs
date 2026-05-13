@@ -111,7 +111,12 @@ export const EmployeeHeaderSection: React.FC<EmployeeProfileProps> = ({ employee
 
 interface DocumentsSectionProps {
   onSend?: () => void;
-  onOpenEnvelope?: (name: string) => void;
+  /**
+   * Opens the envelope details view. Receives the underlying envelope id
+   * (matching an EnvelopeTableRow.id in App state) plus the packet name as
+   * a human-readable fallback for older call sites.
+   */
+  onOpenEnvelope?: (envelopeId: string, name: string) => void;
   onReviewDocument?: () => void;
   viewByDocuments: boolean;
   setViewByDocuments: (val: boolean) => void;
@@ -134,6 +139,12 @@ export interface ActionChildRow {
 
 export interface ActionPacketRow {
   id: string;
+  /**
+   * Id of the matching envelope in the central packetRows list. When clicking
+   * "View" on a profile row we use this to open the same EnvelopeDetailsView
+   * the Documents tab uses, so the contents stay in sync with the real envelope.
+   */
+  envelopeId?: string;
   name: string;
   status: string;
   dotClass: string;
@@ -144,6 +155,7 @@ export interface ActionPacketRow {
 const ACTION_REQUIRED_PACKETS: ActionPacketRow[] = [
   {
     id: 'ap1',
+    envelopeId: 'e1',
     name: 'Employee onboarding packet — Engineering',
     status: 'In progress',
     dotClass: 'bg-amber-500',
@@ -162,6 +174,7 @@ const ACTION_REQUIRED_PACKETS: ActionPacketRow[] = [
   },
   {
     id: 'ap2',
+    envelopeId: 'e2',
     name: 'Q2 IT access & security attestation',
     status: 'Yet to sign',
     dotClass: 'bg-slate-400',
@@ -943,7 +956,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                             <Mail size={18} className="text-slate-500 shrink-0" strokeWidth={2} />
                             <button
                               type="button"
-                              onClick={() => onOpenEnvelope?.(packet.name)}
+                              onClick={() => onOpenEnvelope?.(packet.envelopeId ?? packet.id, packet.name)}
                               className="font-bold truncate max-w-[min(280px,100%)] min-w-0 text-left bg-transparent border-none p-0 cursor-pointer hover:underline"
                               style={{ color: PRIMARY_PURPLE }}
                             >
@@ -964,11 +977,11 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                           <div className="flex items-center justify-end gap-2 flex-nowrap">
                             <button
                               type="button"
-                              onClick={() => onOpenEnvelope?.(packet.name)}
+                              onClick={() => onOpenEnvelope?.(packet.envelopeId ?? packet.id, packet.name)}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-[12px] font-bold text-slate-900 bg-white hover:bg-slate-50"
                             >
                               <Eye size={14} />
-                              View envelope
+                              View
                             </button>
                             <button
                               type="button"

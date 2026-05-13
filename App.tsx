@@ -459,7 +459,7 @@ const App: React.FC = () => {
   }, []);
 
   const recordKaleActionRequiredIfRecipient = useCallback(
-    (envelopeName: string, st: EnvelopeState) => {
+    (envelopeName: string, st: EnvelopeState, linkedEnvelopeId: string) => {
       const kaleIsRecipient = st.recipients.some(
         (r: any) => r?.user?.id === 'u-kale' && r?.action === 'Needs to complete'
       );
@@ -467,7 +467,8 @@ const App: React.FC = () => {
       const ts = new Date().toISOString();
       const docs = childrenFromEnvelopeState(st);
       const packet: ActionPacketRow = {
-        id: `kale-pkt-${Date.now()}`,
+        id: `kale-pkt-${linkedEnvelopeId}`,
+        envelopeId: linkedEnvelopeId,
         name: envelopeName,
         status: 'Yet to sign',
         dotClass: 'bg-slate-400',
@@ -480,7 +481,10 @@ const App: React.FC = () => {
           needsKaleSignature: true,
         })),
       };
-      setKaleActionRequiredPackets((prev) => [packet, ...prev]);
+      setKaleActionRequiredPackets((prev) => {
+        const filtered = prev.filter((p) => p.envelopeId !== linkedEnvelopeId);
+        return [packet, ...filtered];
+      });
     },
     []
   );
@@ -490,7 +494,12 @@ const App: React.FC = () => {
    * or promote a previously-saved draft row to "in progress" in place when applicable.
    */
   const recordSentEnvelopeInDocuments = useCallback(
-    (envelopeName: string, st: EnvelopeState, editingId: string | null) => {
+    (
+      envelopeName: string,
+      st: EnvelopeState,
+      editingId: string | null,
+      newRowId: string,
+    ): string => {
       const now = new Date();
       const ts = now.toISOString();
       const children = childrenFromEnvelopeState(st).map((c) => ({
@@ -499,10 +508,12 @@ const App: React.FC = () => {
         lastModified: ts,
       }));
       const recipientRows = recipientsForDetails(st, now);
+      let resolvedId = newRowId;
       setPacketRows((prev) => {
         if (editingId) {
           const idx = prev.findIndex((r) => r.id === editingId);
           if (idx >= 0) {
+            resolvedId = editingId;
             const next = [...prev];
             next[idx] = {
               ...next[idx],
@@ -516,7 +527,7 @@ const App: React.FC = () => {
           }
         }
         const row: EnvelopeTableRow = {
-          id: `sent-${Date.now()}`,
+          id: newRowId,
           name: envelopeName,
           status: 'in progress' as EnvelopeStatus,
           lastModified: ts,
@@ -526,6 +537,7 @@ const App: React.FC = () => {
         };
         return [row, ...prev];
       });
+      return resolvedId;
     },
     []
   );
@@ -535,7 +547,7 @@ const App: React.FC = () => {
     const prevRow = editId ? packetRows.find((r) => r.id === editId) : undefined;
     if (prevRow?.status === 'correcting') {
       applyResendToInProgress(editId!, name);
-      recordKaleActionRequiredIfRecipient(name, envelopeState);
+      recordKaleActionRequiredIfRecipient(name, envelopeState, editId!);
       editingPacketIdRef.current = null;
       setCreatorCorrectingFlow(false);
       setEnvelopeState(INITIAL_ENVELOPE_STATE);
@@ -548,8 +560,14 @@ const App: React.FC = () => {
       setShowSuccessToast(true);
       return;
     }
-    recordKaleActionRequiredIfRecipient(name, envelopeState);
-    recordSentEnvelopeInDocuments(name, envelopeState, editingPacketIdRef.current);
+    const newRowId = `sent-${Date.now()}`;
+    const linkedId = recordSentEnvelopeInDocuments(
+      name,
+      envelopeState,
+      editingPacketIdRef.current,
+      newRowId,
+    );
+    recordKaleActionRequiredIfRecipient(name, envelopeState, linkedId);
     setSentEnvelopeName(name);
     setShowSuccessToast(true);
     setEnvelopeState(INITIAL_ENVELOPE_STATE);
@@ -571,13 +589,18 @@ const App: React.FC = () => {
 
   const handleExitEnvelopeDetails = () => {
     setSelectedPacketId(null);
-    syncDocumentsHubTab('Documents');
-    setViewByDocuments(true);
-    setViewHistory((prev) => {
-      const i = prev.lastIndexOf('envelope_details');
-      if (i <= 0) return ['people_tab'];
-      return [...prev.slice(0, i), 'people_tab'];
-    });
+    // Pop just the envelope_details frame and return to whatever surface the
+    // user was on before. Only surface the Documents tab when the previous
+    // surface was the People hub; if they opened the envelope from an
+    // employee profile, leave the profile (and its current sub-tab) intact.
+    const prev = viewHistory;
+    const popped = prev.length <= 1 ? ['people_tab'] : prev.slice(0, -1);
+    const landing = popped[popped.length - 1] ?? 'people_tab';
+    setViewHistory(popped);
+    if (landing === 'people_tab') {
+      syncDocumentsHubTab('Documents');
+      setViewByDocuments(true);
+    }
   };
 
   const handleDraftViewDetails = useCallback(() => {
@@ -809,7 +832,7 @@ const App: React.FC = () => {
                       setEnvelopeState(INITIAL_ENVELOPE_STATE);
                       goToEnvelopeCreator('profile');
                     }}
-                    onOpenEnvelope={() => handleOpenEnvelopeDetails('e1')}
+                    onOpenEnvelope={(envelopeId) => handleOpenEnvelopeDetails(envelopeId)}
                     onReviewDocument={() => startSignFlow('e1')}
                     viewByDocuments={viewByDocuments}
                     setViewByDocuments={setViewByDocuments}
