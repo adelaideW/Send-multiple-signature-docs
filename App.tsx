@@ -157,7 +157,10 @@ function recipientsForDetails(st: EnvelopeState, sentAt: Date): EnvelopeRecipien
       name,
       email: r.user?.email ?? '',
       initials: initialsFromName(name),
-      status: 'In progress',
+      // Recipients start in "Yet to sign" once an envelope is sent; the
+      // status only advances to "In progress" or "Completed" as they work
+      // through their documents.
+      status: isCC ? 'In progress' : 'Yet to sign',
       action: isCC ? 'To view' : 'To sign',
       sentOn,
       completedOn: '—',
@@ -525,7 +528,7 @@ const App: React.FC = () => {
             next[idx] = {
               ...next[idx],
               name: envelopeName,
-              status: 'in progress' as EnvelopeStatus,
+              status: 'yet to sign' as EnvelopeStatus,
               lastModified: ts,
               children: children.length > 0 ? children : next[idx].children,
               recipients: recipientRows.length > 0 ? recipientRows : next[idx].recipients,
@@ -536,7 +539,7 @@ const App: React.FC = () => {
         const row: EnvelopeTableRow = {
           id: newRowId,
           name: envelopeName,
-          status: 'in progress' as EnvelopeStatus,
+          status: 'yet to sign' as EnvelopeStatus,
           lastModified: ts,
           adminIsSigner: true,
           children: children.length > 0 ? children : undefined,
@@ -670,10 +673,13 @@ const App: React.FC = () => {
   );
 
   /**
-   * The envelope is only "completed" once every signing recipient has
-   * Completed AND every required document is `completed`. Until then we keep
-   * the envelope in `in progress`, even if one recipient has finished signing
-   * their share of the docs.
+   * Envelope status mirrors its documents:
+   * - "yet to sign" when every doc is still untouched and no signer has acted.
+   * - "in progress" the moment any doc is `in progress` / `completed`, or any
+   *   signer has flipped to Completed.
+   * - "completed" only once every doc is `completed` and every signing
+   *   recipient has finished.
+   * Voided / draft envelopes keep their explicit status.
    */
   const deriveEnvelopeStatus = useCallback(
     (
@@ -687,7 +693,10 @@ const App: React.FC = () => {
       const signers = (recipients ?? []).filter((r) => r.action === 'To sign');
       const allSignersDone = signers.length === 0 || signers.every((r) => r.status === 'Completed');
       if (allDocsDone && allSignersDone) return 'completed';
-      return 'in progress';
+      const anyDocTouched = docs.some((c) => c.status === 'in progress' || c.status === 'completed');
+      const anySignerActed = signers.some((r) => r.status === 'In progress' || r.status === 'Completed');
+      if (anyDocTouched || anySignerActed) return 'in progress';
+      return 'yet to sign';
     },
     []
   );

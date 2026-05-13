@@ -503,7 +503,9 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
                               ? 'bg-[#0D9488]'
                               : row.status === 'In progress'
                                 ? 'bg-[#F59E0B]'
-                                : 'bg-[#94A3B8]'
+                                : row.status === 'Yet to sign'
+                                  ? 'bg-red-500'
+                                  : 'bg-[#94A3B8]'
                           }`}
                         />
                         <span className="font-medium text-slate-800">{row.status}</span>

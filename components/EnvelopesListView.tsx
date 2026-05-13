@@ -70,7 +70,7 @@ export interface EnvelopeRecipientRow {
   email: string;
   avatar?: string;
   initials?: string;
-  status: 'Completed' | 'In progress' | 'Waiting';
+  status: 'Completed' | 'In progress' | 'Yet to sign' | 'Waiting';
   action: 'To sign' | 'To view' | '—';
   sentOn: string;
   completedOn: string;
