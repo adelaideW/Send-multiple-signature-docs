@@ -704,12 +704,21 @@ const App: React.FC = () => {
       setPacketRows((prev) =>
         prev.map((r) => {
           if (r.id !== packetId) return r;
-          const children = r.children?.map((c) => ({
-            ...c,
-            status: 'completed' as DocumentSigningStatus,
-            lastModified: ts,
-          }));
+          // Flip the signing recipient first; documents stay in their current
+          // state until every "To sign" recipient is done. This avoids the
+          // doc-level "Completed" dot appearing while the envelope is still
+          // waiting on other signers.
           const recipients = markRecipientCompleted(r.recipients, signerUserId, completedOn);
+          const signers = (recipients ?? []).filter((rcp) => rcp.action === 'To sign');
+          const allSignersDone =
+            signers.length > 0 && signers.every((rcp) => rcp.status === 'Completed');
+          const children = allSignersDone
+            ? r.children?.map((c) => ({
+                ...c,
+                status: 'completed' as DocumentSigningStatus,
+                lastModified: ts,
+              }))
+            : r.children;
           return {
             ...r,
             status: deriveEnvelopeStatus(r.status, recipients, children),
@@ -737,57 +746,28 @@ const App: React.FC = () => {
   );
 
   const handleSignPartial = useCallback(
-    (packetId: string, completedDocIds: string[]) => {
+    (packetId: string, _completedDocIds: string[]) => {
       const ts = new Date().toISOString();
-      const completedOn = formatRecipientSentOn(new Date());
-      const signerUserId = signFlow?.signerUserId;
-      const done = new Set(completedDocIds);
+      // Partial sign means the signer hasn't finished. We intentionally leave
+      // document statuses and the recipient row alone — only the envelope's
+      // lastModified is bumped and we re-derive its status (which will stay
+      // "in progress"). Action required entries also stay in place because
+      // there's still work for the signer to come back to.
       setPacketRows((prev) =>
         prev.map((r) => {
           if (r.id !== packetId) return r;
-          const children = r.children?.map((c) =>
-            done.has(c.id)
-              ? { ...c, status: 'completed' as DocumentSigningStatus, lastModified: ts }
-              : c.status === 'completed'
-                ? c
-                : { ...c, status: 'yet to sign' as DocumentSigningStatus, lastModified: ts }
-          );
-          // Only flip the recipient to Completed if every doc in the envelope
-          // is now done; otherwise the signer still has more pages to come back to.
-          const allDocsDone =
-            (children?.length ?? 0) > 0 && (children ?? []).every((c) => c.status === 'completed');
-          const recipients = allDocsDone
-            ? markRecipientCompleted(r.recipients, signerUserId, completedOn)
-            : r.recipients;
           return {
             ...r,
-            status: deriveEnvelopeStatus(r.status, recipients, children),
+            status: deriveEnvelopeStatus(r.status, r.recipients, r.children),
             lastModified: ts,
-            children,
-            recipients,
           };
         })
       );
-      if (signerUserId === 'u-kale') {
-        const packet = packetRows.find((r) => r.id === packetId);
-        const totalDocs = packet?.children?.length ?? 0;
-        if (totalDocs > 0 && completedDocIds.length >= totalDocs) {
-          clearKaleActionRequiredForPacket(packetId);
-        }
-      }
       setSignFlow(null);
       syncDocumentsHubTab('Documents');
       trimToPeopleTab();
     },
-    [
-      signFlow,
-      packetRows,
-      markRecipientCompleted,
-      deriveEnvelopeStatus,
-      clearKaleActionRequiredForPacket,
-      trimToPeopleTab,
-      syncDocumentsHubTab,
-    ]
+    [deriveEnvelopeStatus, trimToPeopleTab, syncDocumentsHubTab]
   );
 
   const prefillStateFromDraftRow = (row: EnvelopeTableRow): EnvelopeState => {
