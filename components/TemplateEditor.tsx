@@ -1018,7 +1018,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           role="presentation"
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-[744px] p-6 border border-slate-200"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -1041,7 +1041,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               You have unsaved contents. Are you sure you want to leave the editor without saving this template?
             </p>
             {isCreate ? (
-              <div className="flex justify-end gap-2 flex-wrap">
+              <div className="flex items-center justify-end gap-2 flex-nowrap">
                 <button
                   type="button"
                   className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
@@ -1069,7 +1069,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               // alongside the standard Leave / Save pair. The text
               // button intentionally has no border or fill so the
               // destructive overwrite stays the least eye-grabbing.
-              <div className="flex justify-end items-center gap-2 flex-wrap">
+              <div className="flex items-center justify-end gap-2 flex-nowrap">
                 <button
                   type="button"
                   className="px-2 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700 hover:underline rounded mr-auto"
