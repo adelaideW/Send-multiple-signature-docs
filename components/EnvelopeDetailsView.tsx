@@ -172,9 +172,20 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
           completedOn: r.completedOn && r.completedOn !== '—' ? r.completedOn : r.sentOn,
         }))
       : effectiveRecipients;
-  const recipientRows = isVoided
+  const recipientRowsRaw = isVoided
     ? recipientsForStatus.map((r) => ({ ...r, action: '—' as const }))
     : recipientsForStatus;
+  // Always render recipients in signing-step order (smallest number first).
+  // We pair with the source index so the sort stays stable for recipients
+  // that share an order (parallel signers in the same step).
+  const recipientRows = recipientRowsRaw
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => {
+      const ra = typeof a.r.order === 'number' ? a.r.order : Number.POSITIVE_INFINITY;
+      const rb = typeof b.r.order === 'number' ? b.r.order : Number.POSITIVE_INFINITY;
+      return ra !== rb ? ra - rb : a.i - b.i;
+    })
+    .map(({ r }) => r);
 
   const showSign = packetStatus !== 'voided' && packetStatus !== 'completed' && packetStatus !== 'draft' && packetStatus !== 'correcting';
   // Hide Sign once there's nothing left to sign — either every document in
