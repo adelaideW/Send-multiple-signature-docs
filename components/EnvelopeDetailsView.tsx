@@ -131,6 +131,8 @@ interface EnvelopeDetailsViewProps {
   onSign?: () => void;
   onEdit?: () => void;
   onResend?: () => void;
+  /** Fires when the user picks "Make correction" from the details More menu. */
+  onMakeCorrection?: () => void;
 }
 
 const btnOutline =
@@ -154,6 +156,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
   onSign,
   onEdit,
   onResend,
+  onMakeCorrection,
 }) => {
   const badge = headerBadgeForStatus(packetStatus);
   const effectiveRecipients = recipients && recipients.length > 0 ? recipients : DEFAULT_RECIPIENTS;
@@ -554,6 +557,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
               onClose={() => setMoreOpen(false)}
               onDownload={runBulkDownload}
               onSendReminder={() => setSendReminderOpen(true)}
+              onMakeCorrection={onMakeCorrection}
             />
           </div>,
           document.body

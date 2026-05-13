@@ -27,6 +27,7 @@ import {
   ChevronLeft,
   CirclePlus,
   GripVertical,
+  Lock,
   Type,
   PenTool,
   Calendar,
@@ -828,6 +829,27 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const expirationAlertCustomUnit: ExpirationTimeUnit = persistentState?.expirationAlertCustomUnit ?? 'day';
   const envelopeName: string = persistentState?.envelopeName ?? '';
   const envelopeNameTouched: boolean = persistentState?.envelopeNameTouched ?? false;
+  const lockedRecipientUserIds: string[] = persistentState?.lockedRecipientUserIds ?? [];
+  /**
+   * Set of user ids whose recipient rows are immutable in this session (the
+   * envelope was partially signed before "Make correction" — those signers
+   * already completed and can't be dropped or reordered).
+   */
+  const lockedRecipientUserIdSet = useMemo<Set<string>>(
+    () => new Set(lockedRecipientUserIds),
+    [lockedRecipientUserIds]
+  );
+  /** True when this recipient slot is one of the locked, already-signed users. */
+  const isRecipientLocked = (r: RecipientSlot): boolean =>
+    !!r.user?.id && lockedRecipientUserIdSet.has(r.user.id);
+  /** Slot ids of locked recipients — used to ignore drop targets pointing at them. */
+  const lockedSlotIds = useMemo<Set<string>>(
+    () => new Set(recipients.filter(isRecipientLocked).map((r) => r.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [recipients, lockedRecipientUserIdSet]
+  );
+  const LOCKED_TOOLTIP =
+    'This recipient has already signed and can\u2019t be removed or reordered.';
 
   const updateState = (updates: any) => {
     onUpdateState?.({
@@ -850,6 +872,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       expirationAlertCustomUnit,
       envelopeName,
       envelopeNameTouched,
+      lockedRecipientUserIds,
       ...updates
     });
   };
@@ -2602,15 +2625,18 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             const recipient = recipients.find((r) => r.id === rid);
                             if (!recipient) return null;
                             const stepNum = gi + 1;
+                            const locked = isRecipientLocked(recipient);
                             return (
                               <React.Fragment key={rid}>
                                 <div
-                                  className={`h-3 rounded-md transition-all ${dropTargetZone === `before:${rid}` ? 'ring-2 ring-[#7A005D]/50 bg-[#7A005D]/15' : draggingRecipientId ? 'bg-slate-50' : ''}`}
+                                  className={`h-3 rounded-md transition-all ${dropTargetZone === `before:${rid}` ? 'ring-2 ring-[#7A005D]/50 bg-[#7A005D]/15' : draggingRecipientId && !locked ? 'bg-slate-50' : ''}`}
                                   onDragOver={(e) => {
+                                    if (locked) return;
                                     e.preventDefault();
                                     e.dataTransfer.dropEffect = 'move';
                                   }}
                                   onDragEnter={(e) => {
+                                    if (locked) return;
                                     e.preventDefault();
                                     if (draggingRecipientId) setDropTargetZone(`before:${rid}`);
                                   }}
@@ -2618,6 +2644,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                     if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTargetZone(null);
                                   }}
                                   onDrop={(e) => {
+                                    if (locked) return;
                                     e.preventDefault();
                                     e.stopPropagation();
                                     const dragId = e.dataTransfer.getData(RECIPIENT_DRAG_TYPE);
@@ -2644,6 +2671,11 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                     e.stopPropagation();
                                     const dragId = e.dataTransfer.getData(RECIPIENT_DRAG_TYPE);
                                     if (!dragId || dragId === rid) return;
+                                    if (lockedSlotIds.has(dragId)) {
+                                      setDraggingRecipientId(null);
+                                      setDropTargetZone(null);
+                                      return;
+                                    }
                                     applyGroups(mergeIntoRecipient(signingOrderGroups, dragId, rid));
                                     setDraggingRecipientId(null);
                                     setDropTargetZone(null);
@@ -2651,15 +2683,30 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                   className={`border rounded-2xl p-6 bg-white space-y-3 mb-3 transition-all ${dropTargetZone === `merge:${rid}` ? 'ring-2 ring-[#7A005D]/55 border-[#7A005D]/40 bg-[#7A005D]/5' : 'border-slate-200'} ${draggingRecipientId === rid ? 'opacity-65 shadow-md' : ''}`}
                                 >
                                   <div className="flex items-center justify-between">
-                                    <label className="text-sm font-bold text-slate-900">Recipient<span className="text-red-500">*</span></label>
-                                    {recipients.length > 1 && (
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-sm font-bold text-slate-900">Recipient<span className="text-red-500">*</span></label>
+                                      {locked && (
+                                        <span
+                                          className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-slate-500"
+                                          title={LOCKED_TOOLTIP}
+                                        >
+                                          <Lock size={12} strokeWidth={2.5} />
+                                          Signed
+                                        </span>
+                                      )}
+                                    </div>
+                                    {recipients.length > 1 && !locked && (
                                       <button type="button" onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>
                                     )}
                                   </div>
                                   <div className="flex items-start space-x-3 relative">
                                     <div
-                                      draggable
+                                      draggable={!locked}
                                       onDragStart={(e) => {
+                                        if (locked) {
+                                          e.preventDefault();
+                                          return;
+                                        }
                                         e.dataTransfer.setData(RECIPIENT_DRAG_TYPE, recipient.id);
                                         e.dataTransfer.effectAllowed = 'move';
                                         setDraggingRecipientId(recipient.id);
@@ -2669,8 +2716,9 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                         setDraggingRecipientId(null);
                                         setDropTargetZone(null);
                                       }}
-                                      className="shrink-0 h-12 px-2 flex items-center justify-center cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-50"
-                                      title="Drag to reorder or combine signing steps"
+                                      className={`shrink-0 h-12 px-2 flex items-center justify-center rounded-lg ${locked ? 'cursor-not-allowed text-slate-300' : 'cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
+                                      title={locked ? LOCKED_TOOLTIP : 'Drag to reorder or combine signing steps'}
+                                      aria-disabled={locked || undefined}
                                     >
                                       <GripVertical size={20} />
                                     </div>
@@ -2821,11 +2869,24 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                     </>
                   ) : (
                     <div className="space-y-4">
-                      {recipients.map((recipient) => (
+                      {recipients.map((recipient) => {
+                        const locked = isRecipientLocked(recipient);
+                        return (
                         <div key={recipient.id} className="border border-slate-200 rounded-2xl p-6 bg-white space-y-3">
                           <div className="flex items-center justify-between">
-                            <label className="text-sm font-bold text-slate-900">Recipient<span className="text-red-500">*</span></label>
-                            {recipients.length > 1 && <button type="button" onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>}
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm font-bold text-slate-900">Recipient<span className="text-red-500">*</span></label>
+                              {locked && (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-slate-500"
+                                  title={LOCKED_TOOLTIP}
+                                >
+                                  <Lock size={12} strokeWidth={2.5} />
+                                  Signed
+                                </span>
+                              )}
+                            </div>
+                            {recipients.length > 1 && !locked && <button type="button" onClick={() => removeRecipient(recipient.id)} className="text-[11px] text-red-500 font-bold uppercase">Remove</button>}
                           </div>
                           <div className="space-y-3">
                             <div className="flex items-center space-x-3 relative">
@@ -2938,7 +2999,8 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

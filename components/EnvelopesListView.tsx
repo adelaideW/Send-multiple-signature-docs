@@ -346,6 +346,8 @@ interface EnvelopeMoreMenuProps {
   onClose: () => void;
   onDownload?: () => void;
   onSendReminder?: () => void;
+  /** Fired when the user picks "Make correction" — owner handles re-opening the creator pre-filled. */
+  onMakeCorrection?: () => void;
 }
 
 export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
@@ -353,6 +355,7 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
   onClose,
   onDownload,
   onSendReminder,
+  onMakeCorrection,
 }) => {
   const itemClass = 'w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50';
   const dangerItemClass = `w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold hover:bg-slate-50`;
@@ -391,7 +394,15 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
           <IconWrap><Bell size={16} strokeWidth={2} /></IconWrap>
           Send reminder
         </button>
-        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+        <button
+          type="button"
+          className={itemClass}
+          role="menuitem"
+          onClick={() => {
+            onMakeCorrection?.();
+            onClose();
+          }}
+        >
           <IconWrap><RefreshCw size={16} strokeWidth={2} /></IconWrap>
           Make correction
         </button>
@@ -422,7 +433,15 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
           <IconWrap><Bell size={16} strokeWidth={2} /></IconWrap>
           Send reminder
         </button>
-        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+        <button
+          type="button"
+          className={itemClass}
+          role="menuitem"
+          onClick={() => {
+            onMakeCorrection?.();
+            onClose();
+          }}
+        >
           <IconWrap><RefreshCw size={16} strokeWidth={2} /></IconWrap>
           Make correction
         </button>
@@ -486,6 +505,8 @@ interface EnvelopesListViewProps {
   /** Packet row id */
   onViewEnvelope?: (packetId: string) => void;
   onEditEnvelope?: (packetId: string) => void;
+  /** Re-open the envelope creator in correction mode for a sent envelope, with all content pre-filled. */
+  onMakeCorrection?: (packetId: string) => void;
   onSignEnvelope?: (packetId: string) => void;
   onResendEnvelope?: (packetId: string) => void;
   /**
@@ -511,6 +532,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
   onSendDocuments,
   onViewEnvelope,
   onEditEnvelope,
+  onMakeCorrection,
   onSignEnvelope,
   onResendEnvelope,
   completedEnvelopeDocs = [],
@@ -1073,6 +1095,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                 onClose={() => setOpenMoreId(null)}
                 onDownload={() => runBulkDownload(openRow)}
                 onSendReminder={() => setSendReminderOpen(true)}
+                onMakeCorrection={() => onMakeCorrection?.(openRow.id)}
               />
             </div>,
             document.body

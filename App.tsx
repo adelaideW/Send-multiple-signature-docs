@@ -80,6 +80,13 @@ interface EnvelopeState {
   envelopeName?: string;
   /** True after the user has manually edited the envelope name; prevents auto-derivation from clobbering. */
   envelopeNameTouched?: boolean;
+  /**
+   * User ids of recipients that must not be removed or reordered in the creator.
+   * Populated by "Make correction" on a partially-signed envelope — every
+   * recipient that has already completed signing is locked so the corrector
+   * can't drop or reposition them. Empty for fresh envelopes / drafts.
+   */
+  lockedRecipientUserIds?: string[];
 }
 
 /** Join template + uploaded doc names (stripping `.pdf`) with `; ` and truncate to `ENVELOPE_NAME_MAX_LENGTH`. */
@@ -915,6 +922,68 @@ const App: React.FC = () => {
     };
   };
 
+  /**
+   * Pre-fill EnvelopeState from an existing in-progress envelope so "Make
+   * correction" returns the user to the creator with everything they had
+   * before. Recipients are mapped 1:1 from the saved envelope (not the
+   * static DEMO_EDIT_RECIPIENTS), signing order is reconstructed from each
+   * recipient's `order` field, and any signer that has already completed
+   * is recorded in `lockedRecipientUserIds` so the creator can prevent
+   * removal/reorder of those rows.
+   */
+  const prefillStateFromEnvelopeForCorrection = (row: EnvelopeTableRow): EnvelopeState => {
+    const envRecipients = row.recipients ?? [];
+    const docNames = (row.children ?? []).map((c) => c.name.replace(/\.pdf$/i, ''));
+
+    const recipients: EnvelopeState['recipients'] =
+      envRecipients.length > 0
+        ? envRecipients.map((r, i) => {
+            const fallbackId = r.userId ?? `ext-${r.id || i + 1}`;
+            return {
+              id: r.id || String(i + 1),
+              user: {
+                id: fallbackId,
+                name: r.name,
+                email: r.email,
+              },
+              action: r.action === 'To view' ? 'CC recipient' : 'Needs to complete',
+              searchTerm: '',
+              isActionDropdownOpen: false,
+            };
+          })
+        : INITIAL_ENVELOPE_STATE.recipients;
+
+    const orderValues = Array.from(new Set(envRecipients.map((r) => r.order))).sort(
+      (a, b) => a - b
+    );
+    const useSigningOrder = orderValues.length > 1;
+    const signingOrderGroups: string[][] = useSigningOrder
+      ? orderValues.map((o) =>
+          envRecipients
+            .filter((r) => r.order === o)
+            .map((r) => r.id || '')
+            .filter(Boolean)
+        )
+      : [];
+
+    const lockedRecipientUserIds = envRecipients
+      .filter((r) => r.status === 'Completed')
+      .map((r) => r.userId ?? `ext-${r.id}`);
+
+    return {
+      ...INITIAL_ENVELOPE_STATE,
+      selectedTemplates: docNames,
+      uploadedFiles: [],
+      recipients,
+      signingOrderEnabled: useSigningOrder,
+      signingOrderGroups,
+      selectedFolder: 'all',
+      envelopeName: row.name,
+      envelopeNameTouched: true,
+      lockedRecipientUserIds,
+    };
+  };
+
   const handleEditEnvelope = useCallback(
     (packetId: string) => {
       const row = packetRows.find((r) => r.id === packetId);
@@ -936,6 +1005,32 @@ const App: React.FC = () => {
       goToEnvelopeCreator('people_tab');
     },
     [packetRows, goToEnvelopeCreator]
+  );
+
+  /**
+   * Open the envelope creator in "Make correction" mode for the given envelope:
+   * pre-fill all previously entered content (recipients, docs, signing order,
+   * envelope name) and stamp the locked-recipient set so signers who already
+   * completed cannot be removed or reordered. Re-entry point matches the
+   * caller's current page (details view, profile, or documents hub).
+   */
+  const handleMakeCorrection = useCallback(
+    (packetId: string) => {
+      const row = packetRows.find((r) => r.id === packetId);
+      if (!row) return;
+      editingPacketIdRef.current = packetId;
+      setEnvelopeState(prefillStateFromEnvelopeForCorrection(row));
+      setPdfPlacementSeed(false);
+      setCreatorCorrectingFlow(true);
+      const fromView: ViewType =
+        currentPage === 'envelope_details'
+          ? 'envelope_details'
+          : currentPage === 'profile'
+          ? 'profile'
+          : 'people_tab';
+      goToEnvelopeCreator(fromView);
+    },
+    [packetRows, currentPage, goToEnvelopeCreator]
   );
 
   return (
@@ -988,6 +1083,7 @@ const App: React.FC = () => {
           onPacketRowsChange={setPacketRows}
           onViewDocumentPacket={handleOpenEnvelopeDetails}
           onEditDocumentPacket={handleEditEnvelope}
+          onMakeCorrectionEnvelope={handleMakeCorrection}
           onSignDocumentPacket={startSignFlow}
           onResendEnvelope={(packetId) => {
             applyResendToInProgress(packetId);
@@ -1086,6 +1182,7 @@ const App: React.FC = () => {
             onExit={handleExitEnvelopeDetails}
             onSign={() => startSignFlow(selectedPacket.id)}
             onEdit={() => handleEditEnvelope(selectedPacket.id)}
+            onMakeCorrection={() => handleMakeCorrection(selectedPacket.id)}
             onResend={() => {
               applyResendToInProgress(selectedPacket.id, selectedPacket.name);
               setShowSuccessToast(true);

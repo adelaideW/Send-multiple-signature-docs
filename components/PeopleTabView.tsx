@@ -86,6 +86,8 @@ interface PeopleTabViewProps {
   onPacketRowsChange?: (rows: EnvelopeTableRow[]) => void;
   onViewDocumentPacket?: (packetId: string) => void;
   onEditDocumentPacket?: (packetId: string) => void;
+  /** "Make correction" entry: re-open the creator for a sent envelope with all content pre-filled. */
+  onMakeCorrectionEnvelope?: (packetId: string) => void;
   onSignDocumentPacket?: (packetId: string) => void;
   onResendEnvelope?: (packetId: string) => void;
   completedEnvelopeDocs?: CompletedEnvelopeDoc[];
@@ -109,6 +111,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   onPacketRowsChange,
   onViewDocumentPacket,
   onEditDocumentPacket,
+  onMakeCorrectionEnvelope,
   onSignDocumentPacket,
   onResendEnvelope,
   completedEnvelopeDocs,
@@ -409,6 +412,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                 onSendDocuments={onSendDocuments}
                 onViewEnvelope={onViewDocumentPacket}
                 onEditEnvelope={onEditDocumentPacket}
+                onMakeCorrection={onMakeCorrectionEnvelope}
                 onSignEnvelope={onSignDocumentPacket}
                 onResendEnvelope={onResendEnvelope}
                 completedEnvelopeDocs={completedEnvelopeDocs}
