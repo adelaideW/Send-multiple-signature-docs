@@ -157,9 +157,21 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
 }) => {
   const badge = headerBadgeForStatus(packetStatus);
   const effectiveRecipients = recipients && recipients.length > 0 ? recipients : DEFAULT_RECIPIENTS;
+  // Once the envelope itself is completed, every recipient must read as
+  // Completed too — there's no "In progress" or "Yet to sign" recipient
+  // on a finished envelope. We also backfill a sensible completedOn so
+  // the column never shows an em dash on a completed row.
+  const recipientsForStatus =
+    packetStatus === 'completed'
+      ? effectiveRecipients.map((r) => ({
+          ...r,
+          status: 'Completed' as const,
+          completedOn: r.completedOn && r.completedOn !== '—' ? r.completedOn : r.sentOn,
+        }))
+      : effectiveRecipients;
   const recipientRows = isVoided
-    ? effectiveRecipients.map((r) => ({ ...r, action: '—' as const }))
-    : effectiveRecipients;
+    ? recipientsForStatus.map((r) => ({ ...r, action: '—' as const }))
+    : recipientsForStatus;
 
   const showSign = packetStatus !== 'voided' && packetStatus !== 'completed' && packetStatus !== 'draft' && packetStatus !== 'correcting';
   // Hide Sign once there's nothing left to sign — either every document in
