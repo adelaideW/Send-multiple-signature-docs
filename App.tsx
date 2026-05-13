@@ -340,6 +340,12 @@ const App: React.FC = () => {
   // Envelopes sent in-session that include Kale George ("u-kale") as a "Needs to complete" recipient.
   // Surfaced in the Employee profile → Action required tab so the prototype reflects the just-sent envelope.
   const [kaleActionRequiredPackets, setKaleActionRequiredPackets] = useState<ActionPacketRow[]>([]);
+  /**
+   * Envelope ids Kale has already personally signed. The row stays in her
+   * Action required tab so the envelope is still visible, but its Sign button
+   * is hidden and the row no longer contributes to the pending-signature badge.
+   */
+  const [kaleSignedEnvelopeIds, setKaleSignedEnvelopeIds] = useState<Set<string>>(() => new Set());
 
   const syncDocumentsHubTab = useCallback((tab: string) => {
     setDocumentsHubTab(tab);
@@ -687,13 +693,18 @@ const App: React.FC = () => {
   );
 
   /**
-   * Drop the matching envelope from Kale's "Action required" list once she
-   * has fully signed it. The envelope still lives in `packetRows` (and shows
-   * up in her Documents tab), but the action-required list only tracks
-   * outstanding signatures so we clear completed items here.
+   * Record that Kale has personally finished signing the given envelope. The
+   * row stays in her Action required tab (so she can still see the envelope's
+   * progress while other recipients finish), but the Sign button is hidden
+   * and the badge stops counting that envelope's documents.
    */
-  const clearKaleActionRequiredForPacket = useCallback((packetId: string) => {
-    setKaleActionRequiredPackets((prev) => prev.filter((p) => p.envelopeId !== packetId));
+  const markKaleSignedForPacket = useCallback((packetId: string) => {
+    setKaleSignedEnvelopeIds((prev) => {
+      if (prev.has(packetId)) return prev;
+      const next = new Set(prev);
+      next.add(packetId);
+      return next;
+    });
   }, []);
 
   const handleSignComplete = useCallback(
@@ -712,13 +723,20 @@ const App: React.FC = () => {
           const signers = (recipients ?? []).filter((rcp) => rcp.action === 'To sign');
           const allSignersDone =
             signers.length > 0 && signers.every((rcp) => rcp.status === 'Completed');
-          const children = allSignersDone
-            ? r.children?.map((c) => ({
-                ...c,
-                status: 'completed' as DocumentSigningStatus,
-                lastModified: ts,
-              }))
-            : r.children;
+          // Once any signer has completed but others haven't, surface the doc
+          // as "in progress" so the table reads cleanly between "yet to sign"
+          // (untouched) and "completed" (every signer done). draft/voided
+          // documents are left alone.
+          const children = r.children?.map((c) => {
+            if (c.status === 'voided' || c.status === 'draft') return c;
+            if (allSignersDone) {
+              return { ...c, status: 'completed' as DocumentSigningStatus, lastModified: ts };
+            }
+            if (c.status === 'yet to sign') {
+              return { ...c, status: 'in progress' as DocumentSigningStatus, lastModified: ts };
+            }
+            return c;
+          });
           return {
             ...r,
             status: deriveEnvelopeStatus(r.status, recipients, children),
@@ -729,7 +747,7 @@ const App: React.FC = () => {
         })
       );
       if (signerUserId === 'u-kale') {
-        clearKaleActionRequiredForPacket(packetId);
+        markKaleSignedForPacket(packetId);
       }
       setSignFlow(null);
       syncDocumentsHubTab('Documents');
@@ -739,7 +757,7 @@ const App: React.FC = () => {
       signFlow,
       markRecipientCompleted,
       deriveEnvelopeStatus,
-      clearKaleActionRequiredForPacket,
+      markKaleSignedForPacket,
       trimToPeopleTab,
       syncDocumentsHubTab,
     ]
@@ -924,6 +942,7 @@ const App: React.FC = () => {
                     profileFolderRoot={profileFolderRoot}
                     viewMode={currentView}
                     extraActionRequiredPackets={kaleActionRequiredPackets}
+                    kaleSignedEnvelopeIds={kaleSignedEnvelopeIds}
                   />
                 </div>
               </>

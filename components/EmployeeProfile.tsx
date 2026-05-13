@@ -129,6 +129,12 @@ interface DocumentsSectionProps {
   viewMode?: 'admin' | 'employee';
   /** Envelope packets sent in-session that include Kale George as a "Needs to complete" recipient. */
   extraActionRequiredPackets?: ActionPacketRow[];
+  /**
+   * Envelope ids Kale has personally signed. Rows pinned to these ids keep
+   * showing in Action required, but their Sign button is hidden and they no
+   * longer contribute to the pending-signature badge.
+   */
+  kaleSignedEnvelopeIds?: ReadonlySet<string>;
 }
 
 type ProfileDocTab = 'action_required' | 'documents';
@@ -203,8 +209,14 @@ const ACTION_REQUIRED_PACKETS: ActionPacketRow[] = [
   },
 ];
 
-const countPendingKaleSignatures = (packets: ActionPacketRow[]): number =>
-  packets.reduce((n, p) => n + p.children.filter((c) => c.needsKaleSignature).length, 0);
+const countPendingKaleSignatures = (
+  packets: ActionPacketRow[],
+  signedEnvelopeIds: ReadonlySet<string> = new Set(),
+): number =>
+  packets.reduce((n, p) => {
+    if (p.envelopeId && signedEnvelopeIds.has(p.envelopeId)) return n;
+    return n + p.children.filter((c) => c.needsKaleSignature).length;
+  }, 0);
 
 /**
  * Map a free-form status label (used by the profile's Action required and
@@ -645,7 +657,9 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   profileFolderRoot,
   viewMode = 'admin',
   extraActionRequiredPackets,
+  kaleSignedEnvelopeIds,
 }) => {
+  const signedEnvelopeIds = kaleSignedEnvelopeIds ?? new Set<string>();
   const actionRequiredPackets = useMemo<ActionPacketRow[]>(
     () => {
       const merged = [...(extraActionRequiredPackets ?? []), ...ACTION_REQUIRED_PACKETS];
@@ -662,8 +676,8 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
     [extraActionRequiredPackets]
   );
   const actionRequiredBadge = useMemo(
-    () => countPendingKaleSignatures(actionRequiredPackets),
-    [actionRequiredPackets]
+    () => countPendingKaleSignatures(actionRequiredPackets, signedEnvelopeIds),
+    [actionRequiredPackets, signedEnvelopeIds]
   );
   const profileTab: ProfileDocTab = viewByDocuments ? 'documents' : 'action_required';
   const setProfileTab = useCallback(
@@ -1009,9 +1023,22 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
               </thead>
               <tbody className="text-[13px] text-slate-700">
                 {actionRequiredPackets.map((packet) => {
+                  const signedByKale = !!packet.envelopeId && signedEnvelopeIds.has(packet.envelopeId);
                   const pending = packet.children.filter((c) => c.needsKaleSignature);
-                  if (pending.length === 0) return null;
+                  // Keep packets visible after Kale signs (so she can still see
+                  // the envelope's other recipients work through their docs),
+                  // even though no signatures remain pending from her.
+                  if (pending.length === 0 && !signedByKale) return null;
                   const open = expandedPackets[packet.id] ?? false;
+                  // Once Kale has signed but the envelope isn't fully completed,
+                  // surface "In Progress" on both the envelope row and any
+                  // still-pending document rows so the status matches the
+                  // multi-recipient signing state.
+                  const promoteToInProgress = (label: string) =>
+                    signedByKale && label.trim().toLowerCase() === 'yet to sign'
+                      ? 'In progress'
+                      : label;
+                  const displayPacketStatus = promoteToInProgress(packet.status);
                   return (
                     <React.Fragment key={packet.id}>
                       <tr className="border-b border-slate-100 bg-white hover:bg-slate-50/60 transition-colors">
@@ -1045,9 +1072,9 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                         <td className="px-4 py-4 align-middle">
                           <div className="flex items-center gap-2">
                             <span
-                              className={`w-2 h-2 rounded-full shrink-0 ${statusDotClassForLabel(packet.status, packet.dotClass)}`}
+                              className={`w-2 h-2 rounded-full shrink-0 ${statusDotClassForLabel(displayPacketStatus, packet.dotClass)}`}
                             />
-                            <span className="font-semibold capitalize text-slate-800">{packet.status}</span>
+                            <span className="font-semibold capitalize text-slate-800">{displayPacketStatus}</span>
                           </div>
                         </td>
                         <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
@@ -1063,15 +1090,17 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                               <Eye size={14} />
                               View
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => onReviewDocument?.(packet.envelopeId ?? packet.id)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-slate-900"
-                              style={{ backgroundColor: ACCENT_SIGN }}
-                            >
-                              <PenLine size={14} />
-                              Sign
-                            </button>
+                            {!signedByKale && (
+                              <button
+                                type="button"
+                                onClick={() => onReviewDocument?.(packet.envelopeId ?? packet.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-slate-900"
+                                style={{ backgroundColor: ACCENT_SIGN }}
+                              >
+                                <PenLine size={14} />
+                                Sign
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg"
@@ -1083,7 +1112,9 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                         </td>
                       </tr>
                       {open &&
-                        pending.map((child) => (
+                        pending.map((child) => {
+                          const displayChildStatus = promoteToInProgress(child.status);
+                          return (
                           <tr key={child.id} className="border-b border-slate-100 bg-slate-50/50 hover:bg-slate-50/90">
                             <td className="px-6 py-4 pl-14 align-middle">
                               <div className="flex items-center gap-2 min-w-0">
@@ -1094,9 +1125,9 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                             <td className="px-4 py-4 align-middle">
                               <div className="flex items-center gap-2">
                                 <span
-                                  className={`w-2 h-2 rounded-full shrink-0 ${statusDotClassForLabel(child.status, child.dotClass)}`}
+                                  className={`w-2 h-2 rounded-full shrink-0 ${statusDotClassForLabel(displayChildStatus, child.dotClass)}`}
                                 />
-                                <span className="font-semibold text-slate-800">{child.status}</span>
+                                <span className="font-semibold text-slate-800">{displayChildStatus}</span>
                               </div>
                             </td>
                             <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
@@ -1122,7 +1153,8 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                               </div>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                     </React.Fragment>
                   );
                 })}

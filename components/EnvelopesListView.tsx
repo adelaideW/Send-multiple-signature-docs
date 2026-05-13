@@ -36,8 +36,18 @@ export type EnvelopeStatus =
   | 'completed'
   | 'voided';
 
-/** Per-document signing state inside an envelope */
-export type DocumentSigningStatus = 'draft' | 'yet to sign' | 'completed' | 'correcting' | 'voided';
+/**
+ * Per-document signing state inside an envelope. `in progress` represents a
+ * document where at least one — but not yet every — recipient has signed; it
+ * sits between `yet to sign` (untouched) and `completed` (every signer done).
+ */
+export type DocumentSigningStatus =
+  | 'draft'
+  | 'yet to sign'
+  | 'in progress'
+  | 'completed'
+  | 'correcting'
+  | 'voided';
 
 export interface EnvelopeDocumentRow {
   id: string;
@@ -198,6 +208,7 @@ function documentStatusDotClass(status: DocumentSigningStatus): string {
       return 'bg-slate-400';
     case 'yet to sign':
       return 'bg-red-500';
+    case 'in progress':
     case 'correcting':
       return 'bg-amber-500';
     case 'completed':

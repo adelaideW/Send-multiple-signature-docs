@@ -95,6 +95,8 @@ function headerBadgeForStatus(status: EnvelopeStatus): { label: string; classNam
 
 function docStatusLabel(status: DocumentSigningStatus): string {
   if (status === 'voided') return 'Voided';
+  if (status === 'in progress') return 'In progress';
+  if (status === 'yet to sign') return 'Yet to sign';
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
@@ -103,6 +105,8 @@ function documentDotClass(status: DocumentSigningStatus): string {
     case 'completed':
       return 'bg-emerald-500';
     case 'yet to sign':
+      return 'bg-red-500';
+    case 'in progress':
     case 'correcting':
       return 'bg-amber-500';
     case 'voided':
