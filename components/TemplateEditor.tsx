@@ -111,11 +111,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const [employeeRole, setEmployeeRole] = useState<'employee' | 'manager'>('employee');
   const [contentCheck, setContentCheck] = useState(0);
   const [unsavedExitModalOpen, setUnsavedExitModalOpen] = useState(false);
+  // Edit-mode header Save splits into two destinations behind a
+  // dropdown: "Save to instance" (one-off custom template attached to
+  // this envelope) and "Save and update template" (overwrite the source
+  // template). Create-mode keeps the single Save click.
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const chipMoveRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const syncingTitleFromBar = useRef(false);
   const employeeMenuRef = useRef<HTMLDivElement>(null);
+  const saveMenuRef = useRef<HTMLDivElement>(null);
 
   const focusEditor = () => {
     editorRef.current?.focus();
@@ -233,6 +239,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [employeeMenuOpen]);
+
+  useEffect(() => {
+    if (!saveMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (saveMenuRef.current && !saveMenuRef.current.contains(e.target as Node)) {
+        setSaveMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [saveMenuOpen]);
 
   const insertChipAtCaret = useCallback((label: string) => {
     const editor = editorRef.current;
@@ -526,23 +543,82 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           <button type="button" className="px-4 py-1.5 bg-[#f8fafc] border border-slate-200 rounded-xl text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm">
             Preview
           </button>
-          <span
-            className="inline-flex"
-            title={useRichCanvas && !canSave ? 'Enter content before saving' : undefined}
-          >
-            <button
-              type="button"
-              onClick={() => performSave(false)}
-              disabled={useRichCanvas && !canSave}
-              className={`px-6 py-1.5 rounded-xl text-[13px] font-bold transition-all shadow-md ml-1 ${
-                useRichCanvas && !canSave
-                  ? 'bg-[#7A005D]/45 text-white cursor-not-allowed'
-                  : 'bg-[#7A005D] text-white hover:opacity-95'
-              }`}
+          {isCreate ? (
+            <span
+              className="inline-flex"
+              title={useRichCanvas && !canSave ? 'Enter content before saving' : undefined}
             >
-              Save
-            </button>
-          </span>
+              <button
+                type="button"
+                onClick={() => performSave(false)}
+                disabled={useRichCanvas && !canSave}
+                className={`px-6 py-1.5 rounded-xl text-[13px] font-bold transition-all shadow-md ml-1 ${
+                  useRichCanvas && !canSave
+                    ? 'bg-[#7A005D]/45 text-white cursor-not-allowed'
+                    : 'bg-[#7A005D] text-white hover:opacity-95'
+                }`}
+              >
+                Save
+              </button>
+            </span>
+          ) : (
+            <div
+              ref={saveMenuRef}
+              className="relative inline-flex"
+              title={useRichCanvas && !canSave ? 'Enter content before saving' : undefined}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (useRichCanvas && !canSave) return;
+                  setSaveMenuOpen((o) => !o);
+                }}
+                disabled={useRichCanvas && !canSave}
+                aria-haspopup="menu"
+                aria-expanded={saveMenuOpen}
+                className={`inline-flex items-center gap-1.5 pl-6 pr-3 py-1.5 rounded-xl text-[13px] font-bold transition-all shadow-md ml-1 ${
+                  useRichCanvas && !canSave
+                    ? 'bg-[#7A005D]/45 text-white cursor-not-allowed'
+                    : 'bg-[#7A005D] text-white hover:opacity-95'
+                }`}
+              >
+                Save
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform ${saveMenuOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {saveMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full mt-1.5 w-[240px] bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-[1500]"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
+                    onClick={() => {
+                      setSaveMenuOpen(false);
+                      performSave(false, 'new');
+                    }}
+                  >
+                    Save to instance
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="w-full text-left px-4 py-2.5 text-[13px] font-semibold text-slate-800 hover:bg-slate-50 border-t border-slate-100"
+                    onClick={() => {
+                      setSaveMenuOpen(false);
+                      performSave(false, 'update');
+                    }}
+                  >
+                    Save and update template
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={requestEditorExit}
