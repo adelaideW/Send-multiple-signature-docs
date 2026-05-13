@@ -602,7 +602,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                       performSave(false, 'new');
                     }}
                   >
-                    Save to instance
+                    Save to this document
                   </button>
                   <button
                     type="button"
@@ -1018,7 +1018,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           role="presentation"
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-[744px] p-6 border border-slate-200"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] p-6 border border-slate-200"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -1098,7 +1098,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     performSave(true, 'new');
                   }}
                 >
-                  Save
+                  Save to this document
                 </button>
               </div>
             )}
