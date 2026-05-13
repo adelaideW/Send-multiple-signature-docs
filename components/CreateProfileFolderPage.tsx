@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
 import type { ProfileFolderNode } from '../utils/profileFolderUtils';
-import { buildFolderLocationPreview, MAX_PROFILE_FOLDER_LAYERS } from '../utils/profileFolderUtils';
+import { buildFolderLocationPreview, findProfileFolder, MAX_PROFILE_FOLDER_LAYERS } from '../utils/profileFolderUtils';
 
 export interface CreateProfileFolderPageProps {
   rootFolder: ProfileFolderNode;
@@ -165,6 +165,48 @@ const rdsTooltipSurfaceClass =
 
 const ACCESS_LEVEL_OPTIONS = ['Can manage files', 'Contributor', 'Viewer'] as const;
 type AccessLevel = (typeof ACCESS_LEVEL_OPTIONS)[number];
+
+/**
+ * Reverse the `createdFor` string format produced by ProfileFoldersView into
+ * the include / except chip arrays this form renders with. Mirrors the
+ * branches that used to live in the editingFolder useEffect so we can reuse
+ * the same parser when seeding from a parent folder (subfolder inheritance).
+ */
+function parseCreatedFor(createdFor: string | undefined): {
+  include: string[];
+  except: string[];
+} {
+  if (!createdFor) return { include: [], except: [] };
+  if (
+    createdFor === 'All - Everyone' ||
+    createdFor === 'All - Employees' ||
+    createdFor === 'All... (Managers, employees, etc.)'
+  ) {
+    return { include: ['All - Everyone'], except: [] };
+  }
+  if (createdFor === 'Selected users (Kale excluded)') {
+    return { include: [], except: ['Kale George'] };
+  }
+  if (createdFor.includes('(Kale excluded)')) {
+    const namesStr = createdFor.replace(' (Kale excluded)', '').trim();
+    const names = namesStr ? namesStr.split(',').map((n) => n.trim()).filter(Boolean) : [];
+    return { include: names, except: ['Kale George'] };
+  }
+  const excludedMatch = createdFor.match(/^(.*?)\s*\(([^)]+) excluded\)\s*$/);
+  if (excludedMatch) {
+    const base = excludedMatch[1].trim();
+    const exclusions = excludedMatch[2]
+      .split(',')
+      .map((n) => n.trim())
+      .filter(Boolean);
+    const include = base === 'All - Employees' || base === 'All - Everyone' ? ['All - Everyone'] : base
+      ? base.split(',').map((n) => n.trim()).filter(Boolean)
+      : [];
+    return { include, except: exclusions };
+  }
+  const names = createdFor.split(',').map((n) => n.trim()).filter((n) => n.length > 0);
+  return { include: names, except: [] };
+}
 
 /** Fixed-position RDS tooltip (portal) — matches DM Bulk Upload tooltips */
 const FloatingTooltip: React.FC<{
@@ -455,11 +497,32 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   onCreate,
   editingFolder,
 }) => {
+  /**
+   * Subfolders inherit "Create for" and access rows from their parent folder
+   * (anything below "All documents"). Root-level folders created directly
+   * under "All documents" start blank. When editing, the existing folder's
+   * own values still win.
+   */
+  const inheritanceSource = useMemo<ProfileFolderNode | null>(() => {
+    if (editingFolder) return null;
+    if (!parentFolderId || parentFolderId === rootFolder.id) return null;
+    return findProfileFolder(rootFolder, parentFolderId);
+  }, [editingFolder, parentFolderId, rootFolder]);
+
+  const initialCreatedFor = useMemo(
+    () => parseCreatedFor(editingFolder?.createdFor ?? inheritanceSource?.createdFor),
+    [editingFolder?.createdFor, inheritanceSource?.createdFor]
+  );
+  const initialAccessRows = useMemo<Array<{ name: string; access: AccessLevel }>>(() => {
+    const source = editingFolder?.permissions ?? inheritanceSource?.permissions;
+    return source ? source.map((p) => ({ name: p.name, access: p.access as AccessLevel })) : [];
+  }, [editingFolder?.permissions, inheritanceSource?.permissions]);
+
   const [folderName, setFolderName] = useState(editingFolder?.name || '');
   const [description, setDescription] = useState(editingFolder?.description || '');
   const [peopleSelectionError] = useState<string | null>(null);
-  const [includeChips, setIncludeChips] = useState<string[]>([]);
-  const [exceptChips, setExceptChips] = useState<string[]>([]);
+  const [includeChips, setIncludeChips] = useState<string[]>(initialCreatedFor.include);
+  const [exceptChips, setExceptChips] = useState<string[]>(initialCreatedFor.except);
   const [accessChips, setAccessChips] = useState<string[]>([]);
 
   const [activePicker, setActivePicker] = useState<PickerType | null>(null);
@@ -471,36 +534,10 @@ const CreateProfileFolderPage: React.FC<CreateProfileFolderPageProps> = ({
   });
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [dropdownCoords, setDropdownCoords] = useState<DropdownCoords | null>(null);
-  const [accessRows, setAccessRows] = useState<Array<{ name: string; access: AccessLevel }>>(
-    editingFolder?.permissions ? editingFolder.permissions.map(p => ({ name: p.name, access: p.access as AccessLevel })) : []
-  );
+  const [accessRows, setAccessRows] = useState<Array<{ name: string; access: AccessLevel }>>(initialAccessRows);
   const [openAccessMenuRow, setOpenAccessMenuRow] = useState<number | null>(null);
   const [accessMenuCoords, setAccessMenuCoords] = useState<DropdownCoords | null>(null);
   const [highlightedAccessRow, setHighlightedAccessRow] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!editingFolder?.createdFor) return;
-
-    const createdFor = editingFolder.createdFor;
-
-    if (createdFor === 'All - Everyone' || createdFor === 'All - Employees' || createdFor === 'All... (Managers, employees, etc.)') {
-      setIncludeChips(['All - Everyone']);
-    } else if (createdFor === 'Selected users (Kale excluded)') {
-      setExceptChips(['Kale George']);
-    } else if (createdFor.includes('(Kale excluded)')) {
-      setExceptChips(['Kale George']);
-      const namesStr = createdFor.replace(' (Kale excluded)', '');
-      if (namesStr.trim()) {
-        const names = namesStr.split(',').map(n => n.trim());
-        setIncludeChips(names);
-      }
-    } else {
-      const names = createdFor.split(',').map(n => n.trim()).filter(n => n.length > 0);
-      if (names.length > 0) {
-        setIncludeChips(names);
-      }
-    }
-  }, [editingFolder?.createdFor]);
 
   const includeAnchorRef = useRef<HTMLDivElement>(null);
   const exceptAnchorRef = useRef<HTMLDivElement>(null);
