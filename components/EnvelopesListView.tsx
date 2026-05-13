@@ -225,18 +225,7 @@ function formatLastModified(iso: string): string {
   return `${mm}/${dd}/${yy} ${h}:${m}:${s} PST`;
 }
 
-/**
- * Pin "yet to sign" envelopes to the top regardless of the active sort. This
- * surfaces work that still needs attention before historical/in-progress
- * rows, and is intentionally applied across every sort column.
- */
-function yetToSignRank(status: EnvelopeStatus): number {
-  return status === 'yet to sign' ? 0 : 1;
-}
-
 function compareRows(a: EnvelopeTableRow, b: EnvelopeTableRow, key: SortKey, dir: SortDir): number {
-  const pinDelta = yetToSignRank(a.status) - yetToSignRank(b.status);
-  if (pinDelta !== 0) return pinDelta;
   let cmp = 0;
   if (key === 'lastModified') {
     cmp = new Date(a.lastModified).getTime() - new Date(b.lastModified).getTime();
@@ -441,7 +430,34 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
   const [showVoided, setShowVoided] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('lastModified');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ e1: true });
+  /**
+   * Default-expansion behaves "only the most recent envelope is open". When a
+   * brand-new envelope arrives (or the latest row changes), we reset the map
+   * so only that row is expanded. Manual toggles before a new arrival are
+   * preserved by storing them on top of the reset baseline.
+   */
+  const latestRowId = useMemo(() => {
+    let pickedId: string | null = null;
+    let pickedTs = -Infinity;
+    for (const r of rows) {
+      const ts = new Date(r.lastModified).getTime();
+      if (ts > pickedTs) {
+        pickedTs = ts;
+        pickedId = r.id;
+      }
+    }
+    return pickedId;
+  }, [rows]);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() =>
+    latestRowId ? { [latestRowId]: true } : {}
+  );
+  const lastSeenLatestRef = useRef<string | null>(latestRowId);
+  useEffect(() => {
+    if (latestRowId && latestRowId !== lastSeenLatestRef.current) {
+      lastSeenLatestRef.current = latestRowId;
+      setExpanded({ [latestRowId]: true });
+    }
+  }, [latestRowId]);
   const [openMoreId, setOpenMoreId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const moreTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});

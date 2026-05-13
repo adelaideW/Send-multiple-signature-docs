@@ -232,11 +232,13 @@ function statusDotClassForLabel(label: string, fallback: string): string {
 }
 
 /**
- * Pin envelopes that still need a signature to the top of the Action required
- * table so the most-pressing work is always above completed/in-progress rows.
+ * Parse `lastModified` to a sortable timestamp. Falls back to 0 when the
+ * value is unparseable so newer envelopes (which always have a valid ISO
+ * string) end up above legacy/seed rows with malformed dates.
  */
-function actionRequiredSortRank(status: string): number {
-  return status.trim().toLowerCase() === 'yet to sign' ? 0 : 1;
+function packetLastModifiedTs(p: ActionPacketRow): number {
+  const t = new Date(p.lastModified).getTime();
+  return Number.isFinite(t) ? t : 0;
 }
 
 /** Left profile rail (prototype: only Documents is active; matches reference layout). */
@@ -647,12 +649,12 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   const actionRequiredPackets = useMemo<ActionPacketRow[]>(
     () => {
       const merged = [...(extraActionRequiredPackets ?? []), ...ACTION_REQUIRED_PACKETS];
-      // Stable sort: "Yet to sign" first, everything else keeps its relative
-      // ordering (newly sent envelopes still land above the seeded rows).
+      // Newest envelope first, regardless of status. Ties keep original order
+      // (in-session sent rows already arrive ahead of the seeded ones).
       return merged
         .map((p, i) => ({ p, i }))
         .sort((a, b) => {
-          const r = actionRequiredSortRank(a.p.status) - actionRequiredSortRank(b.p.status);
+          const r = packetLastModifiedTs(b.p) - packetLastModifiedTs(a.p);
           return r !== 0 ? r : a.i - b.i;
         })
         .map(({ p }) => p);
@@ -673,7 +675,34 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
 
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
-  const [expandedPackets, setExpandedPackets] = useState<Record<string, boolean>>({});
+  /**
+   * Track which packet is currently the latest so we can default-expand only
+   * that one. When a newer envelope arrives the map is reset so older rows
+   * collapse automatically; user toggles in between are preserved on top of
+   * that baseline.
+   */
+  const latestActionPacketId = useMemo(() => {
+    let pickedId: string | null = null;
+    let pickedTs = -Infinity;
+    for (const p of actionRequiredPackets) {
+      const ts = packetLastModifiedTs(p);
+      if (ts > pickedTs) {
+        pickedTs = ts;
+        pickedId = p.id;
+      }
+    }
+    return pickedId;
+  }, [actionRequiredPackets]);
+  const [expandedPackets, setExpandedPackets] = useState<Record<string, boolean>>(() =>
+    latestActionPacketId ? { [latestActionPacketId]: true } : {}
+  );
+  const lastSeenLatestActionRef = useRef<string | null>(latestActionPacketId);
+  useEffect(() => {
+    if (latestActionPacketId && latestActionPacketId !== lastSeenLatestActionRef.current) {
+      lastSeenLatestActionRef.current = latestActionPacketId;
+      setExpandedPackets({ [latestActionPacketId]: true });
+    }
+  }, [latestActionPacketId]);
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [showArchive, setShowArchive] = useState(false);
   const [listSearch, setListSearch] = useState('');
@@ -982,7 +1011,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                 {actionRequiredPackets.map((packet) => {
                   const pending = packet.children.filter((c) => c.needsKaleSignature);
                   if (pending.length === 0) return null;
-                  const open = expandedPackets[packet.id] ?? true;
+                  const open = expandedPackets[packet.id] ?? false;
                   return (
                     <React.Fragment key={packet.id}>
                       <tr className="border-b border-slate-100 bg-white hover:bg-slate-50/60 transition-colors">
@@ -993,7 +1022,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                               onClick={() =>
                                 setExpandedPackets((p) => ({
                                   ...p,
-                                  [packet.id]: !(p[packet.id] ?? true),
+                                  [packet.id]: !(p[packet.id] ?? false),
                                 }))
                               }
                               className="p-0.5 text-slate-400 hover:text-slate-700 rounded shrink-0"
