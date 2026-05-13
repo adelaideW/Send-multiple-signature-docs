@@ -982,14 +982,15 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   );
 
   /**
-   * Resolve a recipient slot id to a stable accent hex, keyed off the assigned user id when present
-   * so the same person keeps the same color regardless of which slot they're sitting in.
+   * Resolve a recipient slot id to an accent hex based on the recipient's order in the list,
+   * which guarantees every recipient gets a different palette slot (up to 7) within an envelope.
+   * Falls back to a hash on the slot id only when the slot can't be found in the current list.
    */
   const accentForSlot = useCallback(
     (rid: string) => {
-      const slot = recipients.find((r) => r.id === rid);
-      const key = slot?.user?.id ?? rid;
-      return recipientFieldAccent(key);
+      const idx = recipients.findIndex((r) => r.id === rid);
+      if (idx >= 0) return RECIPIENT_FIELD_PALETTE[idx % RECIPIENT_FIELD_PALETTE.length];
+      return recipientFieldAccent(rid);
     },
     [recipients]
   );
