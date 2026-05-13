@@ -370,17 +370,29 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     return editorHasMeaningfulContent(el);
   }, [useRichCanvas, contentCheck]);
 
+  /**
+   * `target` lets the unsaved-changes modal force a specific destination
+   * when editing: "new" saves the edits as a brand-new template, while
+   * "update" overwrites the template that was opened for editing.
+   * "auto" preserves the legacy behavior — `create` mode saves new and
+   * `edit` mode updates in place.
+   */
   const performSave = useCallback(
-    (allowEmpty: boolean) => {
+    (allowEmpty: boolean, target: 'auto' | 'new' | 'update' = 'auto') => {
       if (useRichCanvas && !allowEmpty) {
         const el = editorRef.current;
         if (!el || !editorHasMeaningfulContent(el)) return;
       }
       const name = templateName.trim() || readTitleFromEditor().trim() || 'Untitled template';
       const body = useRichCanvas && editorRef.current ? editorRef.current.innerHTML : '';
-      if (isCreate && onSaveNewTemplate) {
+      const resolved = target === 'auto' ? (isCreate ? 'new' : 'update') : target;
+      if (resolved === 'new' && onSaveNewTemplate) {
         onSaveNewTemplate(name, body);
-      } else if (!isCreate && onUpdateTemplate) {
+      } else if (resolved === 'update' && onUpdateTemplate) {
+        onUpdateTemplate(name, body);
+      } else if (onSaveNewTemplate) {
+        onSaveNewTemplate(name, body);
+      } else if (onUpdateTemplate) {
         onUpdateTemplate(name, body);
       } else {
         onExit();
@@ -952,28 +964,68 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
             <p className="text-sm text-slate-700 leading-relaxed mb-6">
               You have unsaved contents. Are you sure you want to leave the editor without saving this template?
             </p>
-            <div className="flex justify-end gap-2 flex-wrap">
-              <button
-                type="button"
-                className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
-                onClick={() => {
-                  setUnsavedExitModalOpen(false);
-                  onExit();
-                }}
-              >
-                Leave without saving
-              </button>
-              <button
-                type="button"
-                className="px-4 py-2.5 rounded-xl bg-[#7A005D] text-white text-sm font-bold hover:opacity-95"
-                onClick={() => {
-                  setUnsavedExitModalOpen(false);
-                  performSave(true);
-                }}
-              >
-                Save template
-              </button>
-            </div>
+            {isCreate ? (
+              <div className="flex justify-end gap-2 flex-wrap">
+                <button
+                  type="button"
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
+                  onClick={() => {
+                    setUnsavedExitModalOpen(false);
+                    onExit();
+                  }}
+                >
+                  Leave without saving
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-2.5 rounded-xl bg-[#7A005D] text-white text-sm font-bold hover:opacity-95"
+                  onClick={() => {
+                    setUnsavedExitModalOpen(false);
+                    performSave(true);
+                  }}
+                >
+                  Save template
+                </button>
+              </div>
+            ) : (
+              // Editing an existing template gets the low-emphasis
+              // "Save changes to template" text button on the left,
+              // alongside the standard Leave / Save pair. The text
+              // button intentionally has no border or fill so the
+              // destructive overwrite stays the least eye-grabbing.
+              <div className="flex justify-end items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  className="px-2 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700 hover:underline rounded mr-auto"
+                  onClick={() => {
+                    setUnsavedExitModalOpen(false);
+                    performSave(true, 'update');
+                  }}
+                >
+                  Save changes to template
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
+                  onClick={() => {
+                    setUnsavedExitModalOpen(false);
+                    onExit();
+                  }}
+                >
+                  Leave without saving
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-2.5 rounded-xl bg-[#7A005D] text-white text-sm font-bold hover:opacity-95"
+                  onClick={() => {
+                    setUnsavedExitModalOpen(false);
+                    performSave(true, 'new');
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
