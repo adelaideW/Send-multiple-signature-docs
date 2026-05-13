@@ -152,6 +152,7 @@ function recipientsForDetails(st: EnvelopeState, sentAt: Date): EnvelopeRecipien
     const isCC = r.action === 'CC recipient';
     return {
       id: r.id,
+      userId: r.user?.id,
       order,
       name,
       email: r.user?.email ?? '',
@@ -610,7 +611,7 @@ const App: React.FC = () => {
   }, [draftSavedPacketId, navigateTo]);
 
   const startSignFlow = useCallback(
-    (packetId: string) => {
+    (packetId: string, signerUserId?: string) => {
       const row = packetRows.find((r) => r.id === packetId);
       if (!row) return;
       setSignFlow({
@@ -618,6 +619,7 @@ const App: React.FC = () => {
         packetName: row.name,
         envelopeStatus: row.status,
         docs: (row.children ?? []).map((c) => ({ id: c.id, name: c.name, status: c.status })),
+        signerUserId,
       });
       navigateTo('document_review');
     },
@@ -637,34 +639,108 @@ const App: React.FC = () => {
     setViewHistory(['people_tab']);
   }, [syncDocumentsHubTab]);
 
+  /**
+   * Mark the recipient row that maps to `signerUserId` as Completed (with the
+   * provided completedOn timestamp). Other rows are left intact so multi-signer
+   * envelopes show one recipient finishing without prematurely flipping the
+   * whole envelope to completed.
+   */
+  const markRecipientCompleted = useCallback(
+    (
+      recipients: EnvelopeRecipientRow[] | undefined,
+      signerUserId: string | undefined,
+      completedOn: string,
+    ): EnvelopeRecipientRow[] | undefined => {
+      if (!recipients || recipients.length === 0 || !signerUserId) return recipients;
+      let matched = false;
+      const next = recipients.map((r) => {
+        if (r.userId !== signerUserId) return r;
+        matched = true;
+        return { ...r, status: 'Completed' as const, completedOn };
+      });
+      return matched ? next : recipients;
+    },
+    []
+  );
+
+  /**
+   * The envelope is only "completed" once every signing recipient has
+   * Completed AND every required document is `completed`. Until then we keep
+   * the envelope in `in progress`, even if one recipient has finished signing
+   * their share of the docs.
+   */
+  const deriveEnvelopeStatus = useCallback(
+    (
+      previousStatus: EnvelopeStatus,
+      recipients: EnvelopeRecipientRow[] | undefined,
+      children: EnvelopeDocumentRow[] | undefined,
+    ): EnvelopeStatus => {
+      if (previousStatus === 'voided' || previousStatus === 'draft') return previousStatus;
+      const docs = children ?? [];
+      const allDocsDone = docs.length > 0 && docs.every((c) => c.status === 'completed');
+      const signers = (recipients ?? []).filter((r) => r.action === 'To sign');
+      const allSignersDone = signers.length === 0 || signers.every((r) => r.status === 'Completed');
+      if (allDocsDone && allSignersDone) return 'completed';
+      return 'in progress';
+    },
+    []
+  );
+
+  /**
+   * Drop the matching envelope from Kale's "Action required" list once she
+   * has fully signed it. The envelope still lives in `packetRows` (and shows
+   * up in her Documents tab), but the action-required list only tracks
+   * outstanding signatures so we clear completed items here.
+   */
+  const clearKaleActionRequiredForPacket = useCallback((packetId: string) => {
+    setKaleActionRequiredPackets((prev) => prev.filter((p) => p.envelopeId !== packetId));
+  }, []);
+
   const handleSignComplete = useCallback(
     (packetId: string) => {
       const ts = new Date().toISOString();
+      const completedOn = formatRecipientSentOn(new Date());
+      const signerUserId = signFlow?.signerUserId;
       setPacketRows((prev) =>
         prev.map((r) => {
           if (r.id !== packetId) return r;
+          const children = r.children?.map((c) => ({
+            ...c,
+            status: 'completed' as DocumentSigningStatus,
+            lastModified: ts,
+          }));
+          const recipients = markRecipientCompleted(r.recipients, signerUserId, completedOn);
           return {
             ...r,
-            status: 'completed' as EnvelopeStatus,
+            status: deriveEnvelopeStatus(r.status, recipients, children),
             lastModified: ts,
-            children: r.children?.map((c) => ({
-              ...c,
-              status: 'completed' as DocumentSigningStatus,
-              lastModified: ts,
-            })),
+            children,
+            recipients,
           };
         })
       );
+      if (signerUserId === 'u-kale') {
+        clearKaleActionRequiredForPacket(packetId);
+      }
       setSignFlow(null);
       syncDocumentsHubTab('Documents');
       trimToPeopleTab();
     },
-    [trimToPeopleTab, syncDocumentsHubTab]
+    [
+      signFlow,
+      markRecipientCompleted,
+      deriveEnvelopeStatus,
+      clearKaleActionRequiredForPacket,
+      trimToPeopleTab,
+      syncDocumentsHubTab,
+    ]
   );
 
   const handleSignPartial = useCallback(
     (packetId: string, completedDocIds: string[]) => {
       const ts = new Date().toISOString();
+      const completedOn = formatRecipientSentOn(new Date());
+      const signerUserId = signFlow?.signerUserId;
       const done = new Set(completedDocIds);
       setPacketRows((prev) =>
         prev.map((r) => {
@@ -676,19 +752,42 @@ const App: React.FC = () => {
                 ? c
                 : { ...c, status: 'yet to sign' as DocumentSigningStatus, lastModified: ts }
           );
+          // Only flip the recipient to Completed if every doc in the envelope
+          // is now done; otherwise the signer still has more pages to come back to.
+          const allDocsDone =
+            (children?.length ?? 0) > 0 && (children ?? []).every((c) => c.status === 'completed');
+          const recipients = allDocsDone
+            ? markRecipientCompleted(r.recipients, signerUserId, completedOn)
+            : r.recipients;
           return {
             ...r,
-            status: 'in progress' as EnvelopeStatus,
+            status: deriveEnvelopeStatus(r.status, recipients, children),
             lastModified: ts,
             children,
+            recipients,
           };
         })
       );
+      if (signerUserId === 'u-kale') {
+        const packet = packetRows.find((r) => r.id === packetId);
+        const totalDocs = packet?.children?.length ?? 0;
+        if (totalDocs > 0 && completedDocIds.length >= totalDocs) {
+          clearKaleActionRequiredForPacket(packetId);
+        }
+      }
       setSignFlow(null);
       syncDocumentsHubTab('Documents');
       trimToPeopleTab();
     },
-    [trimToPeopleTab, syncDocumentsHubTab]
+    [
+      signFlow,
+      packetRows,
+      markRecipientCompleted,
+      deriveEnvelopeStatus,
+      clearKaleActionRequiredForPacket,
+      trimToPeopleTab,
+      syncDocumentsHubTab,
+    ]
   );
 
   const prefillStateFromDraftRow = (row: EnvelopeTableRow): EnvelopeState => {
@@ -839,7 +938,7 @@ const App: React.FC = () => {
                       goToEnvelopeCreator('profile');
                     }}
                     onOpenEnvelope={(envelopeId) => handleOpenEnvelopeDetails(envelopeId)}
-                    onReviewDocument={() => startSignFlow('e1')}
+                    onReviewDocument={(envelopeId) => startSignFlow(envelopeId, 'u-kale')}
                     viewByDocuments={viewByDocuments}
                     setViewByDocuments={setViewByDocuments}
                     profileFolderRoot={profileFolderRoot}

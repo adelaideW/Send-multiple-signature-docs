@@ -49,6 +49,12 @@ export interface EnvelopeDocumentRow {
 /** Recipient row shape used by both the Envelope Details view and any newly-sent envelopes. */
 export interface EnvelopeRecipientRow {
   id: string;
+  /**
+   * Identity of the signer behind this recipient (matches the user id used in
+   * the envelope creator). Lets the sign flow find and update the right
+   * recipient row when that user completes signing.
+   */
+  userId?: string;
   order: number;
   name: string;
   email: string;
@@ -219,7 +225,18 @@ function formatLastModified(iso: string): string {
   return `${mm}/${dd}/${yy} ${h}:${m}:${s} PST`;
 }
 
+/**
+ * Pin "yet to sign" envelopes to the top regardless of the active sort. This
+ * surfaces work that still needs attention before historical/in-progress
+ * rows, and is intentionally applied across every sort column.
+ */
+function yetToSignRank(status: EnvelopeStatus): number {
+  return status === 'yet to sign' ? 0 : 1;
+}
+
 function compareRows(a: EnvelopeTableRow, b: EnvelopeTableRow, key: SortKey, dir: SortDir): number {
+  const pinDelta = yetToSignRank(a.status) - yetToSignRank(b.status);
+  if (pinDelta !== 0) return pinDelta;
   let cmp = 0;
   if (key === 'lastModified') {
     cmp = new Date(a.lastModified).getTime() - new Date(b.lastModified).getTime();

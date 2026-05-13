@@ -158,7 +158,17 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
     : effectiveRecipients;
 
   const showSign = packetStatus !== 'voided' && packetStatus !== 'completed' && packetStatus !== 'draft' && packetStatus !== 'correcting';
-  const canSign = showSign && adminIsSigner;
+  // Hide Sign once there's nothing left to sign — either every document in
+  // the envelope is `completed`, or every "To sign" recipient has already
+  // finished. In both cases the active viewer's signing share is done, so
+  // showing Sign would let them re-sign the envelope unintentionally.
+  const everyDocCompleted =
+    documents.length > 0 && documents.every((d) => d.status === 'completed');
+  const signersRequired = recipients?.filter((r) => r.action === 'To sign') ?? [];
+  const everySignerDone =
+    signersRequired.length > 0 && signersRequired.every((r) => r.status === 'Completed');
+  const noMoreSigning = everyDocCompleted || everySignerDone;
+  const canSign = showSign && adminIsSigner && !noMoreSigning;
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);

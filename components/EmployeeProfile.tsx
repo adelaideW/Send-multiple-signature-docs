@@ -117,7 +117,12 @@ interface DocumentsSectionProps {
    * a human-readable fallback for older call sites.
    */
   onOpenEnvelope?: (envelopeId: string, name: string) => void;
-  onReviewDocument?: () => void;
+  /**
+   * Starts the document signing flow for the envelope tied to the clicked
+   * Action required row. Receives the matching envelope id so the host can
+   * load the right docs into the review surface.
+   */
+  onReviewDocument?: (envelopeId: string) => void;
   viewByDocuments: boolean;
   setViewByDocuments: (val: boolean) => void;
   profileFolderRoot?: ProfileFolderNode;
@@ -200,6 +205,39 @@ const ACTION_REQUIRED_PACKETS: ActionPacketRow[] = [
 
 const countPendingKaleSignatures = (packets: ActionPacketRow[]): number =>
   packets.reduce((n, p) => n + p.children.filter((c) => c.needsKaleSignature).length, 0);
+
+/**
+ * Map a free-form status label (used by the profile's Action required and
+ * Documents tables) to the same dot color the Documents tab uses. Falls back
+ * to whatever `dotClass` the caller stored on the row if the label doesn't
+ * match a known status, so older or custom rows keep rendering correctly.
+ */
+function statusDotClassForLabel(label: string, fallback: string): string {
+  const normalized = label.trim().toLowerCase();
+  switch (normalized) {
+    case 'yet to sign':
+      return 'bg-red-500';
+    case 'in progress':
+    case 'correcting':
+      return 'bg-amber-500';
+    case 'completed':
+      return 'bg-emerald-500';
+    case 'draft':
+      return 'bg-slate-400';
+    case 'voided':
+      return 'bg-slate-500';
+    default:
+      return fallback;
+  }
+}
+
+/**
+ * Pin envelopes that still need a signature to the top of the Action required
+ * table so the most-pressing work is always above completed/in-progress rows.
+ */
+function actionRequiredSortRank(status: string): number {
+  return status.trim().toLowerCase() === 'yet to sign' ? 0 : 1;
+}
 
 /** Left profile rail (prototype: only Documents is active; matches reference layout). */
 const PROFILE_LEFT_NAV_PRIMARY = [
@@ -607,7 +645,18 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   extraActionRequiredPackets,
 }) => {
   const actionRequiredPackets = useMemo<ActionPacketRow[]>(
-    () => [...(extraActionRequiredPackets ?? []), ...ACTION_REQUIRED_PACKETS],
+    () => {
+      const merged = [...(extraActionRequiredPackets ?? []), ...ACTION_REQUIRED_PACKETS];
+      // Stable sort: "Yet to sign" first, everything else keeps its relative
+      // ordering (newly sent envelopes still land above the seeded rows).
+      return merged
+        .map((p, i) => ({ p, i }))
+        .sort((a, b) => {
+          const r = actionRequiredSortRank(a.p.status) - actionRequiredSortRank(b.p.status);
+          return r !== 0 ? r : a.i - b.i;
+        })
+        .map(({ p }) => p);
+    },
     [extraActionRequiredPackets]
   );
   const actionRequiredBadge = useMemo(
@@ -966,7 +1015,9 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                         </td>
                         <td className="px-4 py-4 align-middle">
                           <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${packet.dotClass}`} />
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${statusDotClassForLabel(packet.status, packet.dotClass)}`}
+                            />
                             <span className="font-semibold capitalize text-slate-800">{packet.status}</span>
                           </div>
                         </td>
@@ -985,7 +1036,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => onReviewDocument?.()}
+                              onClick={() => onReviewDocument?.(packet.envelopeId ?? packet.id)}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold text-slate-900"
                               style={{ backgroundColor: ACCENT_SIGN }}
                             >
@@ -1013,7 +1064,9 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                             </td>
                             <td className="px-4 py-4 align-middle">
                               <div className="flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full shrink-0 ${child.dotClass}`} />
+                                <span
+                                  className={`w-2 h-2 rounded-full shrink-0 ${statusDotClassForLabel(child.status, child.dotClass)}`}
+                                />
                                 <span className="font-semibold text-slate-800">{child.status}</span>
                               </div>
                             </td>

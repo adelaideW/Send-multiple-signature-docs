@@ -40,6 +40,12 @@ export interface DocumentReviewFlow {
   packetName: string;
   envelopeStatus: EnvelopeStatus;
   docs: SignFlowDoc[];
+  /**
+   * Identity of the user signing. Used by the host to mark the correct
+   * recipient row as Completed and to drive any signer-specific UI changes
+   * (e.g. hiding "Action required" entries on a person's profile).
+   */
+  signerUserId?: string;
 }
 
 interface DocumentReviewViewProps {
