@@ -102,6 +102,36 @@ const MOCK_ENVELOPES: EnvelopeTableRow[] = [
       { id: 'e1d2', name: 'Mutual NDA', status: 'completed', lastModified: '2026-04-20T11:30:00.000Z' },
       { id: 'e1d3', name: 'Equity grant acknowledgment', status: 'yet to sign', lastModified: '2026-04-21T17:00:00.000Z' },
     ],
+    // Multi-signer setup: David has already finished his share (the two
+    // completed docs above), and Kale still has the equity grant ack
+    // open. Once she signs from her profile the envelope should flip to
+    // Completed because every required signer is done.
+    recipients: [
+      {
+        id: 'e1r1',
+        userId: 'u1',
+        order: 1,
+        name: 'David Gonzales',
+        email: 'david.g@acme.com',
+        initials: 'DG',
+        status: 'Completed',
+        action: 'To sign',
+        sentOn: '4/19/2026 9:00 AM',
+        completedOn: '4/20/2026 11:30 AM',
+      },
+      {
+        id: 'e1r2',
+        userId: 'u-kale',
+        order: 2,
+        name: 'Kale George',
+        email: 'kale.george@acme.com',
+        initials: 'KG',
+        status: 'Yet to sign',
+        action: 'To sign',
+        sentOn: '4/19/2026 9:00 AM',
+        completedOn: '—',
+      },
+    ],
   },
   {
     id: 'e2',
@@ -112,6 +142,35 @@ const MOCK_ENVELOPES: EnvelopeTableRow[] = [
     children: [
       { id: 'e2d1', name: 'SOC2 subprocessor acknowledgment', status: 'yet to sign', lastModified: '2026-04-21T08:45:00.000Z' },
       { id: 'e2d2', name: 'Laptop return policy', status: 'yet to sign', lastModified: '2026-04-21T08:45:00.000Z' },
+    ],
+    // Multi-signer setup with nobody started yet. When Kale signs first,
+    // the docs flip to "in progress" (one signer done) and the envelope
+    // stays "in progress" until David follows up.
+    recipients: [
+      {
+        id: 'e2r1',
+        userId: 'u-kale',
+        order: 1,
+        name: 'Kale George',
+        email: 'kale.george@acme.com',
+        initials: 'KG',
+        status: 'Yet to sign',
+        action: 'To sign',
+        sentOn: '4/21/2026 8:45 AM',
+        completedOn: '—',
+      },
+      {
+        id: 'e2r2',
+        userId: 'u1',
+        order: 2,
+        name: 'David Gonzales',
+        email: 'david.g@acme.com',
+        initials: 'DG',
+        status: 'Yet to sign',
+        action: 'To sign',
+        sentOn: '4/21/2026 8:45 AM',
+        completedOn: '—',
+      },
     ],
   },
   {
