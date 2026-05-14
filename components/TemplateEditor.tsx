@@ -40,11 +40,51 @@ import {
 } from 'lucide-react';
 
 const RECIPIENT_FIELD_MIME = 'application/x-recipient-field-label';
+/** Carried alongside the field label on palette drags so the dropped chip knows which recipient to color itself for. */
+const RECIPIENT_FIELD_RID_MIME = 'application/x-recipient-field-rid';
 const CHIP_ATTR = 'recipient-field';
 
-/** Match recipient-field chips in side panel; text inherits line formatting. */
+/**
+ * Color/style descriptor for a single recipient placeholder. We render chip
+ * backgrounds and avatar tones inline from these values so each recipient's
+ * fields are visually grouped without us needing to enumerate Tailwind
+ * variants for every new external recipient the user adds.
+ */
+interface RecipientTone {
+  /** Soft fill used for chips and the field palette tiles. */
+  bg: string;
+  /** Slightly darker stroke used to outline chips/tiles. */
+  border: string;
+  /** Stronger color used for icons + the active palette text. */
+  icon: string;
+  /** Tone applied to the round avatar in the dropdown + top button. */
+  avatarBg: string;
+  /** Icon color used inside the avatar circle. */
+  avatarIcon: string;
+}
+
+/**
+ * Per-recipient placeholder/external palette. The first two slots are
+ * pinned for the built-in placeholders so they stay purple/teal across
+ * sessions; the rest are cycled through for externally added
+ * placeholders in the order they were created.
+ */
+const RECIPIENT_TONE_PALETTE: RecipientTone[] = [
+  { bg: '#F3E8FF', border: '#E9D5FF', icon: '#7E22CE', avatarBg: '#F3E8FF', avatarIcon: '#7E22CE' }, // purple — Employee
+  { bg: '#CCFBF1', border: '#99F6E4', icon: '#0F766E', avatarBg: '#CCFBF1', avatarIcon: '#0F766E' }, // teal — Employee's manager
+  { bg: '#FEF3C7', border: '#FDE68A', icon: '#B45309', avatarBg: '#FEF3C7', avatarIcon: '#B45309' }, // amber
+  { bg: '#FFE4E6', border: '#FECDD3', icon: '#BE123C', avatarBg: '#FFE4E6', avatarIcon: '#BE123C' }, // rose
+  { bg: '#DBEAFE', border: '#BFDBFE', icon: '#1D4ED8', avatarBg: '#DBEAFE', avatarIcon: '#1D4ED8' }, // sky
+  { bg: '#E0E7FF', border: '#C7D2FE', icon: '#4338CA', avatarBg: '#E0E7FF', avatarIcon: '#4338CA' }, // indigo
+  { bg: '#DCFCE7', border: '#BBF7D0', icon: '#15803D', avatarBg: '#DCFCE7', avatarIcon: '#15803D' }, // green
+];
+
+/** Default tone for chips loaded from `initialBodyHtml` without a `data-recipient-id`. */
+const DEFAULT_RECIPIENT_TONE = RECIPIENT_TONE_PALETTE[0];
+
+/** Match recipient-field chips in side panel; text inherits line formatting. Background + border come from per-recipient inline styles. */
 const CHIP_CLASS =
-  'inline-flex items-center align-baseline mx-0.5 px-2 py-0.5 rounded-md text-inherit font-inherit leading-inherit bg-[#FDF2FB] border border-[#F5D0EE] cursor-grab active:cursor-grabbing select-none';
+  'inline-flex items-center align-baseline mx-0.5 px-2 py-0.5 rounded-md text-inherit font-inherit leading-inherit border cursor-grab active:cursor-grabbing select-none';
 
 const MOCK_EMPLOYEES = [
   { id: '1', name: 'Angel Hunter', dept: 'Engineering', avatar: 'https://i.pravatar.cc/40?u=angel-hunter' },
@@ -67,15 +107,27 @@ interface TemplateEditorProps {
   initialBodyHtml?: string | null;
 }
 
-function createChipElement(label: string): HTMLSpanElement {
+/**
+ * Apply chip background/border to a node from its currently-stamped recipient
+ * id. Kept as a top-level helper so it can be called both at creation time
+ * and by `wireChipDragHandlers` when chips are reloaded from saved HTML.
+ */
+function applyChipTone(chip: HTMLElement, tone: RecipientTone) {
+  chip.style.backgroundColor = tone.bg;
+  chip.style.borderColor = tone.border;
+}
+
+function createChipElement(label: string, recipientId: string, tone: RecipientTone): HTMLSpanElement {
   const span = document.createElement('span');
   span.setAttribute('data-chip', CHIP_ATTR);
   span.setAttribute('data-label', label);
+  span.setAttribute('data-recipient-id', recipientId);
   span.setAttribute('draggable', 'true');
   span.setAttribute('tabindex', '0');
   span.contentEditable = 'false';
   span.className = CHIP_CLASS;
   span.textContent = label;
+  applyChipTone(span, tone);
   return span;
 }
 
@@ -108,7 +160,22 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const [recipientPanelOpen, setRecipientPanelOpen] = useState(true);
   const [employeeMenuOpen, setEmployeeMenuOpen] = useState(false);
   const [employeeSearch, setEmployeeSearch] = useState('');
-  const [employeeRole, setEmployeeRole] = useState<'employee' | 'manager'>('employee');
+  /**
+   * Recipient registry shown in the recipient selector dropdown. The first
+   * two entries are pinned built-in placeholders; later entries come from
+   * the "Add placeholder recipient" modal. The `paletteIndex` is the
+   * recipient's slot inside `RECIPIENT_TONE_PALETTE` so colors stay
+   * deterministic regardless of array re-ordering.
+   */
+  type RecipientEntry = { id: string; label: string; sublabel: string; paletteIndex: number };
+  const [recipients, setRecipients] = useState<RecipientEntry[]>([
+    { id: 'employee', label: 'Employee', sublabel: 'Placeholder', paletteIndex: 0 },
+    { id: 'manager', label: "Employee's manager", sublabel: 'Placeholder', paletteIndex: 1 },
+  ]);
+  const [activeRecipientId, setActiveRecipientId] = useState<string>('employee');
+  /** Add-placeholder modal state. Empty `label` keeps Save disabled. */
+  const [placeholderModalOpen, setPlaceholderModalOpen] = useState(false);
+  const [placeholderLabel, setPlaceholderLabel] = useState('');
   const [contentCheck, setContentCheck] = useState(0);
   const [unsavedExitModalOpen, setUnsavedExitModalOpen] = useState(false);
   // Edit-mode header Save splits into two destinations behind a
@@ -178,11 +245,39 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     setContentCheck((c) => c + 1);
   };
 
+  /**
+   * Resolve the color tone for a given recipient id. Unknown ids (e.g. a
+   * chip loaded from saved HTML whose recipient was deleted, or pre-color
+   * legacy chips with no `data-recipient-id` at all) fall back to the
+   * Employee tone so they stay visible and consistent with prior renders.
+   */
+  const toneForRecipientId = useCallback(
+    (rid: string | null | undefined): RecipientTone => {
+      if (!rid) return DEFAULT_RECIPIENT_TONE;
+      const entry = recipients.find((r) => r.id === rid);
+      if (!entry) return DEFAULT_RECIPIENT_TONE;
+      return RECIPIENT_TONE_PALETTE[entry.paletteIndex % RECIPIENT_TONE_PALETTE.length];
+    },
+    [recipients]
+  );
+
+  const activeRecipient = useMemo(
+    () => recipients.find((r) => r.id === activeRecipientId) ?? recipients[0],
+    [recipients, activeRecipientId]
+  );
+  const activeTone = toneForRecipientId(activeRecipient?.id);
+
   const wireChipDragHandlers = useCallback((root: HTMLElement) => {
     root.querySelectorAll(`span[data-chip="${CHIP_ATTR}"]`).forEach((el) => {
       const chip = el as HTMLElement;
       chip.setAttribute('draggable', 'true');
       chip.className = CHIP_CLASS;
+      // Backfill recipient id + repaint background so chips that came in
+      // from saved HTML pick up their per-recipient tone (and stay current
+      // if the user later adds or removes external recipients).
+      const rid = chip.getAttribute('data-recipient-id') ?? '';
+      if (!rid) chip.setAttribute('data-recipient-id', 'employee');
+      applyChipTone(chip, toneForRecipientId(chip.getAttribute('data-recipient-id')));
       chip.ondragstart = (e: DragEvent) => {
         chipMoveRef.current = chip;
         e.dataTransfer!.effectAllowed = 'move';
@@ -195,7 +290,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         }
       };
     });
-  }, []);
+  }, [toneForRecipientId]);
 
   useEffect(() => {
     if (initialTitle != null) setTemplateName(initialTitle.trim());
@@ -240,6 +335,19 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     return () => document.removeEventListener('mousedown', close);
   }, [employeeMenuOpen]);
 
+  // Reapply chip tones when the recipient registry changes (e.g. an external
+  // recipient was added) so any chips already on the canvas pick up an updated
+  // palette mapping without requiring a full re-render of the editor.
+  useEffect(() => {
+    if (!useRichCanvas) return;
+    const ed = editorRef.current;
+    if (!ed) return;
+    ed.querySelectorAll(`span[data-chip="${CHIP_ATTR}"]`).forEach((el) => {
+      const chip = el as HTMLElement;
+      applyChipTone(chip, toneForRecipientId(chip.getAttribute('data-recipient-id')));
+    });
+  }, [recipients, toneForRecipientId, useRichCanvas]);
+
   useEffect(() => {
     if (!saveMenuOpen) return;
     const close = (e: MouseEvent) => {
@@ -254,9 +362,11 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const insertChipAtCaret = useCallback((label: string) => {
     const editor = editorRef.current;
     if (!editor) return;
+    const rid = activeRecipientId;
+    const tone = toneForRecipientId(rid);
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) {
-      editor.appendChild(createChipElement(label));
+      editor.appendChild(createChipElement(label, rid, tone));
       wireChipDragHandlers(editor);
       setContentCheck((c) => c + 1);
       return;
@@ -268,7 +378,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       range.collapse(false);
     }
     range.deleteContents();
-    const chip = createChipElement(label);
+    const chip = createChipElement(label, rid, tone);
     range.insertNode(chip);
     range.setStartAfter(chip);
     range.collapse(true);
@@ -276,7 +386,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     sel.addRange(range);
     wireChipDragHandlers(editor);
     setContentCheck((c) => c + 1);
-  }, [wireChipDragHandlers]);
+  }, [activeRecipientId, toneForRecipientId, wireChipDragHandlers]);
 
   const handleEditorDrop = useCallback(
     (e: React.DragEvent) => {
@@ -288,6 +398,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       chipMoveRef.current = null;
 
       const label = e.dataTransfer.getData(RECIPIENT_FIELD_MIME);
+      // Prefer the rid baked into the drag (palette knows which recipient
+      // is active at drag-start); fall back to the current selection so a
+      // dropped chip still picks up a valid color.
+      const dragRid = e.dataTransfer.getData(RECIPIENT_FIELD_RID_MIME) || activeRecipientId;
       let range: Range | null = null;
       if (document.caretRangeFromPoint) {
         range = document.caretRangeFromPoint(e.clientX, e.clientY);
@@ -322,7 +436,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
 
       if (label) {
         range.deleteContents();
-        const chip = createChipElement(label);
+        const chip = createChipElement(label, dragRid, toneForRecipientId(dragRid));
         range.insertNode(chip);
         const sel = window.getSelection();
         if (sel) {
@@ -335,7 +449,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         setContentCheck((c) => c + 1);
       }
     },
-    [wireChipDragHandlers]
+    [activeRecipientId, toneForRecipientId, wireChipDragHandlers]
   );
 
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -366,7 +480,35 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
 
   const startPaletteDrag = (label: string) => (e: React.DragEvent) => {
     e.dataTransfer.setData(RECIPIENT_FIELD_MIME, label);
+    e.dataTransfer.setData(RECIPIENT_FIELD_RID_MIME, activeRecipientId);
     e.dataTransfer.effectAllowed = 'copy';
+  };
+
+  /**
+   * Append a new placeholder recipient from the modal's typed label and
+   * immediately make it active so any chip the user drops next uses its
+   * color. Bail out on empty labels (Save is disabled but the keyboard
+   * shortcut path still routes here).
+   */
+  const handleSavePlaceholderRecipient = () => {
+    const label = placeholderLabel.trim();
+    if (!label) return;
+    setRecipients((prev) => {
+      const id = `ext-${Date.now().toString(36)}`;
+      const nextIndex = prev.length;
+      const entry: RecipientEntry = {
+        id,
+        label,
+        sublabel: 'Placeholder',
+        paletteIndex: nextIndex,
+      };
+      setActiveRecipientId(id);
+      return [...prev, entry];
+    });
+    setPlaceholderLabel('');
+    setPlaceholderModalOpen(false);
+    setEmployeeMenuOpen(false);
+    setEmployeeSearch('');
   };
 
   const syncChipsAfterInput = () => {
@@ -881,10 +1023,15 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   }`}
                 >
                   <div className="flex items-center space-x-3 min-w-0">
-                    <div className="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100 shrink-0">
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: activeTone.avatarBg, color: activeTone.avatarIcon }}
+                    >
                       <User size={14} />
                     </div>
-                    <span className="text-[13px] font-bold text-slate-800 truncate">Employee</span>
+                    <span className="text-[13px] font-bold text-slate-800 truncate">
+                      {activeRecipient?.label ?? 'Recipient'}
+                    </span>
                   </div>
                   {employeeMenuOpen ? <ChevronDown size={16} className="text-slate-400 rotate-180 shrink-0" /> : <ChevronDown size={16} className="text-slate-400 shrink-0" />}
                 </button>
@@ -904,38 +1051,43 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </div>
                     {!employeeQuery ? (
                       <div className="py-1">
-                        <button
-                          type="button"
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left"
-                          onClick={() => setEmployeeRole('employee')}
-                        >
-                          <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 shrink-0">
-                            <User size={16} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold text-slate-900">Employee</div>
-                            <div className="text-xs text-slate-500">Placeholder</div>
-                          </div>
-                          {employeeRole === 'employee' ? <Check size={18} className="text-blue-600 shrink-0" strokeWidth={2.5} /> : null}
-                        </button>
-                        <button
-                          type="button"
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left"
-                          onClick={() => setEmployeeRole('manager')}
-                        >
-                          <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 shrink-0">
-                            <User size={16} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold text-slate-900">Employee&apos;s manager</div>
-                            <div className="text-xs text-slate-500">Placeholder</div>
-                          </div>
-                          {employeeRole === 'manager' ? <Check size={18} className="text-blue-600 shrink-0" strokeWidth={2.5} /> : null}
-                        </button>
+                        {recipients.map((r) => {
+                          const tone = RECIPIENT_TONE_PALETTE[r.paletteIndex % RECIPIENT_TONE_PALETTE.length];
+                          return (
+                            <button
+                              key={r.id}
+                              type="button"
+                              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left"
+                              onClick={() => {
+                                setActiveRecipientId(r.id);
+                                setEmployeeMenuOpen(false);
+                              }}
+                            >
+                              <div
+                                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                                style={{ backgroundColor: tone.avatarBg, color: tone.avatarIcon }}
+                              >
+                                <User size={16} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-slate-900">{r.label}</div>
+                                <div className="text-xs text-slate-500">{r.sublabel}</div>
+                              </div>
+                              {activeRecipientId === r.id ? <Check size={18} className="text-blue-600 shrink-0" strokeWidth={2.5} /> : null}
+                            </button>
+                          );
+                        })}
                         <div className="border-t border-slate-200" />
-                        <button type="button" className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-sm font-medium text-slate-900">
+                        <button
+                          type="button"
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-sm font-medium text-slate-900"
+                          onClick={() => {
+                            setPlaceholderLabel('');
+                            setPlaceholderModalOpen(true);
+                          }}
+                        >
                           <UserPlus size={18} className="text-slate-600 shrink-0" />
-                          Add external recipient
+                          Add placeholder recipient
                         </button>
                       </div>
                     ) : (
@@ -961,10 +1113,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                           )}
                         </div>
                         <div className="border-t border-slate-200" />
-                        <button type="button" className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-sm font-medium text-slate-900">
+                        <button
+                          type="button"
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-sm font-medium text-slate-900"
+                          onClick={() => {
+                            setPlaceholderLabel(employeeSearch.trim());
+                            setPlaceholderModalOpen(true);
+                          }}
+                        >
                           <UserPlus size={18} className="text-slate-600 shrink-0" />
                           <span className="truncate">
-                            Add &apos;{employeeSearch.trim() || '…'}&apos; as an external recipient
+                            Add &apos;{employeeSearch.trim() || '…'}&apos; as a placeholder recipient
                           </span>
                         </button>
                       </div>
@@ -980,14 +1139,17 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                       key={label}
                       draggable
                       onDragStart={startPaletteDrag(label)}
-                      className="flex items-center justify-between bg-[#FDF2FB] border border-[#F5D0EE] p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-sm transition-all"
+                      className="flex items-center justify-between p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-sm transition-all border"
+                      style={{ backgroundColor: activeTone.bg, borderColor: activeTone.border }}
                       onDoubleClick={() => insertChipAtCaret(label)}
                     >
                       <div className="flex items-center space-x-3">
-                        <Icon size={18} className="text-[#7A005D]" />
-                        <span className="text-[14px] font-bold text-[#7A005D]">{label}</span>
+                        <Icon size={18} style={{ color: activeTone.icon }} />
+                        <span className="text-[14px] font-bold" style={{ color: activeTone.icon }}>
+                          {label}
+                        </span>
                       </div>
-                      <GripVertical size={16} className="text-[#F5D0EE]" />
+                      <GripVertical size={16} style={{ color: activeTone.border }} />
                     </div>
                   );
                 })}
@@ -1102,6 +1264,74 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {placeholderModalOpen && (
+        <div
+          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setPlaceholderModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] p-6 border border-slate-200"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-placeholder-title"
+          >
+            <div className="flex justify-between items-start gap-3 mb-3">
+              <h2 id="add-placeholder-title" className="text-lg font-bold text-slate-900 pr-2">
+                Add placeholder recipient
+              </h2>
+              <button
+                type="button"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
+                onClick={() => setPlaceholderModalOpen(false)}
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed mb-5">
+              Use a placeholder for people with a relationship to the employee a document is sent to.
+              Each recipient&apos;s name and email address will be collected when the document is sent.
+            </p>
+            <div className="mb-6">
+              <label htmlFor="placeholder-label-input" className="block text-sm font-bold text-slate-900 mb-1.5">
+                Placeholder label<span className="text-red-500">*</span>
+              </label>
+              <input
+                id="placeholder-label-input"
+                type="text"
+                value={placeholderLabel}
+                onChange={(e) => setPlaceholderLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && placeholderLabel.trim()) {
+                    e.preventDefault();
+                    handleSavePlaceholderRecipient();
+                  }
+                }}
+                placeholder="Placeholder label"
+                autoFocus
+                className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-500"
+              />
+            </div>
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                disabled={!placeholderLabel.trim()}
+                onClick={handleSavePlaceholderRecipient}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold ${
+                  placeholderLabel.trim()
+                    ? 'bg-[#7A005D] text-white hover:opacity-95'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                Save
+              </button>
+            </div>
           </div>
         </div>
       )}
