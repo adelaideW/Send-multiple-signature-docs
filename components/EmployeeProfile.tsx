@@ -143,6 +143,11 @@ interface DocumentsSectionProps {
    */
   completedEnvelopeIds?: ReadonlySet<string>;
   /**
+   * Envelope ids whose status is "voided". Voided envelopes are dropped
+   * from the Action required list since there's nothing left to sign.
+   */
+  voidedEnvelopeIds?: ReadonlySet<string>;
+  /**
    * Signed documents from completed envelopes that Kale was a recipient
    * of. Surfaced at the root of the Documents tab as loose files,
    * outside any of the folder structure.
@@ -683,6 +688,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   kaleSignedEnvelopeIds,
   completedEnvelopeIds,
   completedEnvelopeDocs,
+  voidedEnvelopeIds,
 }) => {
   const signedEnvelopeIds = kaleSignedEnvelopeIds ?? new Set<string>();
   const actionRequiredPackets = useMemo<ActionPacketRow[]>(
@@ -692,10 +698,13 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
       // (in-session sent rows already arrive ahead of the seeded ones).
       // Drop any envelope that's already fully completed — the work is
       // done and the doc has moved to the Documents tab as a loose row.
+      // Also drop voided envelopes since there's nothing left to sign.
       const isCompleted = (envelopeId?: string) =>
         !!envelopeId && !!completedEnvelopeIds && completedEnvelopeIds.has(envelopeId);
+      const isVoided = (envelopeId?: string) =>
+        !!envelopeId && !!voidedEnvelopeIds && voidedEnvelopeIds.has(envelopeId);
       return merged
-        .filter((p) => !isCompleted(p.envelopeId))
+        .filter((p) => !isCompleted(p.envelopeId) && !isVoided(p.envelopeId))
         .map((p, i) => ({ p, i }))
         .sort((a, b) => {
           const r = packetLastModifiedTs(b.p) - packetLastModifiedTs(a.p);
@@ -703,7 +712,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
         })
         .map(({ p }) => p);
     },
-    [extraActionRequiredPackets, completedEnvelopeIds]
+    [extraActionRequiredPackets, completedEnvelopeIds, voidedEnvelopeIds]
   );
   const actionRequiredBadge = useMemo(
     () => countPendingKaleSignatures(actionRequiredPackets, signedEnvelopeIds),

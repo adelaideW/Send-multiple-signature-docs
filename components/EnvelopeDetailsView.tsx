@@ -133,6 +133,8 @@ interface EnvelopeDetailsViewProps {
   onResend?: () => void;
   /** Fires when the user picks "Make correction" from the details More menu. */
   onMakeCorrection?: () => void;
+  /** Fires when the user picks "Void" — owner flips the envelope + child docs to `voided`. */
+  onVoid?: () => void;
 }
 
 const btnOutline =
@@ -157,6 +159,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
   onEdit,
   onResend,
   onMakeCorrection,
+  onVoid,
 }) => {
   const badge = headerBadgeForStatus(packetStatus);
   const effectiveRecipients = recipients && recipients.length > 0 ? recipients : DEFAULT_RECIPIENTS;
@@ -522,20 +525,24 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center space-x-2">
-                        <div
-                          className={`w-2 h-2 rounded-full ${
-                            row.status === 'Completed'
-                              ? 'bg-[#0D9488]'
-                              : row.status === 'In progress'
-                                ? 'bg-[#F59E0B]'
-                                : row.status === 'Yet to sign'
-                                  ? 'bg-red-500'
-                                  : 'bg-[#94A3B8]'
-                          }`}
-                        />
-                        <span className="font-medium text-slate-800">{row.status}</span>
-                      </div>
+                      {isVoided ? (
+                        <span className="text-slate-400 font-medium">—</span>
+                      ) : (
+                        <div className="flex items-center space-x-2">
+                          <div
+                            className={`w-2 h-2 rounded-full ${
+                              row.status === 'Completed'
+                                ? 'bg-[#0D9488]'
+                                : row.status === 'In progress'
+                                  ? 'bg-[#F59E0B]'
+                                  : row.status === 'Yet to sign'
+                                    ? 'bg-red-500'
+                                    : 'bg-[#94A3B8]'
+                            }`}
+                          />
+                          <span className="font-medium text-slate-800">{row.status}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 font-medium text-slate-800">
                       {row.action === '—' ? <span className="text-slate-400">—</span> : row.action}
@@ -569,6 +576,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
               onDownload={runBulkDownload}
               onSendReminder={() => setSendReminderOpen(true)}
               onMakeCorrection={onMakeCorrection}
+              onVoid={onVoid}
             />
           </div>,
           document.body

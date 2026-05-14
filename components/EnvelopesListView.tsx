@@ -350,6 +350,8 @@ interface EnvelopeMoreMenuProps {
   onMakeCorrection?: () => void;
   /** Fired when the user picks "Remove" — owner handles deleting the envelope row. */
   onRemove?: () => void;
+  /** Fired when the user picks "Void" — owner flips the envelope + all child docs to `voided`. */
+  onVoid?: () => void;
 }
 
 export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
@@ -359,6 +361,7 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
   onSendReminder,
   onMakeCorrection,
   onRemove,
+  onVoid,
 }) => {
   const itemClass = 'w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50';
   const dangerItemClass = `w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold hover:bg-slate-50`;
@@ -367,6 +370,10 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
   );
   const dl = () => {
     onDownload?.();
+    onClose();
+  };
+  const voidEnvelope = () => {
+    onVoid?.();
     onClose();
   };
 
@@ -409,7 +416,7 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
           <IconWrap><RefreshCw size={16} strokeWidth={2} /></IconWrap>
           Make correction
         </button>
-        <button type="button" className={`${dangerItemClass}`} style={{ color: DANGER }} role="menuitem" onClick={onClose}>
+        <button type="button" className={`${dangerItemClass}`} style={{ color: DANGER }} role="menuitem" onClick={voidEnvelope}>
           <IconWrap danger><XCircle size={16} strokeWidth={2} style={{ color: DANGER }} /></IconWrap>
           Void
         </button>
@@ -448,7 +455,7 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
           <IconWrap><RefreshCw size={16} strokeWidth={2} /></IconWrap>
           Make correction
         </button>
-        <button type="button" className={dangerItemClass} style={{ color: DANGER }} role="menuitem" onClick={onClose}>
+        <button type="button" className={dangerItemClass} style={{ color: DANGER }} role="menuitem" onClick={voidEnvelope}>
           <IconWrap danger><XCircle size={16} strokeWidth={2} style={{ color: DANGER }} /></IconWrap>
           Void
         </button>
@@ -479,7 +486,7 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
   if (variant === 'correcting') {
     return (
       <div className="py-1 min-w-[180px]" role="menu">
-        <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
+        <button type="button" className={itemClass} role="menuitem" onClick={voidEnvelope}>
           <IconWrap><XCircle size={16} strokeWidth={2} /></IconWrap>
           Void
         </button>
@@ -1117,6 +1124,29 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                     return copy;
                   });
                   setDocSnack('Envelope removed');
+                }}
+                onVoid={() => {
+                  // Void the whole envelope: parent flips to `voided` and
+                  // every child document inherits the same status so the
+                  // hub/details views show "Voided" across the board.
+                  const next = rows.map<EnvelopeTableRow>((r) =>
+                    r.id === openRow.id
+                      ? {
+                          ...r,
+                          status: 'voided',
+                          children: (r.children ?? []).map((c) => ({
+                            ...c,
+                            status: 'voided',
+                          })),
+                        }
+                      : r
+                  );
+                  if (rowsProp) {
+                    onRowsChange?.(next);
+                  } else {
+                    setFallbackRows(next);
+                  }
+                  setDocSnack('Envelope voided');
                 }}
               />
             </div>,

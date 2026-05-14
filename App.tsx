@@ -400,6 +400,14 @@ const App: React.FC = () => {
     return out;
   }, [packetRows]);
 
+  const voidedEnvelopeIds = useMemo<Set<string>>(() => {
+    const out = new Set<string>();
+    for (const r of packetRows) {
+      if (r.status === 'voided') out.add(r.id);
+    }
+    return out;
+  }, [packetRows]);
+
   /**
    * Flatten every completed envelope's child documents into standalone
    * rows so the Documents hub and Kale's profile Documents tab can
@@ -1138,6 +1146,7 @@ const App: React.FC = () => {
                     extraActionRequiredPackets={kaleActionRequiredPackets}
                     kaleSignedEnvelopeIds={kaleSignedEnvelopeIds}
                     completedEnvelopeIds={completedEnvelopeIds}
+                    voidedEnvelopeIds={voidedEnvelopeIds}
                     completedEnvelopeDocs={completedEnvelopeDocsForKale}
                   />
                 </div>
@@ -1186,6 +1195,25 @@ const App: React.FC = () => {
             onResend={() => {
               applyResendToInProgress(selectedPacket.id, selectedPacket.name);
               setShowSuccessToast(true);
+            }}
+            onVoid={() => {
+              // Flip the parent envelope and every child document to
+              // `voided` so the hub, details view, and Kale's profile
+              // all read "Voided" consistently and signing is gated off.
+              setPacketRows((prev) =>
+                prev.map((r) =>
+                  r.id === selectedPacket.id
+                    ? {
+                        ...r,
+                        status: 'voided' as EnvelopeStatus,
+                        children: (r.children ?? []).map((c) => ({
+                          ...c,
+                          status: 'voided' as DocumentSigningStatus,
+                        })),
+                      }
+                    : r
+                )
+              );
             }}
           />
         </div>
