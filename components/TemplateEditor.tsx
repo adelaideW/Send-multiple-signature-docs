@@ -37,6 +37,8 @@ import {
   User,
   Check,
   UserPlus,
+  Trash2,
+  Pencil,
 } from 'lucide-react';
 
 const RECIPIENT_FIELD_MIME = 'application/x-recipient-field-label';
@@ -93,6 +95,7 @@ const MOCK_EMPLOYEES = [
   { id: '4', name: 'Anne Montgomery', dept: 'CEO', avatar: 'https://i.pravatar.cc/40?u=anne-montgomery' },
   { id: '5', name: 'James Chen', dept: 'Design', avatar: 'https://i.pravatar.cc/40?u=james-chen' },
   { id: '6', name: 'Maria Santos', dept: 'People Operations', avatar: 'https://i.pravatar.cc/40?u=maria-santos' },
+  { id: 'u-kale', name: 'Kale George', dept: 'People Operations', avatar: 'https://i.pravatar.cc/40?u=kale-george' },
 ] as const;
 
 interface TemplateEditorProps {
@@ -163,19 +166,31 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   /**
    * Recipient registry shown in the recipient selector dropdown. The first
    * two entries are pinned built-in placeholders; later entries come from
-   * the "Add placeholder recipient" modal. The `paletteIndex` is the
-   * recipient's slot inside `RECIPIENT_TONE_PALETTE` so colors stay
-   * deterministic regardless of array re-ordering.
+   * the "Add placeholder recipient" modal or from picking an internal
+   * person in the directory search. `kind` controls UI affordances
+   * (only `placeholder` rows expose a rename pencil), and `paletteIndex`
+   * is the recipient's slot inside `RECIPIENT_TONE_PALETTE` so colors
+   * stay deterministic regardless of array re-ordering or deletions.
    */
-  type RecipientEntry = { id: string; label: string; sublabel: string; paletteIndex: number };
+  type RecipientKind = 'placeholder' | 'internal';
+  type RecipientEntry = {
+    id: string;
+    label: string;
+    sublabel: string;
+    paletteIndex: number;
+    kind: RecipientKind;
+  };
   const [recipients, setRecipients] = useState<RecipientEntry[]>([
-    { id: 'employee', label: 'Employee', sublabel: 'Placeholder', paletteIndex: 0 },
-    { id: 'manager', label: "Employee's manager", sublabel: 'Placeholder', paletteIndex: 1 },
+    { id: 'employee', label: 'Employee', sublabel: 'Placeholder recipient', paletteIndex: 0, kind: 'placeholder' },
+    { id: 'manager', label: "Employee's manager", sublabel: 'Placeholder recipient', paletteIndex: 1, kind: 'placeholder' },
   ]);
   const [activeRecipientId, setActiveRecipientId] = useState<string>('employee');
-  /** Add-placeholder modal state. Empty `label` keeps Save disabled. */
+  /** 'fields' shows the field palette tiles, 'recipients' shows the recipient list with delete/rename. */
+  const [sidePanelView, setSidePanelView] = useState<'fields' | 'recipients'>('fields');
+  /** Add-placeholder modal state. When `editingRecipientId` is set the modal saves back to that recipient instead of creating a new one. */
   const [placeholderModalOpen, setPlaceholderModalOpen] = useState(false);
   const [placeholderLabel, setPlaceholderLabel] = useState('');
+  const [editingRecipientId, setEditingRecipientId] = useState<string | null>(null);
   const [contentCheck, setContentCheck] = useState(0);
   const [unsavedExitModalOpen, setUnsavedExitModalOpen] = useState(false);
   // Edit-mode header Save splits into two destinations behind a
@@ -485,30 +500,104 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   };
 
   /**
-   * Append a new placeholder recipient from the modal's typed label and
-   * immediately make it active so any chip the user drops next uses its
-   * color. Bail out on empty labels (Save is disabled but the keyboard
-   * shortcut path still routes here).
+   * Save the placeholder modal. When `editingRecipientId` is set, this
+   * rewrites the existing entry's label in place (palette + id remain
+   * stable so colors and chip ownership stay intact). Otherwise it
+   * appends a fresh placeholder and makes it active so the next field
+   * the user drops picks up its color.
    */
   const handleSavePlaceholderRecipient = () => {
     const label = placeholderLabel.trim();
     if (!label) return;
-    setRecipients((prev) => {
-      const id = `ext-${Date.now().toString(36)}`;
-      const nextIndex = prev.length;
-      const entry: RecipientEntry = {
-        id,
-        label,
-        sublabel: 'Placeholder',
-        paletteIndex: nextIndex,
-      };
-      setActiveRecipientId(id);
-      return [...prev, entry];
-    });
+    if (editingRecipientId) {
+      setRecipients((prev) =>
+        prev.map((r) => (r.id === editingRecipientId ? { ...r, label } : r))
+      );
+    } else {
+      setRecipients((prev) => {
+        const id = `ext-${Date.now().toString(36)}`;
+        // Use the next palette slot based on how many recipients have ever
+        // been created, picking from the highest existing paletteIndex so
+        // deletions don't recycle the same color for back-to-back adds.
+        const nextIndex = Math.max(-1, ...prev.map((r) => r.paletteIndex)) + 1;
+        const entry: RecipientEntry = {
+          id,
+          label,
+          sublabel: 'Placeholder recipient',
+          paletteIndex: nextIndex,
+          kind: 'placeholder',
+        };
+        setActiveRecipientId(id);
+        return [...prev, entry];
+      });
+    }
     setPlaceholderLabel('');
+    setEditingRecipientId(null);
     setPlaceholderModalOpen(false);
     setEmployeeMenuOpen(false);
     setEmployeeSearch('');
+  };
+
+  /**
+   * Add (or re-activate) an internal employee as a recipient when picked
+   * from the directory search. Reuses an existing entry if the same
+   * employee is already in the registry to avoid duplicates.
+   */
+  const handleSelectInternalEmployee = (emp: { id: string; name: string; dept: string }) => {
+    setRecipients((prev) => {
+      const existing = prev.find((r) => r.id === emp.id);
+      if (existing) {
+        setActiveRecipientId(existing.id);
+        return prev;
+      }
+      const nextIndex = Math.max(-1, ...prev.map((r) => r.paletteIndex)) + 1;
+      const entry: RecipientEntry = {
+        id: emp.id,
+        label: emp.name,
+        sublabel: emp.dept,
+        paletteIndex: nextIndex,
+        kind: 'internal',
+      };
+      setActiveRecipientId(entry.id);
+      return [...prev, entry];
+    });
+    setEmployeeMenuOpen(false);
+    setEmployeeSearch('');
+  };
+
+  /**
+   * Remove a recipient from the registry. Also strips every chip on the
+   * canvas that pointed at that recipient — chips without an owner would
+   * fall back to a random tone, and the placement-flow expectation is
+   * that deleting a recipient retracts their fields too. Refuses to
+   * delete the last remaining recipient (the editor needs at least one
+   * to anchor new fields).
+   */
+  const handleDeleteRecipient = (id: string) => {
+    if (recipients.length <= 1) return;
+    setRecipients((prev) => {
+      const nextList = prev.filter((r) => r.id !== id);
+      if (id === activeRecipientId) {
+        setActiveRecipientId(nextList[0]?.id ?? prev[0].id);
+      }
+      return nextList;
+    });
+    const ed = editorRef.current;
+    if (ed) {
+      ed.querySelectorAll(`span[data-chip="${CHIP_ATTR}"][data-recipient-id="${id}"]`).forEach(
+        (el) => el.parentElement && el.parentElement.removeChild(el)
+      );
+      setContentCheck((c) => c + 1);
+    }
+  };
+
+  /** Open the placeholder modal in rename mode for an existing placeholder. */
+  const handleRenameRecipient = (id: string) => {
+    const target = recipients.find((r) => r.id === id);
+    if (!target) return;
+    setEditingRecipientId(id);
+    setPlaceholderLabel(target.label);
+    setPlaceholderModalOpen(true);
   };
 
   const syncChipsAfterInput = () => {
@@ -1002,7 +1091,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         {recipientPanelOpen && (
           <div className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 transition-all duration-200">
             <div className="p-5 flex items-center justify-between border-b border-slate-100">
-              <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest">RECIPIENT FIELDS</span>
+              <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest">
+                {sidePanelView === 'recipients' ? 'RECIPIENTS' : 'RECIPIENT FIELDS'}
+              </span>
               <button type="button" onClick={() => setRecipientPanelOpen(false)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600" aria-label="Close panel">
                 <X size={18} />
               </button>
@@ -1082,6 +1173,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                           type="button"
                           className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-sm font-medium text-slate-900"
                           onClick={() => {
+                            setEditingRecipientId(null);
                             setPlaceholderLabel('');
                             setPlaceholderModalOpen(true);
                           }}
@@ -1101,13 +1193,16 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                                 key={emp.id}
                                 type="button"
                                 className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
+                                onClick={() => handleSelectInternalEmployee(emp)}
                               >
                                 <img src={emp.avatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-100" />
                                 <div className="flex-1 min-w-0">
                                   <div className="text-sm font-bold text-slate-900 truncate">{emp.name}</div>
                                   <div className="text-xs text-slate-500 truncate">{emp.dept}</div>
                                 </div>
-                                {primaryMatchId === emp.id ? <Check size={18} className="text-blue-600 shrink-0" strokeWidth={2.5} /> : null}
+                                {recipients.some((r) => r.id === emp.id) || primaryMatchId === emp.id ? (
+                                  <Check size={18} className="text-blue-600 shrink-0" strokeWidth={2.5} />
+                                ) : null}
                               </button>
                             ))
                           )}
@@ -1117,6 +1212,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                           type="button"
                           className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 text-left text-sm font-medium text-slate-900"
                           onClick={() => {
+                            setEditingRecipientId(null);
                             setPlaceholderLabel(employeeSearch.trim());
                             setPlaceholderModalOpen(true);
                           }}
@@ -1131,29 +1227,80 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   </div>
                 )}
               </div>
-              <div className="space-y-3 pt-2">
-                {(['Text', 'Checkbox', 'Signature', 'Date signed'] as const).map((label, i) => {
-                  const Icon = [Type, SquareCheck, PenTool, Calendar][i];
-                  return (
-                    <div
-                      key={label}
-                      draggable
-                      onDragStart={startPaletteDrag(label)}
-                      className="flex items-center justify-between p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-sm transition-all border"
-                      style={{ backgroundColor: activeTone.bg, borderColor: activeTone.border }}
-                      onDoubleClick={() => insertChipAtCaret(label)}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <Icon size={18} style={{ color: activeTone.icon }} />
-                        <span className="text-[14px] font-bold" style={{ color: activeTone.icon }}>
-                          {label}
-                        </span>
+              {sidePanelView === 'fields' ? (
+                <div className="space-y-3 pt-2">
+                  {(['Text', 'Checkbox', 'Signature', 'Date signed'] as const).map((label, i) => {
+                    const Icon = [Type, SquareCheck, PenTool, Calendar][i];
+                    return (
+                      <div
+                        key={label}
+                        draggable
+                        onDragStart={startPaletteDrag(label)}
+                        className="flex items-center justify-between p-3.5 rounded-xl cursor-grab active:cursor-grabbing hover:shadow-sm transition-all border"
+                        style={{ backgroundColor: activeTone.bg, borderColor: activeTone.border }}
+                        onDoubleClick={() => insertChipAtCaret(label)}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <Icon size={18} style={{ color: activeTone.icon }} />
+                          <span className="text-[14px] font-bold text-slate-900">
+                            {label}
+                          </span>
+                        </div>
+                        <GripVertical size={16} style={{ color: activeTone.border }} />
                       </div>
-                      <GripVertical size={16} style={{ color: activeTone.border }} />
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-1 pt-2">
+                  {recipients.map((r) => {
+                    const tone = RECIPIENT_TONE_PALETTE[r.paletteIndex % RECIPIENT_TONE_PALETTE.length];
+                    const canDelete = recipients.length > 1;
+                    const canRename = r.kind === 'placeholder' && r.id !== 'employee' && r.id !== 'manager';
+                    return (
+                      <div
+                        key={r.id}
+                        className="flex items-center gap-3 px-1 py-2 rounded-lg hover:bg-slate-50"
+                      >
+                        <div
+                          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: tone.avatarBg, color: tone.avatarIcon }}
+                        >
+                          <User size={16} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold text-slate-900 truncate">{r.label}</div>
+                          <div className="text-xs text-slate-500 truncate">{r.sublabel}</div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {canRename && (
+                            <button
+                              type="button"
+                              onClick={() => handleRenameRecipient(r.id)}
+                              className="p-1.5 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                              aria-label={`Rename ${r.label}`}
+                              title="Rename placeholder"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRecipient(r.id)}
+                              className="p-1.5 rounded-md text-red-500 hover:text-red-600 hover:bg-red-50"
+                              aria-label={`Remove ${r.label}`}
+                              title="Remove recipient"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1161,15 +1308,36 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         <div className="w-14 bg-white border-l border-slate-200 flex flex-col items-center py-4 space-y-6 shrink-0 z-20">
           <button
             type="button"
-            onClick={() => setRecipientPanelOpen(true)}
-            className={`p-2 rounded-lg shadow-sm transition-colors ${recipientPanelOpen ? 'border border-[#7A005D]/20 bg-[#7A005D]/5 text-[#7A005D]' : 'border border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+            onClick={() => {
+              setRecipientPanelOpen(true);
+              setSidePanelView('fields');
+            }}
+            className={`p-2 rounded-lg shadow-sm transition-colors ${
+              recipientPanelOpen && sidePanelView === 'fields'
+                ? 'border border-[#7A005D]/20 bg-[#7A005D]/5 text-[#7A005D]'
+                : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
             title="Recipient fields"
+            aria-pressed={recipientPanelOpen && sidePanelView === 'fields'}
           >
             <Grid size={20} />
           </button>
-          <div className="p-2 text-slate-300 hover:text-slate-500 rounded-lg cursor-pointer transition-colors">
+          <button
+            type="button"
+            onClick={() => {
+              setRecipientPanelOpen(true);
+              setSidePanelView('recipients');
+            }}
+            className={`p-2 rounded-lg shadow-sm transition-colors ${
+              recipientPanelOpen && sidePanelView === 'recipients'
+                ? 'border border-[#7A005D]/20 bg-[#7A005D]/5 text-[#7A005D]'
+                : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
+            title="Recipients"
+            aria-pressed={recipientPanelOpen && sidePanelView === 'recipients'}
+          >
             <User size={20} />
-          </div>
+          </button>
         </div>
       </div>
 
@@ -1271,7 +1439,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       {placeholderModalOpen && (
         <div
           className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setPlaceholderModalOpen(false)}
+          onClick={() => {
+            setPlaceholderModalOpen(false);
+            setEditingRecipientId(null);
+          }}
           role="presentation"
         >
           <div
@@ -1283,12 +1454,15 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           >
             <div className="flex justify-between items-start gap-3 mb-3">
               <h2 id="add-placeholder-title" className="text-lg font-bold text-slate-900 pr-2">
-                Add placeholder recipient
+                {editingRecipientId ? 'Rename placeholder recipient' : 'Add placeholder recipient'}
               </h2>
               <button
                 type="button"
                 className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
-                onClick={() => setPlaceholderModalOpen(false)}
+                onClick={() => {
+                  setPlaceholderModalOpen(false);
+                  setEditingRecipientId(null);
+                }}
                 aria-label="Close"
               >
                 <X size={20} />
