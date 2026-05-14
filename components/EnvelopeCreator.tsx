@@ -749,8 +749,8 @@ const RecipientFieldPreviewChip: React.FC<{
   const tone = PLACEHOLDER_TONES[recipientId];
   return (
     <span
-      className="inline-flex items-center px-2 py-0.5 rounded-md border text-[13px] font-bold mx-1"
-      style={{ backgroundColor: tone.bg, borderColor: tone.border, color: tone.icon }}
+      className="inline-flex items-center px-2 py-0.5 rounded-md border text-[13px] font-bold mx-1 text-slate-900"
+      style={{ backgroundColor: tone.bg, borderColor: tone.border }}
       data-chip="recipient-field"
       data-label={field}
       data-recipient-id={recipientId}
@@ -768,7 +768,7 @@ function placeholderChipHtml(recipientId: 'employee' | 'manager', field: string)
   const safeLabel = tone.label.replace(/"/g, '&quot;');
   const style =
     `display:inline-flex;align-items:center;margin:0 4px;padding:2px 8px;border-radius:6px;` +
-    `font:inherit;background:${tone.bg};border:1px solid ${tone.border};color:${tone.icon}`;
+    `font:inherit;background:${tone.bg};border:1px solid ${tone.border};color:#0F172A`;
   return (
     `<span data-chip="recipient-field" data-label="${safeField}" data-recipient-id="${recipientId}" ` +
     `data-recipient-label="${safeLabel}" draggable="true" contenteditable="false" ` +
