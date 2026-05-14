@@ -727,6 +727,58 @@ const PLACEHOLDER_TONES: Record<
 };
 
 /**
+ * Catch-all tone for user-defined placeholder recipients (`ext-*`) coming
+ * from the Template Editor. Matches the yellow swatch the editor uses for
+ * the third entry in its palette so the avatar in the modal stays in sync
+ * with the chip color the user saw while authoring the template.
+ */
+const GENERIC_PLACEHOLDER_TONE = {
+  bg: '#FEF3C7',
+  border: '#FDE68A',
+  icon: '#92400E',
+  label: 'Placeholder',
+};
+
+type UsedPlaceholder = { id: string; label: string };
+
+/** Returns the avatar tone for any placeholder id encountered in a template body. */
+function placeholderTone(id: string) {
+  if (id === 'employee' || id === 'manager') return PLACEHOLDER_TONES[id];
+  return GENERIC_PLACEHOLDER_TONE;
+}
+
+/**
+ * Inspect a template body (HTML string) and return every chip recipient that
+ * needs to be mapped to a real envelope recipient before sending. A chip is
+ * a placeholder when its `data-recipient-id` is `employee`, `manager`, or
+ * starts with `ext-` (the prefix the Template Editor stamps onto user-defined
+ * placeholder recipients).
+ */
+function extractPlaceholdersFromBody(body: string): UsedPlaceholder[] {
+  if (typeof DOMParser === 'undefined' || !body) return [];
+  const doc = new DOMParser().parseFromString(`<div>${body}</div>`, 'text/html');
+  const chips = doc.querySelectorAll('span[data-chip="recipient-field"]');
+  const seen = new Set<string>();
+  const out: UsedPlaceholder[] = [];
+  chips.forEach((chip) => {
+    const rid = chip.getAttribute('data-recipient-id') || '';
+    if (!rid || seen.has(rid)) return;
+    const isPlaceholder = rid === 'employee' || rid === 'manager' || rid.startsWith('ext-');
+    if (!isPlaceholder) return;
+    const labelAttr = chip.getAttribute('data-recipient-label') || '';
+    const fallback =
+      rid === 'employee'
+        ? PLACEHOLDER_TONES.employee.label
+        : rid === 'manager'
+          ? PLACEHOLDER_TONES.manager.label
+          : 'Placeholder';
+    seen.add(rid);
+    out.push({ id: rid, label: labelAttr || fallback });
+  });
+  return out;
+}
+
+/**
  * Recipient-field chips baked into every built-in template so the right-side
  * preview always shows the signing block (and the Send flow can detect that
  * the envelope has placeholders that need resolving).
@@ -990,6 +1042,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const [placeholderAssignments, setPlaceholderAssignments] = useState<
     Record<string, string>
   >({});
+  /**
+   * Snapshot of the placeholders we asked the user to map. Stored separately
+   * from `placeholderAssignments` so the modal rows render in a stable order
+   * with the original labels (the labels come from `data-recipient-label`
+   * on the chips and we don't want to recompute mid-modal).
+   */
+  const [usedPlaceholders, setUsedPlaceholders] = useState<UsedPlaceholder[]>([]);
   /** Combobox open state per placeholder row inside the modal. */
   const [placeholderComboOpenId, setPlaceholderComboOpenId] = useState<string | null>(null);
   /** Final envelope name captured at the moment Send was clicked so we can re-fire after mapping. */
@@ -1564,24 +1623,33 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   };
 
   /**
-   * Inspect the envelope's documents for chips bound to a built-in placeholder
-   * (`employee` or `manager`). Returns the set of placeholder ids actually
-   * used so the Send modal only asks about the ones present in the bodies.
-   * Built-in templates always carry both placeholders (see
-   * `BUILTIN_TEMPLATE_FIELDS`); custom templates may carry zero or more.
+   * Inspect every selected template's body for chips bound to a placeholder
+   * recipient (`employee`, `manager`, or any user-defined `ext-*` from the
+   * Template Editor) and return them with a stable label. The Send flow
+   * uses this to decide whether to gate the envelope behind the "Define
+   * placeholders" modal and which rows to render inside it.
+   *
+   * Built-in templates always contribute both built-in placeholders since
+   * `BUILTIN_TEMPLATE_FIELDS` bakes them into every preview.
    */
-  const detectUsedPlaceholders = useCallback((): Array<'employee' | 'manager'> => {
-    const used = new Set<'employee' | 'manager'>();
+  const detectUsedPlaceholders = useCallback((): UsedPlaceholder[] => {
+    const map = new Map<string, UsedPlaceholder>();
     for (const name of selectedTemplates) {
       const custom = customTemplates.find((c) => c.name === name);
       if (custom) {
-        if (/data-recipient-id="employee"/.test(custom.body)) used.add('employee');
-        if (/data-recipient-id="manager"/.test(custom.body)) used.add('manager');
+        for (const p of extractPlaceholdersFromBody(custom.body)) {
+          if (!map.has(p.id)) map.set(p.id, p);
+        }
       } else if (TEMPLATES.includes(name)) {
-        for (const f of BUILTIN_TEMPLATE_FIELDS) used.add(f.recipientId);
+        if (!map.has('employee')) {
+          map.set('employee', { id: 'employee', label: PLACEHOLDER_TONES.employee.label });
+        }
+        if (!map.has('manager')) {
+          map.set('manager', { id: 'manager', label: PLACEHOLDER_TONES.manager.label });
+        }
       }
     }
-    return Array.from(used);
+    return Array.from(map.values());
   }, [selectedTemplates, customTemplates]);
 
   /**
@@ -1607,16 +1675,24 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       for (const f of placementFields) {
         if (f.recipientSlotId) withFields.add(f.recipientSlotId);
       }
+      // A chip is "bound" to a recipient in one of three ways:
+      // - its `data-recipient-id` matches a current envelope slot id directly,
+      // - it's a placeholder (`employee`/`manager`/`ext-*`) mapped via the
+      //   Define placeholders modal,
+      // - it's a non-placeholder id (e.g. a TemplateEditor internal user) —
+      //   ignored here since we don't know how it maps to an envelope slot.
       const collectFromBody = (body: string) => {
         const re = /data-recipient-id="([^"]+)"/g;
         let m: RegExpExecArray | null;
         while ((m = re.exec(body)) !== null) {
           const rid = m[1];
-          if (rid === 'employee' || rid === 'manager') {
-            const assigned = assignments[rid];
-            if (assigned) withFields.add(assigned);
-          } else {
+          if (recipients.some((r) => r.id === rid)) {
             withFields.add(rid);
+          } else if (
+            (rid === 'employee' || rid === 'manager' || rid.startsWith('ext-')) &&
+            assignments[rid]
+          ) {
+            withFields.add(assignments[rid]);
           }
         }
       };
@@ -1680,15 +1756,17 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       uploadedFiles[0]?.name ||
       '[Envelope Name]';
     // Gate the send behind the placeholder mapping modal when any template
-    // chip references the Employee or Employee's manager placeholder. The
+    // chip references a placeholder recipient (built-in employee/manager or
+    // a user-defined external placeholder from the Template Editor). The
     // user must pick a real "Needs to complete" recipient for each before
     // the envelope actually ships.
-    const usedPlaceholders = detectUsedPlaceholders();
-    if (usedPlaceholders.length > 0) {
+    const used = detectUsedPlaceholders();
+    if (used.length > 0) {
       pendingSendNameRef.current = finalName;
+      setUsedPlaceholders(used);
       setPlaceholderAssignments((prev) => {
         const next: Record<string, string> = {};
-        for (const pid of usedPlaceholders) next[pid] = prev[pid] ?? '';
+        for (const p of used) next[p.id] = prev[p.id] ?? '';
         return next;
       });
       setPlaceholderComboOpenId(null);
@@ -1700,8 +1778,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
   /** Confirm the placeholder mapping and resume the original send. */
   const handleConfirmPlaceholders = () => {
-    const usedPlaceholders = Object.keys(placeholderAssignments);
-    const allMapped = usedPlaceholders.every((p) => placeholderAssignments[p]);
+    const allMapped = usedPlaceholders.every((p) => !!placeholderAssignments[p.id]);
     if (!allMapped) return;
     const name = pendingSendNameRef.current;
     setPlaceholderModalOpen(false);
@@ -3744,8 +3821,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       const candidateRecipients = recipients.filter(
         (r) => r.action === 'Needs to complete' && r.user
       );
-      const placeholderIds = Object.keys(placeholderAssignments) as Array<'employee' | 'manager'>;
-      const allMapped = placeholderIds.every((p) => !!placeholderAssignments[p]);
+      const allMapped = usedPlaceholders.every((p) => !!placeholderAssignments[p.id]);
       const sendEnabled = allMapped && candidateRecipients.length > 0;
       return (
         <div
@@ -3777,13 +3853,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
               Map each placeholder used in this envelope to the recipient who will actually sign.
             </p>
             <div className="space-y-4 mb-6">
-              {placeholderIds.map((pid) => {
-                const tone = PLACEHOLDER_TONES[pid];
-                const open = placeholderComboOpenId === pid;
-                const assigned = placeholderAssignments[pid];
+              {usedPlaceholders.map((p) => {
+                const tone = placeholderTone(p.id);
+                const open = placeholderComboOpenId === p.id;
+                const assigned = placeholderAssignments[p.id];
                 const assignedRecipient = candidateRecipients.find((r) => r.id === assigned);
                 return (
-                  <div key={pid} className="flex items-center gap-4">
+                  <div key={p.id} className="flex items-center gap-4">
                     <div className="flex items-center gap-2 min-w-[200px]">
                       <span
                         className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
@@ -3791,13 +3867,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                       >
                         <User size={14} />
                       </span>
-                      <span className="text-[14px] font-bold text-slate-900">{tone.label}</span>
+                      <span className="text-[14px] font-bold text-slate-900">{p.label}</span>
                     </div>
                     <div className="flex-1 relative">
                       <button
                         type="button"
                         onClick={() =>
-                          setPlaceholderComboOpenId((cur) => (cur === pid ? null : pid))
+                          setPlaceholderComboOpenId((cur) => (cur === p.id ? null : p.id))
                         }
                         className={`w-full flex items-center justify-between border rounded-xl px-3 py-2.5 text-sm bg-white hover:bg-slate-50 transition-colors ${
                           open ? 'border-blue-500 ring-2 ring-blue-400/40' : 'border-slate-300'
@@ -3828,7 +3904,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                   type="button"
                                   className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
                                   onClick={() => {
-                                    setPlaceholderAssignments((prev) => ({ ...prev, [pid]: r.id }));
+                                    setPlaceholderAssignments((prev) => ({ ...prev, [p.id]: r.id }));
                                     setPlaceholderComboOpenId(null);
                                   }}
                                 >
