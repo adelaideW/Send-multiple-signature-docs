@@ -712,6 +712,86 @@ const VariableChip: React.FC<{ label: string; color?: 'blue' | 'purple' | 'orang
   );
 };
 
+/**
+ * Tones for the built-in template placeholders. Kept in sync with the
+ * Template Editor's `RECIPIENT_TONE_PALETTE` so a chip rendered here
+ * stays the same color when the user opens "Edit document" and lands in
+ * the editor.
+ */
+const PLACEHOLDER_TONES: Record<
+  'employee' | 'manager',
+  { bg: string; border: string; icon: string; label: string }
+> = {
+  employee: { bg: '#F3E8FF', border: '#E9D5FF', icon: '#7E22CE', label: 'Employee' },
+  manager: { bg: '#CCFBF1', border: '#99F6E4', icon: '#0F766E', label: "Employee's manager" },
+};
+
+/**
+ * Recipient-field chips baked into every built-in template so the right-side
+ * preview always shows the signing block (and the Send flow can detect that
+ * the envelope has placeholders that need resolving).
+ */
+const BUILTIN_TEMPLATE_FIELDS: ReadonlyArray<{
+  recipientId: 'employee' | 'manager';
+  field: 'Signature' | 'Date signed';
+}> = [
+  { recipientId: 'employee', field: 'Signature' },
+  { recipientId: 'employee', field: 'Date signed' },
+  { recipientId: 'manager', field: 'Signature' },
+  { recipientId: 'manager', field: 'Date signed' },
+];
+
+/** Inline preview chip rendered as JSX for the built-in template body. */
+const RecipientFieldPreviewChip: React.FC<{
+  recipientId: 'employee' | 'manager';
+  field: string;
+}> = ({ recipientId, field }) => {
+  const tone = PLACEHOLDER_TONES[recipientId];
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-md border text-[13px] font-bold mx-1"
+      style={{ backgroundColor: tone.bg, borderColor: tone.border, color: tone.icon }}
+      data-chip="recipient-field"
+      data-label={field}
+      data-recipient-id={recipientId}
+      data-recipient-label={tone.label}
+    >
+      {field}
+    </span>
+  );
+};
+
+/** Serialize a placeholder chip into the same HTML shape the Template Editor expects. */
+function placeholderChipHtml(recipientId: 'employee' | 'manager', field: string): string {
+  const tone = PLACEHOLDER_TONES[recipientId];
+  const safeField = field.replace(/"/g, '&quot;');
+  const safeLabel = tone.label.replace(/"/g, '&quot;');
+  const style =
+    `display:inline-flex;align-items:center;margin:0 4px;padding:2px 8px;border-radius:6px;` +
+    `font:inherit;background:${tone.bg};border:1px solid ${tone.border};color:${tone.icon}`;
+  return (
+    `<span data-chip="recipient-field" data-label="${safeField}" data-recipient-id="${recipientId}" ` +
+    `data-recipient-label="${safeLabel}" draggable="true" contenteditable="false" ` +
+    `style="${style}">${field}</span>`
+  );
+}
+
+/**
+ * HTML fragment with the canonical Employee + Manager signature block. Appended
+ * to every built-in template's body so the snapshot consumed by "Edit document"
+ * (and the placeholder scanner that runs on Send) sees the recipient fields.
+ */
+function builtinSignatureBlockHtml(): string {
+  const rows = (['employee', 'manager'] as const)
+    .map((rid) => {
+      const sig = placeholderChipHtml(rid, 'Signature');
+      const date = placeholderChipHtml(rid, 'Date signed');
+      return `<p><strong>${PLACEHOLDER_TONES[rid].label}</strong> ${sig} ${date}</p>`;
+    })
+    .join('');
+  return `<p>&nbsp;</p>${rows}`;
+}
+
 const CoachmarkPortal: React.FC<{
   anchorRef: React.RefObject<HTMLElement | null>;
   title: string;
@@ -900,6 +980,20 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const [autoFieldsModalOpen, setAutoFieldsModalOpen] = useState(false);
   const [showInsertFieldsButton, setShowInsertFieldsButton] = useState(false);
   const [autoModalRecipientId, setAutoModalRecipientId] = useState('');
+  /**
+   * "Define placeholders" modal state — opened on Send when the envelope
+   * contains chips bound to the built-in `employee`/`manager` placeholders.
+   * The modal collects a mapping from each placeholder to a real recipient
+   * (`recipientSlotId`) before letting the send actually fire.
+   */
+  const [placeholderModalOpen, setPlaceholderModalOpen] = useState(false);
+  const [placeholderAssignments, setPlaceholderAssignments] = useState<
+    Record<string, string>
+  >({});
+  /** Combobox open state per placeholder row inside the modal. */
+  const [placeholderComboOpenId, setPlaceholderComboOpenId] = useState<string | null>(null);
+  /** Final envelope name captured at the moment Send was clicked so we can re-fire after mapping. */
+  const pendingSendNameRef = useRef<string | null>(null);
   const placementPageRef = useRef<HTMLDivElement>(null);
   const placementAutoGateRef = useRef(false);
   const suppressPlacementAutoModalRef = useRef(false);
@@ -956,7 +1050,11 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       }
       return { title: name, bodyHtml: html || '<p></p>' };
     }
-    const bodyHtml = `<p>Effective ${chip('Start date')}, , ${chip('Contractor Name')} ("Consultant") and ${chip('Business legal name')} ("Company") agree as follows:</p><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p>`;
+    const bodyHtml =
+      `<p>Effective ${chip('Start date')}, , ${chip('Contractor Name')} ("Consultant") and ${chip('Business legal name')} ("Company") agree as follows:</p>` +
+      `<p>1. Services; Payment; No Violation of Rights or Obligations.</p>` +
+      `<p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p>` +
+      builtinSignatureBlockHtml();
     return { title: name, bodyHtml };
   };
 
@@ -1455,6 +1553,27 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     );
   };
 
+  /**
+   * Inspect the envelope's documents for chips bound to a built-in placeholder
+   * (`employee` or `manager`). Returns the set of placeholder ids actually
+   * used so the Send modal only asks about the ones present in the bodies.
+   * Built-in templates always carry both placeholders (see
+   * `BUILTIN_TEMPLATE_FIELDS`); custom templates may carry zero or more.
+   */
+  const detectUsedPlaceholders = useCallback((): Array<'employee' | 'manager'> => {
+    const used = new Set<'employee' | 'manager'>();
+    for (const name of selectedTemplates) {
+      const custom = customTemplates.find((c) => c.name === name);
+      if (custom) {
+        if (/data-recipient-id="employee"/.test(custom.body)) used.add('employee');
+        if (/data-recipient-id="manager"/.test(custom.body)) used.add('manager');
+      } else if (TEMPLATES.includes(name)) {
+        for (const f of BUILTIN_TEMPLATE_FIELDS) used.add(f.recipientId);
+      }
+    }
+    return Array.from(used);
+  }, [selectedTemplates, customTemplates]);
+
   const handleContinue = () => {
     if (!hasDocuments) return;
     const allRecipientsFilled = recipients.every((r) => r.user !== null);
@@ -1466,15 +1585,50 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     if (currentStep === 'setup' && uploadedFiles.length > 0) {
       setCurrentStep('placement');
       setTimeout(() => setActiveCoachmark(1), 600);
-    } else {
-      const finalName =
-        (envelopeNameTouched && envelopeName.trim()) ||
-        derivedEnvelopeName ||
-        selectedTemplates[0] ||
-        uploadedFiles[0]?.name ||
-        '[Envelope Name]';
-      onContinue?.(finalName);
+      return;
     }
+    const finalName =
+      (envelopeNameTouched && envelopeName.trim()) ||
+      derivedEnvelopeName ||
+      selectedTemplates[0] ||
+      uploadedFiles[0]?.name ||
+      '[Envelope Name]';
+    // Gate the send behind the placeholder mapping modal when any template
+    // chip references the Employee or Employee's manager placeholder. The
+    // user must pick a real "Needs to complete" recipient for each before
+    // the envelope actually ships.
+    const usedPlaceholders = detectUsedPlaceholders();
+    if (usedPlaceholders.length > 0) {
+      pendingSendNameRef.current = finalName;
+      setPlaceholderAssignments((prev) => {
+        const next: Record<string, string> = {};
+        for (const pid of usedPlaceholders) next[pid] = prev[pid] ?? '';
+        return next;
+      });
+      setPlaceholderComboOpenId(null);
+      setPlaceholderModalOpen(true);
+      return;
+    }
+    onContinue?.(finalName);
+  };
+
+  /** Confirm the placeholder mapping and resume the original send. */
+  const handleConfirmPlaceholders = () => {
+    const usedPlaceholders = Object.keys(placeholderAssignments);
+    const allMapped = usedPlaceholders.every((p) => placeholderAssignments[p]);
+    if (!allMapped) return;
+    const name = pendingSendNameRef.current;
+    pendingSendNameRef.current = null;
+    setPlaceholderModalOpen(false);
+    setPlaceholderComboOpenId(null);
+    if (name) onContinue?.(name);
+  };
+
+  /** Cancel the placeholder modal without sending. */
+  const handleCancelPlaceholders = () => {
+    pendingSendNameRef.current = null;
+    setPlaceholderModalOpen(false);
+    setPlaceholderComboOpenId(null);
   };
 
   const isUserAlreadyRecipient = (user: { id: string; email?: string }, exceptSlotId: string) =>
@@ -3449,6 +3603,16 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                         <h1 className="text-2xl font-bold text-center mb-10">{tplName}</h1>
                         <p className="mb-6">Effective <VariableChip label="Start date" />, , <VariableChip label="Contractor Name" /> ("Consultant") and <VariableChip label="Business legal name" /> ("Company") agree as follows:</p>
                         <div className="space-y-6 text-slate-600"><p>1. Services; Payment; No Violation of Rights or Obligations.</p><p>Consultant agrees to undertake and complete the Services (as defined in Exhibit A)...</p></div>
+                        <div className="mt-12 pt-6 border-t border-slate-200 space-y-4 text-slate-700">
+                          {(['employee', 'manager'] as const).map((rid) => (
+                            <div key={rid} className="flex flex-wrap items-center gap-2">
+                              <span className="text-[14px] font-bold text-slate-900 mr-1">{PLACEHOLDER_TONES[rid].label}</span>
+                              {BUILTIN_TEMPLATE_FIELDS.filter((f) => f.recipientId === rid).map((f) => (
+                                <RecipientFieldPreviewChip key={`${rid}-${f.field}`} recipientId={rid} field={f.field} />
+                              ))}
+                            </div>
+                          ))}
+                        </div>
                       </>
                     );
                   })()}
@@ -3471,6 +3635,150 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
         </button>
       </footer>
     </div>
+
+    {placeholderModalOpen && (() => {
+      const candidateRecipients = recipients.filter(
+        (r) => r.action === 'Needs to complete' && r.user
+      );
+      const placeholderIds = Object.keys(placeholderAssignments) as Array<'employee' | 'manager'>;
+      const allMapped = placeholderIds.every((p) => !!placeholderAssignments[p]);
+      const sendEnabled = allMapped && candidateRecipients.length > 0;
+      return (
+        <div
+          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
+          onClick={handleCancelPlaceholders}
+          role="presentation"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] p-6 border border-slate-200"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="define-placeholders-title"
+          >
+            <div className="flex justify-between items-start gap-3 mb-3">
+              <h2 id="define-placeholders-title" className="text-lg font-bold text-slate-900 pr-2">
+                Define placeholders
+              </h2>
+              <button
+                type="button"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
+                onClick={handleCancelPlaceholders}
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed mb-5">
+              Map each placeholder used in this envelope to the recipient who will actually sign.
+            </p>
+            <div className="space-y-4 mb-6">
+              {placeholderIds.map((pid) => {
+                const tone = PLACEHOLDER_TONES[pid];
+                const open = placeholderComboOpenId === pid;
+                const assigned = placeholderAssignments[pid];
+                const assignedRecipient = candidateRecipients.find((r) => r.id === assigned);
+                return (
+                  <div key={pid} className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 min-w-[200px]">
+                      <span
+                        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: tone.bg, color: tone.icon }}
+                      >
+                        <User size={14} />
+                      </span>
+                      <span className="text-[14px] font-bold text-slate-900">{tone.label}</span>
+                    </div>
+                    <div className="flex-1 relative">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPlaceholderComboOpenId((cur) => (cur === pid ? null : pid))
+                        }
+                        className={`w-full flex items-center justify-between border rounded-xl px-3 py-2.5 text-sm bg-white hover:bg-slate-50 transition-colors ${
+                          open ? 'border-blue-500 ring-2 ring-blue-400/40' : 'border-slate-300'
+                        }`}
+                      >
+                        <span className={assignedRecipient ? 'text-slate-900 font-medium truncate' : 'text-slate-400'}>
+                          {assignedRecipient
+                            ? assignedRecipient.user?.name
+                            : 'Search by name'}
+                        </span>
+                        <ChevronDown
+                          size={16}
+                          className={`text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+                        />
+                      </button>
+                      {open && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-10 max-h-60 overflow-y-auto">
+                          {candidateRecipients.length === 0 ? (
+                            <div className="px-4 py-3 text-sm text-slate-500">
+                              Add a recipient with the &quot;Needs to complete&quot; action first.
+                            </div>
+                          ) : (
+                            candidateRecipients.map((r) => {
+                              const isSelected = r.id === assigned;
+                              return (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
+                                  onClick={() => {
+                                    setPlaceholderAssignments((prev) => ({ ...prev, [pid]: r.id }));
+                                    setPlaceholderComboOpenId(null);
+                                  }}
+                                >
+                                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-500">
+                                    <User size={16} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-bold text-slate-900 truncate">{r.user?.name}</div>
+                                    {r.user?.email && (
+                                      <div className="text-xs text-slate-500 truncate">{r.user.email}</div>
+                                    )}
+                                  </div>
+                                  {isSelected && <Check size={16} className="text-blue-600 shrink-0" strokeWidth={2.5} />}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {candidateRecipients.length === 0 && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  No recipients are set to &quot;Needs to complete&quot;. Add one in the recipients section before sending.
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
+                onClick={handleCancelPlaceholders}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!sendEnabled}
+                onClick={handleConfirmPlaceholders}
+                className={`px-4 py-2.5 rounded-xl text-sm font-bold ${
+                  sendEnabled
+                    ? 'bg-[#7A005D] text-white hover:opacity-95'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                {correctingFlow ? 'Resend' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
     </>
   );
 };
