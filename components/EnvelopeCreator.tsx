@@ -1812,6 +1812,235 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     setNoFieldRecipientNames([]);
   };
 
+  /**
+   * Shared "Send gate" modals — placeholder mapping + no-fields warning.
+   * Rendered in both the setup view and the placement view so clicking
+   * Send from either step lands the user in the same confirmation flow.
+   */
+  const renderSendGateModals = () => {
+    const candidateRecipients = recipients.filter(
+      (r) => r.action === 'Needs to complete' && r.user
+    );
+    const allMapped = usedPlaceholders.every((p) => !!placeholderAssignments[p.id]);
+    const placeholderSendEnabled = allMapped && candidateRecipients.length > 0;
+    return (
+      <>
+        {placeholderModalOpen && (
+          <div
+            className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
+            onClick={handleCancelPlaceholders}
+            role="presentation"
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] p-6 border border-slate-200"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="define-placeholders-title"
+            >
+              <div className="flex justify-between items-start gap-3 mb-3">
+                <h2 id="define-placeholders-title" className="text-lg font-bold text-slate-900 pr-2">
+                  Define placeholders
+                </h2>
+                <button
+                  type="button"
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
+                  onClick={handleCancelPlaceholders}
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <p className="text-sm text-slate-700 leading-relaxed mb-5">
+                Map each placeholder used in this envelope to the recipient who will actually sign.
+              </p>
+              <div className="space-y-4 mb-6">
+                {usedPlaceholders.map((p) => {
+                  const tone = placeholderTone(p.id);
+                  const open = placeholderComboOpenId === p.id;
+                  const assigned = placeholderAssignments[p.id];
+                  const assignedRecipient = candidateRecipients.find((r) => r.id === assigned);
+                  return (
+                    <div key={p.id} className="flex items-center gap-4">
+                      <div className="flex items-center gap-2 min-w-[200px]">
+                        <span
+                          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: tone.bg, color: tone.icon }}
+                        >
+                          <User size={14} />
+                        </span>
+                        <span className="text-[14px] font-bold text-slate-900">{p.label}</span>
+                      </div>
+                      <div className="flex-1 relative">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPlaceholderComboOpenId((cur) => (cur === p.id ? null : p.id))
+                          }
+                          className={`w-full flex items-center justify-between border rounded-xl px-3 py-2.5 text-sm bg-white hover:bg-slate-50 transition-colors ${
+                            open ? 'border-blue-500 ring-2 ring-blue-400/40' : 'border-slate-300'
+                          }`}
+                        >
+                          <span className={assignedRecipient ? 'text-slate-900 font-medium truncate' : 'text-slate-400'}>
+                            {assignedRecipient
+                              ? assignedRecipient.user?.name
+                              : 'Search by name'}
+                          </span>
+                          <ChevronDown
+                            size={16}
+                            className={`text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+                          />
+                        </button>
+                        {open && (
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-10 max-h-60 overflow-y-auto">
+                            {candidateRecipients.length === 0 ? (
+                              <div className="px-4 py-3 text-sm text-slate-500">
+                                Add a recipient with the &quot;Needs to complete&quot; action first.
+                              </div>
+                            ) : (
+                              candidateRecipients.map((r) => {
+                                const isSelected = r.id === assigned;
+                                return (
+                                  <button
+                                    key={r.id}
+                                    type="button"
+                                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
+                                    onClick={() => {
+                                      setPlaceholderAssignments((prev) => ({ ...prev, [p.id]: r.id }));
+                                      setPlaceholderComboOpenId(null);
+                                    }}
+                                  >
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-500">
+                                      <User size={16} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-bold text-slate-900 truncate">{r.user?.name}</div>
+                                      {r.user?.email && (
+                                        <div className="text-xs text-slate-500 truncate">{r.user.email}</div>
+                                      )}
+                                    </div>
+                                    {isSelected && <Check size={16} className="text-blue-600 shrink-0" strokeWidth={2.5} />}
+                                  </button>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {candidateRecipients.length === 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                    No recipients are set to &quot;Needs to complete&quot;. Add one in the recipients section before sending.
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
+                  onClick={handleCancelPlaceholders}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!placeholderSendEnabled}
+                  onClick={handleConfirmPlaceholders}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-bold ${
+                    placeholderSendEnabled
+                      ? 'bg-[#7A005D] text-white hover:opacity-95'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  {correctingFlow ? 'Resend' : 'Send'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {noFieldWarningOpen && (
+          <div
+            className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
+            onClick={handleCancelNoFieldWarning}
+            role="presentation"
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] p-6 border border-slate-200"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="confirm-no-fields-title"
+            >
+              <div className="flex justify-between items-start gap-3 mb-4">
+                <h2 id="confirm-no-fields-title" className="text-lg font-bold text-slate-900 pr-2">
+                  Confirm before sending
+                </h2>
+                <button
+                  type="button"
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
+                  onClick={handleCancelNoFieldWarning}
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="rounded-xl bg-[#FDE7C6] border border-[#F5D199] px-4 py-3 mb-5">
+                <div className="flex items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="w-5 h-5 rounded-full bg-[#7A3A0F] text-white flex items-center justify-center text-[12px] font-bold leading-none shrink-0 mt-0.5"
+                  >
+                    !
+                  </span>
+                  <div className="flex-1 text-sm text-slate-900 leading-relaxed">
+                    <p>These recipients are set to sign but have no assigned fields. They will not be able to sign:</p>
+                    <ul className="list-disc list-outside pl-5 mt-2 space-y-0.5">
+                      {noFieldRecipientNames.map((n, i) => (
+                        <li key={`${n}-${i}`}>{n}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 mb-6 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={confirmSendNoFields}
+                  onChange={(e) => setConfirmSendNoFields(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-[#7A005D] focus:ring-[#7A005D]"
+                />
+                <span className="text-sm text-slate-900">Send without adding fields</span>
+              </label>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
+                  onClick={handleCancelNoFieldWarning}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!confirmSendNoFields}
+                  onClick={handleConfirmNoFieldSend}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-bold ${
+                    confirmSendNoFields
+                      ? 'bg-[#7A005D] text-white hover:opacity-95'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  {correctingFlow ? 'Resend' : 'Send'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
   const isUserAlreadyRecipient = (user: { id: string; email?: string }, exceptSlotId: string) =>
     recipients.some(
       (r) =>
@@ -2556,6 +2785,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
           </button>
         </footer>
       </div>
+      {renderSendGateModals()}
       {activeCoachmark === 1 && (
         <CoachmarkPortal
           anchorRef={recipientSelectorRef}
@@ -3817,226 +4047,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       </footer>
     </div>
 
-    {placeholderModalOpen && (() => {
-      const candidateRecipients = recipients.filter(
-        (r) => r.action === 'Needs to complete' && r.user
-      );
-      const allMapped = usedPlaceholders.every((p) => !!placeholderAssignments[p.id]);
-      const sendEnabled = allMapped && candidateRecipients.length > 0;
-      return (
-        <div
-          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
-          onClick={handleCancelPlaceholders}
-          role="presentation"
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] p-6 border border-slate-200"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="define-placeholders-title"
-          >
-            <div className="flex justify-between items-start gap-3 mb-3">
-              <h2 id="define-placeholders-title" className="text-lg font-bold text-slate-900 pr-2">
-                Define placeholders
-              </h2>
-              <button
-                type="button"
-                className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
-                onClick={handleCancelPlaceholders}
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-slate-700 leading-relaxed mb-5">
-              Map each placeholder used in this envelope to the recipient who will actually sign.
-            </p>
-            <div className="space-y-4 mb-6">
-              {usedPlaceholders.map((p) => {
-                const tone = placeholderTone(p.id);
-                const open = placeholderComboOpenId === p.id;
-                const assigned = placeholderAssignments[p.id];
-                const assignedRecipient = candidateRecipients.find((r) => r.id === assigned);
-                return (
-                  <div key={p.id} className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 min-w-[200px]">
-                      <span
-                        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: tone.bg, color: tone.icon }}
-                      >
-                        <User size={14} />
-                      </span>
-                      <span className="text-[14px] font-bold text-slate-900">{p.label}</span>
-                    </div>
-                    <div className="flex-1 relative">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPlaceholderComboOpenId((cur) => (cur === p.id ? null : p.id))
-                        }
-                        className={`w-full flex items-center justify-between border rounded-xl px-3 py-2.5 text-sm bg-white hover:bg-slate-50 transition-colors ${
-                          open ? 'border-blue-500 ring-2 ring-blue-400/40' : 'border-slate-300'
-                        }`}
-                      >
-                        <span className={assignedRecipient ? 'text-slate-900 font-medium truncate' : 'text-slate-400'}>
-                          {assignedRecipient
-                            ? assignedRecipient.user?.name
-                            : 'Search by name'}
-                        </span>
-                        <ChevronDown
-                          size={16}
-                          className={`text-slate-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
-                        />
-                      </button>
-                      {open && (
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-10 max-h-60 overflow-y-auto">
-                          {candidateRecipients.length === 0 ? (
-                            <div className="px-4 py-3 text-sm text-slate-500">
-                              Add a recipient with the &quot;Needs to complete&quot; action first.
-                            </div>
-                          ) : (
-                            candidateRecipients.map((r) => {
-                              const isSelected = r.id === assigned;
-                              return (
-                                <button
-                                  key={r.id}
-                                  type="button"
-                                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
-                                  onClick={() => {
-                                    setPlaceholderAssignments((prev) => ({ ...prev, [p.id]: r.id }));
-                                    setPlaceholderComboOpenId(null);
-                                  }}
-                                >
-                                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-500">
-                                    <User size={16} />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-bold text-slate-900 truncate">{r.user?.name}</div>
-                                    {r.user?.email && (
-                                      <div className="text-xs text-slate-500 truncate">{r.user.email}</div>
-                                    )}
-                                  </div>
-                                  {isSelected && <Check size={16} className="text-blue-600 shrink-0" strokeWidth={2.5} />}
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              {candidateRecipients.length === 0 && (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                  No recipients are set to &quot;Needs to complete&quot;. Add one in the recipients section before sending.
-                </p>
-              )}
-            </div>
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
-                onClick={handleCancelPlaceholders}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!sendEnabled}
-                onClick={handleConfirmPlaceholders}
-                className={`px-4 py-2.5 rounded-xl text-sm font-bold ${
-                  sendEnabled
-                    ? 'bg-[#7A005D] text-white hover:opacity-95'
-                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                }`}
-              >
-                {correctingFlow ? 'Resend' : 'Send'}
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    })()}
-
-    {noFieldWarningOpen && (
-      <div
-        className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
-        onClick={handleCancelNoFieldWarning}
-        role="presentation"
-      >
-        <div
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] p-6 border border-slate-200"
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="confirm-no-fields-title"
-        >
-          <div className="flex justify-between items-start gap-3 mb-4">
-            <h2 id="confirm-no-fields-title" className="text-lg font-bold text-slate-900 pr-2">
-              Confirm before sending
-            </h2>
-            <button
-              type="button"
-              className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
-              onClick={handleCancelNoFieldWarning}
-              aria-label="Close"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          <div className="rounded-xl bg-[#FDE7C6] border border-[#F5D199] px-4 py-3 mb-5">
-            <div className="flex items-start gap-3">
-              <span
-                aria-hidden="true"
-                className="w-5 h-5 rounded-full bg-[#7A3A0F] text-white flex items-center justify-center text-[12px] font-bold leading-none shrink-0 mt-0.5"
-              >
-                !
-              </span>
-              <div className="flex-1 text-sm text-slate-900 leading-relaxed">
-                <p>These recipients are set to sign but have no assigned fields. They will not be able to sign:</p>
-                <ul className="list-disc list-outside pl-5 mt-2 space-y-0.5">
-                  {noFieldRecipientNames.map((n, i) => (
-                    <li key={`${n}-${i}`}>{n}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-          <label className="flex items-center gap-2 mb-6 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={confirmSendNoFields}
-              onChange={(e) => setConfirmSendNoFields(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-300 text-[#7A005D] focus:ring-[#7A005D]"
-            />
-            <span className="text-sm text-slate-900">Send without adding fields</span>
-          </label>
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
-              onClick={handleCancelNoFieldWarning}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={!confirmSendNoFields}
-              onClick={handleConfirmNoFieldSend}
-              className={`px-4 py-2.5 rounded-xl text-sm font-bold ${
-                confirmSendNoFields
-                  ? 'bg-[#7A005D] text-white hover:opacity-95'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              }`}
-            >
-              {correctingFlow ? 'Resend' : 'Send'}
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
+    {renderSendGateModals()}
     </>
   );
 };
