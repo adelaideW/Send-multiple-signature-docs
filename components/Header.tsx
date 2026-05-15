@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, HelpCircle, Bell, Accessibility, Grid } from 'lucide-react';
+import { Search, HelpCircle, Bell, Accessibility, Grid, ChevronDown } from 'lucide-react';
 
 interface HeaderProps {
   onProfileClick?: () => void;
@@ -54,12 +54,15 @@ const Header: React.FC<HeaderProps> = ({ onProfileClick, currentView = 'admin', 
         
         <div className="h-6 w-px bg-slate-200 mx-1"></div>
 
-        <div className="relative" ref={viewMenuRef}>
+        <div className="relative flex items-center gap-0.5" ref={viewMenuRef}>
           <button
             type="button"
-            onClick={() => setIsViewMenuOpen(!isViewMenuOpen)}
-            className="flex items-center space-x-3 cursor-pointer rounded-lg p-1 -mr-1 hover:bg-slate-50 transition-colors text-left"
-            aria-label="Open user profile"
+            onClick={() => {
+              setIsViewMenuOpen(false);
+              onProfileClick?.();
+            }}
+            className="flex items-center space-x-3 cursor-pointer rounded-lg p-1 pl-2 -mr-0.5 hover:bg-slate-50 transition-colors text-left"
+            aria-label="Open profile"
           >
             <div className="text-right hidden sm:block">
               <p className="text-sm font-semibold text-slate-700 leading-tight">Acme</p>
@@ -67,6 +70,19 @@ const Header: React.FC<HeaderProps> = ({ onProfileClick, currentView = 'admin', 
             <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 shrink-0">
               <img src="https://picsum.photos/id/64/100/100" alt="User Profile" />
             </div>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsViewMenuOpen((open) => !open);
+            }}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-colors"
+            aria-label="Switch admin or employee view"
+            aria-expanded={isViewMenuOpen}
+            aria-haspopup="menu"
+          >
+            <ChevronDown size={18} strokeWidth={2} className={`transition-transform ${isViewMenuOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {isViewMenuOpen && (
