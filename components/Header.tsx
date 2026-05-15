@@ -86,7 +86,7 @@ const Header: React.FC<HeaderProps> = ({ onProfileClick, currentView = 'admin', 
           </button>
 
           {isViewMenuOpen && (
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-50">
+            <div className="absolute top-full left-0 mt-1.5 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-50">
               <button
                 type="button"
                 onClick={() => {
