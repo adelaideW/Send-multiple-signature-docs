@@ -18,7 +18,12 @@ import {
   X,
 } from 'lucide-react';
 import type { EnvelopeStatus, DocumentSigningStatus, EnvelopeRecipientRow } from './EnvelopesListView';
-import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
+import {
+  EnvelopeMoreMenu,
+  moreMenuVariantForEnvelope,
+  signingRecipientsForProgress,
+  normalizeRecipientRowForDisplay,
+} from './EnvelopesListView';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
 import SendReminderModal from './SendReminderModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
@@ -163,18 +168,19 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
 }) => {
   const badge = headerBadgeForStatus(packetStatus);
   const effectiveRecipients = recipients && recipients.length > 0 ? recipients : DEFAULT_RECIPIENTS;
+  const recipientsNormalized = effectiveRecipients.map(normalizeRecipientRowForDisplay);
   // Once the envelope itself is completed, every recipient must read as
   // Completed too — there's no "In progress" or "Yet to sign" recipient
   // on a finished envelope. We also backfill a sensible completedOn so
   // the column never shows an em dash on a completed row.
   const recipientsForStatus =
     packetStatus === 'completed'
-      ? effectiveRecipients.map((r) => ({
+      ? recipientsNormalized.map((r) => ({
           ...r,
           status: 'Completed' as const,
           completedOn: r.completedOn && r.completedOn !== '—' ? r.completedOn : r.sentOn,
         }))
-      : effectiveRecipients;
+      : recipientsNormalized;
   const recipientRowsRaw = isVoided
     ? recipientsForStatus.map((r) => ({ ...r, action: '—' as const }))
     : recipientsForStatus;
@@ -197,7 +203,7 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
   // showing Sign would let them re-sign the envelope unintentionally.
   const everyDocCompleted =
     documents.length > 0 && documents.every((d) => d.status === 'completed');
-  const signersRequired = recipients?.filter((r) => r.action === 'To sign') ?? [];
+  const signersRequired = signingRecipientsForProgress(recipientsNormalized);
   const everySignerDone =
     signersRequired.length > 0 && signersRequired.every((r) => r.status === 'Completed');
   const noMoreSigning = everyDocCompleted || everySignerDone;

@@ -89,6 +89,85 @@ export interface EnvelopeTableRow {
 }
 
 /**
+ * Recipients who must sign (pending `To sign`, or already finished with `—`).
+ * Excludes `To view` rows. Drives envelope/doc completion rules.
+ */
+export function signingRecipientsForProgress(recipients: EnvelopeRecipientRow[] | undefined): EnvelopeRecipientRow[] {
+  return (recipients ?? []).filter((r) => r.action === 'To sign' || r.action === '—');
+}
+
+/** Fix stale rows where status is Completed but action still says To sign. */
+export function normalizeRecipientRowForDisplay(r: EnvelopeRecipientRow): EnvelopeRecipientRow {
+  if (r.status === 'Completed' && r.action === 'To sign') {
+    return { ...r, action: '—' };
+  }
+  return r;
+}
+
+/**
+ * Envelope status from recipients + documents. Preserves voided/draft/correcting.
+ * With recipient data: envelope is completed only when every signing recipient
+ * has completed (all documents executed for this prototype). Documents in the
+ * table/details are derived separately via `deriveDisplayDocumentStatus`.
+ */
+export function deriveEnvelopeStatusFromContents(
+  previousStatus: EnvelopeStatus,
+  recipients: EnvelopeRecipientRow[] | undefined,
+  children: EnvelopeDocumentRow[] | undefined,
+): EnvelopeStatus {
+  if (previousStatus === 'voided' || previousStatus === 'draft' || previousStatus === 'correcting') {
+    return previousStatus;
+  }
+  const docs = children ?? [];
+  const signers = signingRecipientsForProgress(
+    recipients?.map((r) => (r.status === 'Completed' && r.action === 'To sign' ? { ...r, action: '—' as const } : r)),
+  );
+  if (signers.length > 0) {
+    const allSignersDone = signers.every((r) => r.status === 'Completed');
+    if (allSignersDone) return 'completed';
+    const anySignerActed = signers.some((r) => r.status === 'In progress' || r.status === 'Completed');
+    const anyDocTouched = docs.some((c) => c.status === 'in progress' || c.status === 'completed');
+    if (anySignerActed || anyDocTouched) return 'in progress';
+    return 'yet to sign';
+  }
+  const allDocsDone = docs.length > 0 && docs.every((c) => c.status === 'completed');
+  const anyDocTouched = docs.some((c) => c.status === 'in progress' || c.status === 'completed');
+  if (allDocsDone) return 'completed';
+  if (anyDocTouched) return 'in progress';
+  return 'yet to sign';
+}
+
+/**
+ * Per-document status for hub + details when the envelope has signing recipients.
+ * A document is completed only after every signing recipient has completed; if the
+ * stored child is `completed` but signers remain, show `in progress`.
+ */
+export function deriveDisplayDocumentStatus(
+  row: EnvelopeTableRow,
+  child: EnvelopeDocumentRow,
+): DocumentSigningStatus {
+  if (row.status === 'voided') return 'voided';
+  if (row.status === 'draft') return child.status === 'draft' ? 'draft' : child.status;
+  if (row.status === 'correcting') return child.status;
+  const recipientsNorm = row.recipients?.map(normalizeRecipientRowForDisplay);
+  const signers = signingRecipientsForProgress(recipientsNorm);
+  if (child.status === 'voided' || child.status === 'draft') return child.status;
+  if (signers.length === 0) {
+    return child.status;
+  }
+  const allSignersDone = signers.every((r) => r.status === 'Completed');
+  if (allSignersDone) return 'completed';
+  if (child.status === 'completed') return 'in progress';
+  const anySignerActed = signers.some((r) => r.status === 'In progress' || r.status === 'Completed');
+  if (anySignerActed && child.status === 'yet to sign') return 'in progress';
+  return child.status;
+}
+
+export function deriveDisplayEnvelopeStatus(row: EnvelopeTableRow): EnvelopeStatus {
+  return deriveEnvelopeStatusFromContents(row.status, row.recipients, row.children);
+}
+
+/**
  * A single document that's been fully signed (its parent envelope is
  * `completed`). Used to surface signed documents as standalone rows
  * outside their envelope — in both the Documents hub and Kale's
@@ -129,7 +208,7 @@ const MOCK_ENVELOPES: EnvelopeTableRow[] = [
         email: 'david.g@acme.com',
         initials: 'DG',
         status: 'Completed',
-        action: 'To sign',
+        action: '—',
         sentOn: '4/19/2026 9:00 AM',
         completedOn: '4/20/2026 11:30 AM',
       },
@@ -316,7 +395,9 @@ function compareRows(a: EnvelopeTableRow, b: EnvelopeTableRow, key: SortKey, dir
   } else if (key === 'name') {
     cmp = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   } else {
-    cmp = a.status.localeCompare(b.status, undefined, { sensitivity: 'base' });
+    cmp = deriveDisplayEnvelopeStatus(a).localeCompare(deriveDisplayEnvelopeStatus(b), undefined, {
+      sensitivity: 'base',
+    });
   }
   return dir === 'asc' ? cmp : -cmp;
 }
@@ -718,8 +799,8 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
   );
 
   const renderEnvelopeActions = (row: EnvelopeTableRow) => {
-    const { status, adminIsSigner } = row;
-    const moreVariant = moreMenuVariantForEnvelope(status);
+    const displayStatus = deriveDisplayEnvelopeStatus(row);
+    const { adminIsSigner } = row;
 
     const moreBtn = (
       <button
@@ -746,7 +827,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
       </button>
     );
 
-    if (status === 'draft') {
+    if (displayStatus === 'draft') {
       return (
         <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
           <button type="button" className={btnOutline} onClick={() => onEditEnvelope?.(row.id)}>
@@ -758,7 +839,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
       );
     }
 
-    if (status === 'correcting') {
+    if (displayStatus === 'correcting') {
       return (
         <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
           <button type="button" className={btnOutline} onClick={() => onEditEnvelope?.(row.id)}>
@@ -774,7 +855,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
       );
     }
 
-    if (status === 'completed' || status === 'voided') {
+    if (displayStatus === 'completed' || displayStatus === 'voided') {
       return (
         <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
           {viewBtn}
@@ -783,7 +864,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
       );
     }
 
-    if (status === 'yet to sign') {
+    if (displayStatus === 'yet to sign') {
       if (adminIsSigner) {
         return (
           <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
@@ -964,8 +1045,8 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                   </td>
                   <td className="px-4 py-4 align-middle">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${envelopeStatusDotClass(row.status)}`} />
-                      <span className="font-semibold capitalize">{statusLabelText(row.status)}</span>
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${envelopeStatusDotClass(deriveDisplayEnvelopeStatus(row))}`} />
+                      <span className="font-semibold capitalize">{statusLabelText(deriveDisplayEnvelopeStatus(row))}</span>
                     </div>
                   </td>
                   <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
@@ -992,12 +1073,17 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
                             <span className="font-semibold capitalize text-[13px]">Voided</span>
                           </div>
                         ) : (
+                          (() => {
+                            const displayDocStatus = deriveDisplayDocumentStatus(row, child);
+                            return (
                           <div className="flex items-center gap-2">
                             <span
-                              className={`w-2 h-2 rounded-full shrink-0 ${documentStatusDotClass(child.status)}`}
+                              className={`w-2 h-2 rounded-full shrink-0 ${documentStatusDotClass(displayDocStatus)}`}
                             />
-                            <span className="font-semibold capitalize text-[13px]">{statusLabelText(child.status)}</span>
+                            <span className="font-semibold capitalize text-[13px]">{statusLabelText(displayDocStatus)}</span>
                           </div>
+                            );
+                          })()
                         )}
                       </td>
                       <td className="px-4 py-4 text-slate-500 font-medium text-[13px] tabular-nums align-middle">
@@ -1106,7 +1192,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
               role="presentation"
             >
               <EnvelopeMoreMenu
-                variant={moreMenuVariantForEnvelope(openRow.status)}
+                variant={moreMenuVariantForEnvelope(deriveDisplayEnvelopeStatus(openRow))}
                 onClose={() => setOpenMoreId(null)}
                 onDownload={() => runBulkDownload(openRow)}
                 onSendReminder={() => setSendReminderOpen(true)}

@@ -14,7 +14,14 @@ import { MOCK_EMPLOYEE, ENVELOPE_NAME_MAX_LENGTH } from './constants';
 import { SNACKBAR_AUTO_DISMISS_MS } from './constants/snackbar';
 import type { UploadedFileItem } from './types';
 import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus, EnvelopeRecipientRow, CompletedEnvelopeDoc } from './components/EnvelopesListView';
-import { cloneInitialEnvelopeRows } from './components/EnvelopesListView';
+import {
+  cloneInitialEnvelopeRows,
+  deriveEnvelopeStatusFromContents,
+  deriveDisplayEnvelopeStatus,
+  deriveDisplayDocumentStatus,
+  normalizeRecipientRowForDisplay,
+  signingRecipientsForProgress,
+} from './components/EnvelopesListView';
 import type { DocumentReviewFlow } from './components/DocumentReviewView';
 import { createInitialProfileFolderRoot, type ProfileFolderNode } from './utils/profileFolderUtils';
 
@@ -396,7 +403,7 @@ const App: React.FC = () => {
   const completedEnvelopeIds = useMemo<Set<string>>(() => {
     const out = new Set<string>();
     for (const r of packetRows) {
-      if (r.status === 'completed') out.add(r.id);
+      if (deriveDisplayEnvelopeStatus(r) === 'completed') out.add(r.id);
     }
     return out;
   }, [packetRows]);
@@ -418,7 +425,7 @@ const App: React.FC = () => {
   const completedEnvelopeDocs = useMemo<CompletedEnvelopeDoc[]>(() => {
     const out: CompletedEnvelopeDoc[] = [];
     for (const r of packetRows) {
-      if (r.status !== 'completed') continue;
+      if (deriveDisplayEnvelopeStatus(r) !== 'completed') continue;
       for (const c of r.children ?? []) {
         if (c.status === 'voided' || c.status === 'draft') continue;
         out.push({
@@ -439,7 +446,7 @@ const App: React.FC = () => {
   const completedEnvelopeDocsForKale = useMemo<CompletedEnvelopeDoc[]>(() => {
     const out: CompletedEnvelopeDoc[] = [];
     for (const r of packetRows) {
-      if (r.status !== 'completed') continue;
+      if (deriveDisplayEnvelopeStatus(r) !== 'completed') continue;
       const isKaleRecipient = (r.recipients ?? []).some((rcp) => rcp.userId === 'u-kale');
       if (!isKaleRecipient) continue;
       for (const c of r.children ?? []) {
@@ -701,8 +708,13 @@ const App: React.FC = () => {
       setSignFlow({
         packetId: row.id,
         packetName: row.name,
-        envelopeStatus: row.status,
-        docs: (row.children ?? []).map((c) => ({ id: c.id, name: c.name, status: c.status })),
+        envelopeStatus: deriveDisplayEnvelopeStatus(row),
+        docs: (row.children ?? []).map((c) => ({
+          id: c.id,
+          name: c.name,
+          status:
+            row.status === 'voided' ? ('voided' as DocumentSigningStatus) : deriveDisplayDocumentStatus(row, c),
+        })),
         signerUserId,
       });
       navigateTo('document_review');
@@ -756,38 +768,14 @@ const App: React.FC = () => {
       const next = recipients.map((r) => {
         if (r.userId !== signerUserId) return r;
         matched = true;
-        return { ...r, status: 'Completed' as const, completedOn };
+        return {
+          ...r,
+          status: 'Completed' as const,
+          completedOn,
+          action: r.action === 'To sign' ? ('—' as const) : r.action,
+        };
       });
       return matched ? next : recipients;
-    },
-    []
-  );
-
-  /**
-   * Envelope status mirrors its documents:
-   * - "yet to sign" when every doc is still untouched and no signer has acted.
-   * - "in progress" the moment any doc is `in progress` / `completed`, or any
-   *   signer has flipped to Completed.
-   * - "completed" only once every doc is `completed` and every signing
-   *   recipient has finished.
-   * Voided / draft envelopes keep their explicit status.
-   */
-  const deriveEnvelopeStatus = useCallback(
-    (
-      previousStatus: EnvelopeStatus,
-      recipients: EnvelopeRecipientRow[] | undefined,
-      children: EnvelopeDocumentRow[] | undefined,
-    ): EnvelopeStatus => {
-      if (previousStatus === 'voided' || previousStatus === 'draft') return previousStatus;
-      const docs = children ?? [];
-      const allDocsDone = docs.length > 0 && docs.every((c) => c.status === 'completed');
-      const signers = (recipients ?? []).filter((r) => r.action === 'To sign');
-      const allSignersDone = signers.length === 0 || signers.every((r) => r.status === 'Completed');
-      if (allDocsDone && allSignersDone) return 'completed';
-      const anyDocTouched = docs.some((c) => c.status === 'in progress' || c.status === 'completed');
-      const anySignerActed = signers.some((r) => r.status === 'In progress' || r.status === 'Completed');
-      if (anyDocTouched || anySignerActed) return 'in progress';
-      return 'yet to sign';
     },
     []
   );
@@ -820,7 +808,7 @@ const App: React.FC = () => {
           // doc-level "Completed" dot appearing while the envelope is still
           // waiting on other signers.
           const recipients = markRecipientCompleted(r.recipients, signerUserId, completedOn);
-          const signers = (recipients ?? []).filter((rcp) => rcp.action === 'To sign');
+          const signers = signingRecipientsForProgress(recipients);
           const allSignersDone =
             signers.length > 0 && signers.every((rcp) => rcp.status === 'Completed');
           // Once any signer has completed but others haven't, surface the doc
@@ -839,7 +827,7 @@ const App: React.FC = () => {
           });
           return {
             ...r,
-            status: deriveEnvelopeStatus(r.status, recipients, children),
+            status: deriveEnvelopeStatusFromContents(r.status, recipients, children),
             lastModified: ts,
             children,
             recipients,
@@ -863,7 +851,6 @@ const App: React.FC = () => {
     [
       signFlow,
       markRecipientCompleted,
-      deriveEnvelopeStatus,
       markKaleSignedForPacket,
       trimToPeopleTab,
       trimToProfile,
@@ -890,7 +877,7 @@ const App: React.FC = () => {
           if (r.id !== packetId) return r;
           return {
             ...r,
-            status: deriveEnvelopeStatus(r.status, r.recipients, r.children),
+            status: deriveEnvelopeStatusFromContents(r.status, r.recipients, r.children),
             lastModified: ts,
           };
         })
@@ -904,7 +891,7 @@ const App: React.FC = () => {
         trimToPeopleTab();
       }
     },
-    [signFlow, deriveEnvelopeStatus, trimToPeopleTab, trimToProfile, syncDocumentsHubTab]
+    [signFlow, trimToPeopleTab, trimToProfile, syncDocumentsHubTab]
   );
 
   const prefillStateFromDraftRow = (row: EnvelopeTableRow): EnvelopeState => {
@@ -1185,16 +1172,19 @@ const App: React.FC = () => {
           <EnvelopeDetailsView
             packetId={selectedPacket.id}
             envelopeName={selectedPacket.name}
-            packetStatus={selectedPacket.status}
+            packetStatus={deriveDisplayEnvelopeStatus(selectedPacket)}
             adminIsSigner={selectedPacket.adminIsSigner}
             sentOn="03/01/2026 9:00 AM"
             sentBy="Harry Porter"
             documents={(selectedPacket.children ?? []).map((c) => ({
               id: c.id,
               name: c.name,
-              status: selectedPacket.status === 'voided' ? ('voided' as DocumentSigningStatus) : c.status,
+              status:
+                selectedPacket.status === 'voided'
+                  ? ('voided' as DocumentSigningStatus)
+                  : deriveDisplayDocumentStatus(selectedPacket, c),
             }))}
-            recipients={selectedPacket.recipients}
+            recipients={selectedPacket.recipients?.map(normalizeRecipientRowForDisplay)}
             isVoided={selectedPacket.status === 'voided'}
             onExit={handleExitEnvelopeDetails}
             onSign={() => startSignFlow(selectedPacket.id)}
