@@ -102,6 +102,8 @@ interface TemplateEditorProps {
   onExit: () => void;
   onGoHome?: () => void;
   mode?: 'create' | 'edit';
+  /** Library template vs one-off document from envelope — affects unsaved-exit copy. */
+  editorIntent?: 'template' | 'one_off';
   onSaveNewTemplate?: (name: string, body: string) => void;
   /** Persist changes when editing an existing template (preview + reopen). */
   onUpdateTemplate?: (name: string, body: string) => void;
@@ -150,6 +152,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   onExit,
   onGoHome,
   mode = 'edit',
+  editorIntent = 'template',
   onSaveNewTemplate,
   onUpdateTemplate,
   initialTitle,
@@ -337,7 +340,15 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     else if (initialTitle?.trim()) setTemplateName(initialTitle.trim());
     wireChipDragHandlers(ed);
     setContentCheck((c) => c + 1);
-  }, [initialBodyHtml, initialTitle, isCreate, useRichCanvas, wireChipDragHandlers]);
+  }, [initialBodyHtml, initialTitle, isCreate, useRichCanvas]);
+
+  /** Re-stamp chip drag handlers when tone mapping changes — without re-hydrating the editor HTML. */
+  useEffect(() => {
+    if (!useRichCanvas) return;
+    const ed = editorRef.current;
+    if (!ed) return;
+    wireChipDragHandlers(ed);
+  }, [useRichCanvas, wireChipDragHandlers]);
 
   useEffect(() => {
     if (!employeeMenuOpen) return;
@@ -1089,8 +1100,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         </div>
 
         {recipientPanelOpen && (
-          <div className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 transition-all duration-200">
-            <div className="p-5 flex items-center justify-between border-b border-slate-100">
+          <div className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 min-h-0 transition-all duration-200">
+            <div className="p-5 flex items-center justify-between border-b border-slate-100 shrink-0">
               <span className="text-[12px] font-bold text-slate-500 uppercase tracking-widest">
                 {sidePanelView === 'recipients' ? 'RECIPIENTS' : 'RECIPIENT FIELDS'}
               </span>
@@ -1098,8 +1109,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 <X size={18} />
               </button>
             </div>
-            <div className="p-4 space-y-6 overflow-y-auto custom-scrollbar">
-              <div ref={employeeMenuRef} className="relative z-30">
+            <div ref={employeeMenuRef} className="relative z-30 shrink-0 px-4 pt-4">
                 <button
                   type="button"
                   onClick={() => {
@@ -1226,7 +1236,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     )}
                   </div>
                 )}
-              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 pt-2 space-y-6 custom-scrollbar">
               {sidePanelView === 'fields' ? (
                 <div className="space-y-3 pt-2">
                   {(['Text', 'Checkbox', 'Signature', 'Date signed'] as const).map((label, i) => {
@@ -1368,7 +1379,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
               </button>
             </div>
             <p className="text-sm text-slate-700 leading-relaxed mb-6">
-              You have unsaved contents. Are you sure you want to leave the editor without saving this template?
+              {editorIntent === 'one_off'
+                ? 'Are you sure you want to leave the editor without saving this one off document?'
+                : 'You have unsaved contents. Are you sure you want to leave the editor without saving this template?'}
             </p>
             {isCreate ? (
               <div className="flex items-center justify-end gap-2 flex-nowrap">
@@ -1390,7 +1403,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     performSave(true);
                   }}
                 >
-                  Save template
+                  {editorIntent === 'one_off' ? 'Save' : 'Save template'}
                 </button>
               </div>
             ) : (

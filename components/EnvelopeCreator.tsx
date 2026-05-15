@@ -207,6 +207,11 @@ const filterMockUsers = (term: string) => {
   );
 };
 
+/** Org directory id used as the auto-resolved manager in the placeholder modal. */
+const SYSTEM_MANAGER_USER_ID = 'u-kale';
+/** Pending directory pick — merged into a real signing slot on Confirm. */
+const PLACEHOLDER_DIR_PREFIX = '__dir__:';
+
 interface FolderNode {
   id: string;
   name: string;
@@ -1051,6 +1056,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const [usedPlaceholders, setUsedPlaceholders] = useState<UsedPlaceholder[]>([]);
   /** Combobox open state per placeholder row inside the modal. */
   const [placeholderComboOpenId, setPlaceholderComboOpenId] = useState<string | null>(null);
+  /** When true, manager row is read-only and bound to the system-record manager (Kale). */
+  const [managerAutoMappingEnabled, setManagerAutoMappingEnabled] = useState(true);
+  /** Per-row search text for directory combobox (manager manual mode). */
+  const [placeholderRowSearch, setPlaceholderRowSearch] = useState<Record<string, string>>({});
   /** Final envelope name captured at the moment Send was clicked so we can re-fire after mapping. */
   const pendingSendNameRef = useRef<string | null>(null);
   /**
@@ -1666,12 +1675,20 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
    * "recipient required" validation earlier in `handleContinue`.
    */
   const computeRecipientsWithoutFields = useCallback(
-    (assignments: Record<string, string>) => {
-      const signingRecipients = recipients.filter(
+    (assignments: Record<string, string>, slotRecipients: RecipientSlot[] = recipients) => {
+      const signingRecipients = slotRecipients.filter(
         (r) => r.action === 'Needs to complete' && r.user
       );
       if (signingRecipients.length === 0) return [];
       const withFields = new Set<string>();
+      const resolveAssignmentToSlotId = (val: string): string => {
+        if (!val) return '';
+        if (val.startsWith(PLACEHOLDER_DIR_PREFIX)) {
+          const uid = val.slice(PLACEHOLDER_DIR_PREFIX.length);
+          return slotRecipients.find((r) => r.user?.id === uid)?.id ?? '';
+        }
+        return val;
+      };
       for (const f of placementFields) {
         if (f.recipientSlotId) withFields.add(f.recipientSlotId);
       }
@@ -1686,13 +1703,14 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
         let m: RegExpExecArray | null;
         while ((m = re.exec(body)) !== null) {
           const rid = m[1];
-          if (recipients.some((r) => r.id === rid)) {
+          if (slotRecipients.some((r) => r.id === rid)) {
             withFields.add(rid);
           } else if (
             (rid === 'employee' || rid === 'manager' || rid.startsWith('ext-')) &&
             assignments[rid]
           ) {
-            withFields.add(assignments[rid]);
+            const mapped = resolveAssignmentToSlotId(assignments[rid]);
+            if (mapped) withFields.add(mapped);
           }
         }
       };
@@ -1706,7 +1724,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
           // recipient once that recipient is the mapping target.
           for (const rid of ['employee', 'manager'] as const) {
             const assigned = assignments[rid];
-            if (assigned) withFields.add(assigned);
+            if (assigned) {
+              const slot = resolveAssignmentToSlotId(assigned);
+              if (slot) withFields.add(slot);
+            }
           }
         }
       }
@@ -1722,8 +1743,9 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
    * explicit "Send without adding fields" acknowledgement.
    */
   const proceedAfterPlaceholders = useCallback(
-    (name: string, assignments: Record<string, string>) => {
-      const missing = computeRecipientsWithoutFields(assignments);
+    (name: string, assignments: Record<string, string>, slotRecipients?: RecipientSlot[]) => {
+      const slots = slotRecipients ?? recipients;
+      const missing = computeRecipientsWithoutFields(assignments, slots);
       if (missing.length > 0) {
         pendingSendNameRef.current = name;
         setNoFieldRecipientNames(missing.map((r) => r.user?.name ?? 'Unknown'));
@@ -1733,7 +1755,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       }
       onContinue?.(name);
     },
-    [computeRecipientsWithoutFields, onContinue]
+    [computeRecipientsWithoutFields, onContinue, recipients]
   );
 
   const handleContinue = () => {
@@ -1764,12 +1786,52 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     if (used.length > 0) {
       pendingSendNameRef.current = finalName;
       setUsedPlaceholders(used);
+      setManagerAutoMappingEnabled(true);
+      setPlaceholderRowSearch({});
+      setPlaceholderComboOpenId(null);
+
+      const kaleUser = MOCK_USERS.find((u) => u.id === SYSTEM_MANAGER_USER_ID);
+      let recipientsSnapshot = recipients;
+      if (used.some((p) => p.id === 'manager') && kaleUser) {
+        if (!recipients.some((r) => r.user?.id === SYSTEM_MANAGER_USER_ID)) {
+          const emptySlot = recipients.find((r) => r.action === 'Needs to complete' && !r.user);
+          if (emptySlot) {
+            recipientsSnapshot = recipients.map((r) =>
+              r.id === emptySlot.id ? { ...r, user: kaleUser, searchTerm: '' } : r
+            );
+            updateState({ recipients: recipientsSnapshot });
+          } else {
+            const newId = Math.random().toString(36).substr(2, 9);
+            recipientsSnapshot = [
+              ...recipients,
+              {
+                id: newId,
+                user: kaleUser,
+                action: 'Needs to complete' as const,
+                searchTerm: '',
+                isActionDropdownOpen: false,
+                showCustomMessage: false,
+              },
+            ];
+            const nextGroups = signingOrderEnabled
+              ? [...signingOrderGroups, [newId]]
+              : signingOrderGroups;
+            updateState({ recipients: recipientsSnapshot, signingOrderGroups: nextGroups });
+          }
+        }
+      }
+
+      const kaleSlotId =
+        recipientsSnapshot.find((r) => r.user?.id === SYSTEM_MANAGER_USER_ID)?.id ?? '';
+
       setPlaceholderAssignments((prev) => {
         const next: Record<string, string> = {};
         for (const p of used) next[p.id] = prev[p.id] ?? '';
+        if (used.some((p) => p.id === 'manager') && kaleSlotId) {
+          next.manager = kaleSlotId;
+        }
         return next;
       });
-      setPlaceholderComboOpenId(null);
       setPlaceholderModalOpen(true);
       return;
     }
@@ -1780,10 +1842,60 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const handleConfirmPlaceholders = () => {
     const allMapped = usedPlaceholders.every((p) => !!placeholderAssignments[p.id]);
     if (!allMapped) return;
+
+    let nextRecipients: RecipientSlot[] = recipients;
+    let nextGroups: string[][] = signingOrderGroups;
+    let recipientsMutated = false;
+
+    const ensureSlotForUser = (user: (typeof MOCK_USERS)[number]): string => {
+      const existing = nextRecipients.find((r) => r.user?.id === user.id);
+      if (existing) return existing.id;
+      const emptySlot = nextRecipients.find((r) => r.action === 'Needs to complete' && !r.user);
+      if (emptySlot) {
+        nextRecipients = nextRecipients.map((r) =>
+          r.id === emptySlot.id ? { ...r, user, searchTerm: '' } : r
+        );
+        recipientsMutated = true;
+        return emptySlot.id;
+      }
+      const newId = Math.random().toString(36).substr(2, 9);
+      nextRecipients = [
+        ...nextRecipients,
+        {
+          id: newId,
+          user,
+          action: 'Needs to complete' as const,
+          searchTerm: '',
+          isActionDropdownOpen: false,
+          showCustomMessage: false,
+        },
+      ];
+      if (signingOrderEnabled) {
+        nextGroups = [...nextGroups, [newId]];
+      }
+      recipientsMutated = true;
+      return newId;
+    };
+
+    const resolved: Record<string, string> = { ...placeholderAssignments };
+    for (const key of Object.keys(resolved)) {
+      const v = resolved[key];
+      if (v.startsWith(PLACEHOLDER_DIR_PREFIX)) {
+        const uid = v.slice(PLACEHOLDER_DIR_PREFIX.length);
+        const u = MOCK_USERS.find((mu) => mu.id === uid);
+        if (u) resolved[key] = ensureSlotForUser(u);
+      }
+    }
+
+    if (recipientsMutated) {
+      updateState({ recipients: nextRecipients, signingOrderGroups: nextGroups });
+    }
+
     const name = pendingSendNameRef.current;
     setPlaceholderModalOpen(false);
     setPlaceholderComboOpenId(null);
-    if (name) proceedAfterPlaceholders(name, placeholderAssignments);
+    setPlaceholderRowSearch({});
+    if (name) proceedAfterPlaceholders(name, resolved, nextRecipients);
   };
 
   /** Cancel the placeholder modal without sending. */
@@ -1791,6 +1903,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     pendingSendNameRef.current = null;
     setPlaceholderModalOpen(false);
     setPlaceholderComboOpenId(null);
+    setPlaceholderRowSearch({});
   };
 
   /** User acknowledged the "no fields" warning and wants to send anyway. */
@@ -1854,12 +1967,58 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
               <p className="text-sm text-slate-700 leading-relaxed mb-5">
                 Map each placeholder used in this envelope to the recipient who will actually sign.
               </p>
-              <div className="space-y-4 mb-6">
+              <div className="space-y-4 mb-2">
                 {usedPlaceholders.map((p) => {
                   const tone = placeholderTone(p.id);
                   const open = placeholderComboOpenId === p.id;
                   const assigned = placeholderAssignments[p.id];
-                  const assignedRecipient = candidateRecipients.find((r) => r.id === assigned);
+                  const assignLabel = (slotOrDir: string) => {
+                    if (!slotOrDir) return null;
+                    if (slotOrDir.startsWith(PLACEHOLDER_DIR_PREFIX)) {
+                      const uid = slotOrDir.slice(PLACEHOLDER_DIR_PREFIX.length);
+                      return MOCK_USERS.find((u) => u.id === uid)?.name ?? null;
+                    }
+                    return candidateRecipients.find((r) => r.id === slotOrDir)?.user?.name ?? null;
+                  };
+                  const displayAssignName = assignLabel(assigned);
+
+                  if (p.id === 'manager' && managerAutoMappingEnabled) {
+                    const kale = MOCK_USERS.find((u) => u.id === SYSTEM_MANAGER_USER_ID);
+                    return (
+                      <div key={p.id} className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 min-w-[200px]">
+                          <span
+                            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                            style={{ backgroundColor: tone.bg, color: tone.icon }}
+                          >
+                            <User size={14} />
+                          </span>
+                          <span className="text-[14px] font-bold text-slate-900">{p.label}</span>
+                        </div>
+                        <div className="flex-1">
+                          <div
+                            className="w-full flex items-center justify-between border rounded-xl px-3 py-2.5 text-sm bg-slate-50 border-slate-200 text-slate-900 font-medium cursor-default"
+                            title="auto generated based on system record."
+                          >
+                            <span className="truncate">{kale?.name ?? '—'}</span>
+                            <ChevronDown size={16} className="text-slate-300 shrink-0" aria-hidden />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const isManagerManual = p.id === 'manager' && !managerAutoMappingEnabled;
+                  const rowQ = (placeholderRowSearch[p.id] ?? '').trim();
+                  const addedFiltered = rowQ
+                    ? candidateRecipients.filter(
+                        (r) =>
+                          (r.user?.name ?? '').toLowerCase().includes(rowQ.toLowerCase()) ||
+                          (r.user?.email ?? '').toLowerCase().includes(rowQ.toLowerCase())
+                      )
+                    : candidateRecipients;
+                  const directoryMatches = rowQ ? filterMockUsers(rowQ) : [];
+
                   return (
                     <div key={p.id} className="flex items-center gap-4">
                       <div className="flex items-center gap-2 min-w-[200px]">
@@ -1874,17 +2033,22 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                       <div className="flex-1 relative">
                         <button
                           type="button"
-                          onClick={() =>
-                            setPlaceholderComboOpenId((cur) => (cur === p.id ? null : p.id))
-                          }
+                          onClick={() => {
+                            if (isManagerManual) {
+                              setPlaceholderRowSearch((s) => ({ ...s, [p.id]: '' }));
+                            }
+                            setPlaceholderComboOpenId((cur) => (cur === p.id ? null : p.id));
+                          }}
                           className={`w-full flex items-center justify-between border rounded-xl px-3 py-2.5 text-sm bg-white hover:bg-slate-50 transition-colors ${
                             open ? 'border-blue-500 ring-2 ring-blue-400/40' : 'border-slate-300'
                           }`}
                         >
-                          <span className={assignedRecipient ? 'text-slate-900 font-medium truncate' : 'text-slate-400'}>
-                            {assignedRecipient
-                              ? assignedRecipient.user?.name
-                              : 'Search by name'}
+                          <span
+                            className={
+                              displayAssignName ? 'text-slate-900 font-medium truncate' : 'text-slate-400'
+                            }
+                          >
+                            {displayAssignName ?? 'Search by name'}
                           </span>
                           <ChevronDown
                             size={16}
@@ -1892,8 +2056,173 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                           />
                         </button>
                         {open && (
-                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-10 max-h-60 overflow-y-auto">
-                            {candidateRecipients.length === 0 ? (
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-10 max-h-72 overflow-y-auto">
+                            {isManagerManual ? (
+                              <>
+                                <div className="sticky top-0 z-[1] flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 bg-white">
+                                  <Search size={16} className="text-slate-400 shrink-0" />
+                                  <input
+                                    type="text"
+                                    value={placeholderRowSearch[p.id] ?? ''}
+                                    onChange={(e) =>
+                                      setPlaceholderRowSearch((s) => ({
+                                        ...s,
+                                        [p.id]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="Search people"
+                                    className="flex-1 min-w-0 text-sm outline-none text-slate-900 placeholder:text-slate-400"
+                                    autoFocus
+                                  />
+                                </div>
+                                {!rowQ ? (
+                                  <>
+                                    <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500 bg-slate-50 border-b border-slate-100">
+                                      Added recipients
+                                    </div>
+                                    {candidateRecipients.length === 0 ? (
+                                      <div className="px-4 py-3 text-sm text-slate-500">
+                                        Add a recipient with the &quot;Needs to complete&quot; action first.
+                                      </div>
+                                    ) : (
+                                      candidateRecipients.map((r) => {
+                                        const isSelected = r.id === assigned;
+                                        return (
+                                          <button
+                                            key={r.id}
+                                            type="button"
+                                            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
+                                            onClick={() => {
+                                              setPlaceholderAssignments((prev) => ({
+                                                ...prev,
+                                                [p.id]: r.id,
+                                              }));
+                                              setPlaceholderComboOpenId(null);
+                                            }}
+                                          >
+                                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-500">
+                                              <User size={16} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              <div className="text-sm font-bold text-slate-900 truncate">
+                                                {r.user?.name}
+                                              </div>
+                                              {r.user?.email && (
+                                                <div className="text-xs text-slate-500 truncate">
+                                                  {r.user.email}
+                                                </div>
+                                              )}
+                                            </div>
+                                            {isSelected && (
+                                              <Check
+                                                size={16}
+                                                className="text-blue-600 shrink-0"
+                                                strokeWidth={2.5}
+                                              />
+                                            )}
+                                          </button>
+                                        );
+                                      })
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {addedFiltered.length > 0 && (
+                                      <>
+                                        <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500 bg-slate-50 border-b border-slate-100">
+                                          Added recipients
+                                        </div>
+                                        {addedFiltered.map((r) => {
+                                          const isSelected = r.id === assigned;
+                                          return (
+                                            <button
+                                              key={r.id}
+                                              type="button"
+                                              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
+                                              onClick={() => {
+                                                setPlaceholderAssignments((prev) => ({
+                                                  ...prev,
+                                                  [p.id]: r.id,
+                                                }));
+                                                setPlaceholderComboOpenId(null);
+                                              }}
+                                            >
+                                              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-500">
+                                                <User size={16} />
+                                              </div>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="text-sm font-bold text-slate-900 truncate">
+                                                  {r.user?.name}
+                                                </div>
+                                                {r.user?.email && (
+                                                  <div className="text-xs text-slate-500 truncate">
+                                                    {r.user.email}
+                                                  </div>
+                                                )}
+                                              </div>
+                                              {isSelected && (
+                                                <Check
+                                                  size={16}
+                                                  className="text-blue-600 shrink-0"
+                                                  strokeWidth={2.5}
+                                                />
+                                              )}
+                                            </button>
+                                          );
+                                        })}
+                                      </>
+                                    )}
+                                    {directoryMatches.length > 0 && (
+                                      <>
+                                        <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500 bg-slate-50 border-b border-slate-100">
+                                          Directory
+                                        </div>
+                                        {directoryMatches.map((u) => {
+                                          const dirVal = `${PLACEHOLDER_DIR_PREFIX}${u.id}`;
+                                          const isSelected = assigned === dirVal;
+                                          return (
+                                            <button
+                                              key={u.id}
+                                              type="button"
+                                              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
+                                              onClick={() => {
+                                                setPlaceholderAssignments((prev) => ({
+                                                  ...prev,
+                                                  [p.id]: dirVal,
+                                                }));
+                                                setPlaceholderComboOpenId(null);
+                                              }}
+                                            >
+                                              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0 text-slate-500">
+                                                <User size={16} />
+                                              </div>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="text-sm font-bold text-slate-900 truncate">
+                                                  {u.name}
+                                                </div>
+                                                <div className="text-xs text-slate-500 truncate">{u.email}</div>
+                                              </div>
+                                              {isSelected && (
+                                                <Check
+                                                  size={16}
+                                                  className="text-blue-600 shrink-0"
+                                                  strokeWidth={2.5}
+                                                />
+                                              )}
+                                            </button>
+                                          );
+                                        })}
+                                      </>
+                                    )}
+                                    {addedFiltered.length === 0 && directoryMatches.length === 0 && (
+                                      <div className="px-4 py-6 text-sm text-slate-500 text-center">
+                                        No matches
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </>
+                            ) : candidateRecipients.length === 0 ? (
                               <div className="px-4 py-3 text-sm text-slate-500">
                                 Add a recipient with the &quot;Needs to complete&quot; action first.
                               </div>
@@ -1906,7 +2235,10 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                     type="button"
                                     className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left"
                                     onClick={() => {
-                                      setPlaceholderAssignments((prev) => ({ ...prev, [p.id]: r.id }));
+                                      setPlaceholderAssignments((prev) => ({
+                                        ...prev,
+                                        [p.id]: r.id,
+                                      }));
                                       setPlaceholderComboOpenId(null);
                                     }}
                                   >
@@ -1914,12 +2246,20 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                                       <User size={16} />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <div className="text-sm font-bold text-slate-900 truncate">{r.user?.name}</div>
+                                      <div className="text-sm font-bold text-slate-900 truncate">
+                                        {r.user?.name}
+                                      </div>
                                       {r.user?.email && (
                                         <div className="text-xs text-slate-500 truncate">{r.user.email}</div>
                                       )}
                                     </div>
-                                    {isSelected && <Check size={16} className="text-blue-600 shrink-0" strokeWidth={2.5} />}
+                                    {isSelected && (
+                                      <Check
+                                        size={16}
+                                        className="text-blue-600 shrink-0"
+                                        strokeWidth={2.5}
+                                      />
+                                    )}
                                   </button>
                                 );
                               })
@@ -1932,11 +2272,41 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                 })}
                 {candidateRecipients.length === 0 && (
                   <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                    No recipients are set to &quot;Needs to complete&quot;. Add one in the recipients section before sending.
+                    No recipients are set to &quot;Needs to complete&quot;. Add one in the recipients section
+                    before sending.
                   </p>
                 )}
               </div>
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 mt-4">
+                <div className="min-w-0">
+                  {usedPlaceholders.some((ph) => ph.id === 'manager') && (
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300 text-[#7A005D] focus:ring-[#7A005D]"
+                        checked={managerAutoMappingEnabled}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setManagerAutoMappingEnabled(on);
+                          if (on) {
+                            const kaleSlot = recipients
+                              .filter((r) => r.action === 'Needs to complete' && r.user)
+                              .find((r) => r.user?.id === SYSTEM_MANAGER_USER_ID)?.id;
+                            if (kaleSlot) {
+                              setPlaceholderAssignments((prev) => ({ ...prev, manager: kaleSlot }));
+                            }
+                          } else {
+                            setPlaceholderAssignments((prev) => ({ ...prev, manager: '' }));
+                            setPlaceholderRowSearch((s) => ({ ...s, manager: '' }));
+                            setPlaceholderComboOpenId((id) => (id === 'manager' ? null : id));
+                          }
+                        }}
+                      />
+                      Use system-record manager
+                    </label>
+                  )}
+                </div>
+                <div className="flex items-center justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
@@ -1957,6 +2327,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                   {correctingFlow ? 'Resend' : 'Send'}
                 </button>
               </div>
+            </div>
             </div>
           </div>
         )}

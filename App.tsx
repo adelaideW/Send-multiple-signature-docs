@@ -332,6 +332,7 @@ const App: React.FC = () => {
   const [viewByDocuments, setViewByDocuments] = useState(false);
   const [templateEditorMode, setTemplateEditorMode] = useState<'create' | 'edit'>('edit');
   const [templateEditorSeed, setTemplateEditorSeed] = useState<{ title: string; bodyHtml: string | null } | null>(null);
+  const [templateEditorIntent, setTemplateEditorIntent] = useState<'template' | 'one_off'>('template');
   const [documentsHubTab, setDocumentsHubTab] = useState('People');
   const [draftSavedSnackOpen, setDraftSavedSnackOpen] = useState(false);
   const [draftSavedPacketId, setDraftSavedPacketId] = useState<string | null>(null);
@@ -1078,6 +1079,7 @@ const App: React.FC = () => {
           onNewTemplate={() => {
             setTemplateEditorSeed(null);
             setTemplateEditorMode('create');
+            setTemplateEditorIntent('template');
             navigateTo('template_editor');
           }}
           onSendDocuments={() => {
@@ -1229,17 +1231,20 @@ const App: React.FC = () => {
             onEditDocument={(detail) => {
               setTemplateEditorSeed(detail ?? null);
               setTemplateEditorMode('edit');
+              setTemplateEditorIntent('one_off');
               navigateTo('template_editor');
             }}
             onCreateTemplate={() => {
               setTemplateEditorSeed(null);
               setTemplateEditorMode('create');
+              setTemplateEditorIntent('one_off');
               navigateTo('template_editor');
             }}
             onCreateTemplateWithName={(name) => {
               const t = name.trim();
               setTemplateEditorSeed({ title: t || 'Untitled template', bodyHtml: null });
               setTemplateEditorMode('create');
+              setTemplateEditorIntent('one_off');
               navigateTo('template_editor');
             }}
             onContinue={handleEnvelopeContinue}
@@ -1256,10 +1261,12 @@ const App: React.FC = () => {
           <TemplateEditor 
             onExit={() => {
               setTemplateEditorSeed(null);
+              setTemplateEditorIntent('template');
               goBack();
             }} 
             onGoHome={openDocumentsPeopleHub}
             mode={templateEditorMode}
+            editorIntent={templateEditorIntent}
             initialTitle={templateEditorSeed?.title}
             initialBodyHtml={templateEditorSeed?.bodyHtml ?? null}
             onSaveNewTemplate={(name, body) => {
