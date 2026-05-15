@@ -1097,6 +1097,7 @@ const App: React.FC = () => {
           profileFolderRoot={profileFolderRoot}
           onProfileFolderRootChange={setProfileFolderRoot}
           viewMode={currentView}
+          onViewChange={setCurrentView}
           completedEnvelopeDocs={completedEnvelopeDocs}
         />
       )}

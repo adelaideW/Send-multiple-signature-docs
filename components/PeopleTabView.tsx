@@ -2,11 +2,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Search, 
-  HelpCircle, 
-  Accessibility, 
   Bell, 
   ChevronDown, 
-  Grid, 
   Filter, 
   MoreVertical, 
   Maximize2, 
@@ -14,7 +11,6 @@ import {
   Settings2, 
   ExternalLink,
   Settings,
-  Layout,
   Send,
   Upload,
   FileText,
@@ -24,6 +20,7 @@ import TemplatesLibraryView from './TemplatesLibraryView';
 import ProfileFoldersView from './ProfileFoldersView';
 import EnvelopesListView, { type EnvelopeTableRow, type CompletedEnvelopeDoc } from './EnvelopesListView';
 import ToolsSidePanel from './ToolsSidePanel';
+import Header from './Header';
 import SendReminderModal from './SendReminderModal';
 import type { ProfileFolderNode } from '../utils/profileFolderUtils';
 
@@ -99,6 +96,7 @@ interface PeopleTabViewProps {
   profileFolderRoot?: ProfileFolderNode;
   onProfileFolderRootChange?: (next: ProfileFolderNode) => void;
   viewMode?: 'admin' | 'employee';
+  onViewChange?: (view: 'admin' | 'employee') => void;
 }
 
 const PeopleTabView: React.FC<PeopleTabViewProps> = ({
@@ -122,6 +120,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   profileFolderRoot,
   onProfileFolderRootChange,
   viewMode = 'admin',
+  onViewChange,
 }) => {
   const [internalHubTab, setInternalHubTab] = useState('People');
   const activeTab = hubTabProp ?? internalHubTab;
@@ -151,48 +150,8 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
         onOpenDocumentsPeopleTab={onOpenDocumentsPeopleTab}
       />
 
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-40 gap-4">
-          <div className="flex-1 max-w-2xl min-w-0">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                placeholder="Search or jump to"
-                className="w-full bg-slate-100 border-none rounded-lg py-2 pl-10 pr-4 text-[13px] outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-5">
-            <div className="flex items-center space-x-4 text-slate-500">
-              <HelpCircle size={20} className="cursor-pointer" />
-              <Accessibility size={20} className="cursor-pointer" />
-              <div className="relative p-1 border border-slate-200 rounded">
-                <Layout size={18} />
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center border-2 border-white">4</span>
-              </div>
-              <div className="relative">
-                <Bell size={20} className="cursor-pointer" />
-                <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center border-2 border-white">1</span>
-              </div>
-              <Grid size={20} className="cursor-pointer" />
-            </div>
-            <div className="h-6 w-px bg-slate-200"></div>
-            <button
-              type="button"
-              onClick={() => onProfileClick?.()}
-              className="flex items-center space-x-3 cursor-pointer rounded-lg p-1 -mr-1 hover:bg-slate-50 transition-colors text-left"
-              aria-label="Open user profile"
-            >
-              <span className="text-[13px] font-bold text-slate-700">Acme</span>
-              <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 shrink-0">
-                <img src="https://picsum.photos/id/64/100/100" alt="Profile" />
-              </div>
-            </button>
-          </div>
-        </header>
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <Header onProfileClick={onProfileClick} currentView={viewMode} onViewChange={onViewChange} />
 
         <main className="flex-1 overflow-y-auto bg-white custom-scrollbar">
           <div className="sticky top-0 z-30 bg-white border-b border-slate-200 px-8 pt-8 pb-0 mb-8 shadow-sm">
