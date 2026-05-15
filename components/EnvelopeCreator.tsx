@@ -783,6 +783,16 @@ function extractPlaceholdersFromBody(body: string): UsedPlaceholder[] {
   return out;
 }
 
+/** True when the HTML body contains at least one Template Editor recipient-field chip. */
+function bodyHasRecipientFieldChips(body: string): boolean {
+  if (!body || !body.includes('recipient-field')) return false;
+  if (typeof DOMParser === 'undefined') {
+    return /data-chip=["']recipient-field["']/.test(body);
+  }
+  const doc = new DOMParser().parseFromString(`<div>${body}</div>`, 'text/html');
+  return doc.querySelector('span[data-chip="recipient-field"]') != null;
+}
+
 /**
  * Recipient-field chips baked into every built-in template so the right-side
  * preview always shows the signing block (and the Send flow can detect that
@@ -1072,6 +1082,18 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const [noFieldWarningOpen, setNoFieldWarningOpen] = useState(false);
   const [noFieldRecipientNames, setNoFieldRecipientNames] = useState<string[]>([]);
   const [confirmSendNoFields, setConfirmSendNoFields] = useState(false);
+  /**
+   * Document-level gate: selected custom templates / uploads that have no
+   * recipient-field chips (templates) or placement fields (uploads — prototype
+   * uses one shared field list for all PDFs).
+   */
+  const [documentNoFieldsWarningOpen, setDocumentNoFieldsWarningOpen] = useState(false);
+  const [documentNoFieldsNames, setDocumentNoFieldsNames] = useState<string[]>([]);
+  const [confirmSendDocumentsWithoutFields, setConfirmSendDocumentsWithoutFields] =
+    useState(false);
+  /** Stash placeholder mapping + slot snapshot while the document warning modal is open. */
+  const pendingAssignmentsRef = useRef<Record<string, string>>({});
+  const pendingSlotRecipientsRef = useRef<RecipientSlot[] | undefined>(undefined);
   const placementPageRef = useRef<HTMLDivElement>(null);
   const placementAutoGateRef = useRef(false);
   const suppressPlacementAutoModalRef = useRef(false);
@@ -1662,6 +1684,33 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   }, [selectedTemplates, customTemplates]);
 
   /**
+   * Display names for documents that have no recipient fields at all: custom
+   * templates whose body has no chips, and PDF uploads when there are zero
+   * placement fields (one shared list for all uploads in this prototype).
+   */
+  const collectDocumentsWithoutRecipientFields = useCallback((): string[] => {
+    const out: string[] = [];
+    for (const tplName of selectedTemplates) {
+      if (TEMPLATES.includes(tplName)) continue;
+      const custom = customTemplates.find((c) => c.name === tplName);
+      if (!custom) continue;
+      let html = custom.body;
+      if (html && !html.trim().startsWith('<')) {
+        html = custom.body
+          .split(/\n+/)
+          .filter((p) => p.trim())
+          .map((p) => `<p>${p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
+          .join('');
+      }
+      if (!bodyHasRecipientFieldChips(html || '')) out.push(tplName);
+    }
+    if (uploadedFiles.length > 0 && placementFields.length === 0) {
+      for (const f of uploadedFiles) out.push(f.name);
+    }
+    return out;
+  }, [selectedTemplates, customTemplates, uploadedFiles, placementFields]);
+
+  /**
    * Returns "Needs to complete" recipients that have no fields bound to them.
    * Bindings come from three sources, considered together:
    *
@@ -1743,7 +1792,24 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
    * explicit "Send without adding fields" acknowledgement.
    */
   const proceedAfterPlaceholders = useCallback(
-    (name: string, assignments: Record<string, string>, slotRecipients?: RecipientSlot[]) => {
+    (
+      name: string,
+      assignments: Record<string, string>,
+      slotRecipients?: RecipientSlot[],
+      opts?: { skipDocumentNoFieldsCheck?: boolean }
+    ) => {
+      if (!opts?.skipDocumentNoFieldsCheck) {
+        const docsWithout = collectDocumentsWithoutRecipientFields();
+        if (docsWithout.length > 0) {
+          pendingSendNameRef.current = name;
+          pendingAssignmentsRef.current = { ...assignments };
+          pendingSlotRecipientsRef.current = slotRecipients;
+          setDocumentNoFieldsNames(docsWithout);
+          setConfirmSendDocumentsWithoutFields(false);
+          setDocumentNoFieldsWarningOpen(true);
+          return;
+        }
+      }
       const slots = slotRecipients ?? recipients;
       const missing = computeRecipientsWithoutFields(assignments, slots);
       if (missing.length > 0) {
@@ -1755,7 +1821,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       }
       onContinue?.(name);
     },
-    [computeRecipientsWithoutFields, onContinue, recipients]
+    [collectDocumentsWithoutRecipientFields, computeRecipientsWithoutFields, onContinue, recipients]
   );
 
   const handleContinue = () => {
@@ -1923,6 +1989,34 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
     setNoFieldWarningOpen(false);
     setConfirmSendNoFields(false);
     setNoFieldRecipientNames([]);
+  };
+
+  /** User acknowledged documents without recipient fields; continue send pipeline. */
+  const handleConfirmDocumentNoFieldsSend = () => {
+    if (!confirmSendDocumentsWithoutFields) return;
+    const name = pendingSendNameRef.current;
+    const assignments = pendingAssignmentsRef.current;
+    const slotRecipients = pendingSlotRecipientsRef.current;
+    setDocumentNoFieldsWarningOpen(false);
+    setConfirmSendDocumentsWithoutFields(false);
+    setDocumentNoFieldsNames([]);
+    pendingAssignmentsRef.current = {};
+    pendingSlotRecipientsRef.current = undefined;
+    if (name) {
+      proceedAfterPlaceholders(name, assignments, slotRecipients, {
+        skipDocumentNoFieldsCheck: true,
+      });
+    }
+  };
+
+  /** Cancel document-level warning — drop the pending send. */
+  const handleCancelDocumentNoFieldsWarning = () => {
+    pendingSendNameRef.current = null;
+    pendingAssignmentsRef.current = {};
+    pendingSlotRecipientsRef.current = undefined;
+    setDocumentNoFieldsWarningOpen(false);
+    setConfirmSendDocumentsWithoutFields(false);
+    setDocumentNoFieldsNames([]);
   };
 
   /**
@@ -2328,6 +2422,87 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
                 </button>
               </div>
             </div>
+            </div>
+          </div>
+        )}
+        {documentNoFieldsWarningOpen && (
+          <div
+            className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
+            onClick={handleCancelDocumentNoFieldsWarning}
+            role="presentation"
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] p-6 border border-slate-200"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="confirm-no-doc-fields-title"
+            >
+              <div className="flex justify-between items-start gap-3 mb-4">
+                <h2 id="confirm-no-doc-fields-title" className="text-lg font-bold text-slate-900 pr-2">
+                  Confirm before sending
+                </h2>
+                <button
+                  type="button"
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
+                  onClick={handleCancelDocumentNoFieldsWarning}
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="rounded-xl bg-[#FDE7C6] border border-[#F5D199] px-4 py-3 mb-5">
+                <div className="flex items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="w-5 h-5 rounded-full bg-[#7A3A0F] text-white flex items-center justify-center text-[12px] font-bold leading-none shrink-0 mt-0.5"
+                  >
+                    !
+                  </span>
+                  <div className="flex-1 text-sm text-slate-900 leading-relaxed">
+                    <p>
+                      The following documents are selected for signing but do not contain any recipient fields. As a
+                      result, no recipients will be able to sign them, and the documents will be automatically completed
+                      once received.
+                    </p>
+                    <ul className="list-disc list-outside pl-5 mt-2 space-y-0.5">
+                      {documentNoFieldsNames.map((n, i) => (
+                        <li key={`${n}-${i}`}>{n}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 mb-6 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={confirmSendDocumentsWithoutFields}
+                  onChange={(e) => setConfirmSendDocumentsWithoutFields(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-[#7A005D] focus:ring-[#7A005D]"
+                />
+                <span className="text-sm text-slate-900">Send without adding fields</span>
+              </label>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 hover:bg-slate-50"
+                  onClick={handleCancelDocumentNoFieldsWarning}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!confirmSendDocumentsWithoutFields}
+                  onClick={handleConfirmDocumentNoFieldsSend}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-bold ${
+                    confirmSendDocumentsWithoutFields
+                      ? 'bg-[#7A005D] text-white hover:opacity-95'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  {correctingFlow ? 'Resend' : 'Send'}
+                </button>
+              </div>
             </div>
           </div>
         )}
