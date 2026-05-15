@@ -18,7 +18,7 @@ const SendReminderModal: React.FC<SendReminderModalProps> = ({ open, onClose, on
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-[28px] shadow-2xl w-full max-w-[480px] border border-slate-100 overflow-hidden"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] border border-slate-200 overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="send-reminder-title"

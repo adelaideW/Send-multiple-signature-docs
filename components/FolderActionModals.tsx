@@ -278,7 +278,7 @@ export const RenameFolderModal: React.FC<{
 
   return (
     <ModalBackdrop onClose={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-[576px] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] flex flex-col overflow-hidden border border-slate-200">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4">
           <h2 className="text-[20px] font-bold text-slate-900">Rename folder</h2>
@@ -514,7 +514,7 @@ export const SetPermissionModal: React.FC<{
   return (
     <>
     <ModalBackdrop onClose={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-[576px] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] flex flex-col overflow-hidden border border-slate-200">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4">
           <h2 className="text-[20px] font-bold text-slate-900">Set permission</h2>
@@ -764,7 +764,7 @@ export const MoveFolderModal: React.FC<{
 
   return (
     <ModalBackdrop onClose={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-[576px] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] flex flex-col overflow-hidden border border-slate-200">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4">
           <h2 className="text-[20px] font-bold text-slate-900">Move folder</h2>

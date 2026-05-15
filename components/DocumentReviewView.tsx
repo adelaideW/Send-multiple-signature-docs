@@ -22,8 +22,7 @@ import {
   FileCheck,
   Lock,
   X,
-  PenTool,
-  Type,
+  Eraser,
 } from 'lucide-react';
 import type { EnvelopeStatus, DocumentSigningStatus } from './EnvelopesListView';
 import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
@@ -129,8 +128,9 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
   const [completedInSession, setCompletedInSession] = useState<Record<string, boolean>>({});
   const [fieldHighlight, setFieldHighlight] = useState<SignFieldHighlight>(null);
   const [signatureModalOpen, setSignatureModalOpen] = useState(false);
-  const [sigTab, setSigTab] = useState<'type' | 'draw'>('type');
   const [sigModalTyped, setSigModalTyped] = useState('');
+  /** True after the user has drawn on the canvas (or a saved draw image was loaded). */
+  const [signatureCanvasHasInk, setSignatureCanvasHasInk] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -389,48 +389,78 @@ ${imgTag}
 
   const openSignatureModal = () => {
     if (!currentSignDoc) return;
-    const st = getFields(currentSignDoc.id);
-    setSigModalTyped(st.signatureTyped);
-    setSigTab(st.signatureDrawDataUrl ? 'draw' : 'type');
     setSignatureModalOpen(true);
   };
 
   useLayoutEffect(() => {
-    if (!signatureModalOpen || sigTab !== 'draw') return;
+    if (!signatureModalOpen || !currentSignDoc) return;
+    const st = perDocFields[currentSignDoc.id] ?? defaultPerDocFields();
     const c = canvasRef.current;
-    const ctx = c?.getContext('2d');
-    if (ctx && c) {
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const w = c.width;
+    const h = c.height;
+    const paintWhite = () => {
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillRect(0, 0, w, h);
+    };
+
+    setSigModalTyped(st.signatureTyped);
+    if (st.signatureDrawDataUrl) {
+      const img = new Image();
+      img.onload = () => {
+        paintWhite();
+        try {
+          ctx.drawImage(img, 0, 0, w, h);
+        } catch {
+          paintWhite();
+        }
+        setSignatureCanvasHasInk(true);
+      };
+      img.onerror = () => {
+        paintWhite();
+        setSignatureCanvasHasInk(false);
+      };
+      img.src = st.signatureDrawDataUrl;
+    } else {
+      paintWhite();
+      setSignatureCanvasHasInk(false);
     }
-  }, [signatureModalOpen, sigTab]);
+  }, [signatureModalOpen, currentSignDoc?.id]);
 
   const applySignatureFromModal = () => {
     if (!currentSignDoc) return;
-    if (sigTab === 'type') {
+    const typed = sigModalTyped.trim();
+    const hasTyped = typed.length > 0;
+    const hasDraw = signatureCanvasHasInk;
+    if (!hasTyped && !hasDraw) return;
+
+    if (hasTyped) {
       patchDocFields(currentSignDoc.id, {
-        signatureTyped: sigModalTyped.trim(),
+        signatureTyped: typed,
         signatureDrawDataUrl: null,
       });
     } else {
       const canvas = canvasRef.current;
       const url = canvas && canvas.width > 0 ? canvas.toDataURL('image/png') : null;
-      const hasInk = url && url.length > 100;
+      const ink = url && url.length > 100;
       patchDocFields(currentSignDoc.id, {
-        signatureDrawDataUrl: hasInk ? url : null,
+        signatureDrawDataUrl: ink ? url : null,
         signatureTyped: '',
       });
     }
     setSignatureModalOpen(false);
   };
 
-  const clearCanvas = () => {
+  const clearSignatureCanvas = () => {
     const c = canvasRef.current;
     const ctx = c?.getContext('2d');
     if (ctx && c) {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, c.width, c.height);
     }
+    setSignatureCanvasHasInk(false);
   };
 
   const canvasXY = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -451,6 +481,7 @@ ${imgTag}
   };
 
   const startDraw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (sigModalTyped.trim()) return;
     if ('touches' in e) e.preventDefault();
     isDrawingRef.current = true;
     lastPointRef.current = canvasXY(e);
@@ -470,6 +501,7 @@ ${imgTag}
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
     lastPointRef.current = p;
+    setSignatureCanvasHasInk(true);
   };
   const endDraw = () => {
     isDrawingRef.current = false;
@@ -853,13 +885,13 @@ ${imgTag}
           >
             <div
               id="doc-review-signature-modal"
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 p-6"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] p-6 border border-slate-200"
               onClick={(e) => e.stopPropagation()}
               role="dialog"
               aria-modal="true"
               aria-labelledby="sig-modal-title"
             >
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex justify-between items-center mb-2">
                 <h2 id="sig-modal-title" className="text-lg font-bold text-slate-900 pr-2">
                   Add your signature
                 </h2>
@@ -872,43 +904,34 @@ ${imgTag}
                   <X size={20} />
                 </button>
               </div>
-              <p className="text-sm text-slate-600 mb-4">Type your name or draw your signature in the box below.</p>
-              <div className="flex gap-2 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setSigTab('type')}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors ${
-                    sigTab === 'type' ? 'bg-[#7A005D] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  <Type size={16} /> Type
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSigTab('draw')}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors ${
-                    sigTab === 'draw' ? 'bg-[#7A005D] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  <PenTool size={16} /> Draw
-                </button>
-              </div>
-              {sigTab === 'type' ? (
-                <input
-                  type="text"
-                  value={sigModalTyped}
-                  onChange={(e) => setSigModalTyped(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-3 mb-4 text-slate-900 font-medium"
-                  placeholder="Type your full name"
-                  autoFocus
-                />
-              ) : (
-                <div className="mb-4">
+              <p className="text-sm text-slate-700 leading-relaxed mb-5">
+                Draw your signature above, or type your full name below. Only one method is active at a time — use the
+                clear buttons to reset.
+              </p>
+
+              {/* Draw (top) */}
+              <div className="mb-5">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Draw</span>
+                  <button
+                    type="button"
+                    onClick={clearSignatureCanvas}
+                    disabled={!signatureCanvasHasInk}
+                    className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-30 disabled:pointer-events-none"
+                    title="Clear drawing"
+                    aria-label="Clear drawing"
+                  >
+                    <Eraser size={18} strokeWidth={2} />
+                  </button>
+                </div>
+                <div className="rounded-xl overflow-hidden border border-slate-200">
                   <canvas
                     ref={canvasRef}
-                    width={560}
+                    width={608}
                     height={200}
-                    className="w-full max-h-[200px] border border-slate-200 rounded-xl touch-none cursor-crosshair bg-white"
+                    className={`w-full h-[200px] touch-none bg-white block ${
+                      sigModalTyped.trim().length > 0 ? 'cursor-not-allowed opacity-50' : 'cursor-crosshair'
+                    }`}
                     onMouseDown={startDraw}
                     onMouseMove={moveDraw}
                     onMouseUp={endDraw}
@@ -917,12 +940,35 @@ ${imgTag}
                     onTouchMove={moveDraw}
                     onTouchEnd={endDraw}
                   />
-                  <button type="button" onClick={clearCanvas} className="mt-2 text-sm font-bold text-[#1D4ED8]">
-                    Clear drawing
+                </div>
+              </div>
+
+              {/* Type (bottom) */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Type</span>
+                  <button
+                    type="button"
+                    onClick={() => setSigModalTyped('')}
+                    disabled={!sigModalTyped.trim() || signatureCanvasHasInk}
+                    className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-30 disabled:pointer-events-none"
+                    title="Clear typed name"
+                    aria-label="Clear typed name"
+                  >
+                    <X size={18} strokeWidth={2} />
                   </button>
                 </div>
-              )}
-              <div className="flex justify-end gap-2 pt-2">
+                <input
+                  type="text"
+                  value={sigModalTyped}
+                  onChange={(e) => setSigModalTyped(e.target.value)}
+                  disabled={signatureCanvasHasInk}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-3 text-slate-900 font-medium outline-none focus:ring-2 focus:ring-[#7A005D]/25 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
+                  placeholder="Type your full name"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setSignatureModalOpen(false)}
@@ -932,8 +978,13 @@ ${imgTag}
                 </button>
                 <button
                   type="button"
+                  disabled={!(sigModalTyped.trim() || signatureCanvasHasInk)}
                   onClick={applySignatureFromModal}
-                  className="px-4 py-2.5 rounded-xl bg-[#7A005D] text-white font-bold text-sm hover:opacity-95"
+                  className={`px-4 py-2.5 rounded-xl font-bold text-sm ${
+                    sigModalTyped.trim() || signatureCanvasHasInk
+                      ? 'bg-[#7A005D] text-white hover:opacity-95'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
                 >
                   Apply signature
                 </button>

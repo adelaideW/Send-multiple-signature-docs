@@ -50,7 +50,7 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         </div>
       </div>
       <div className="flex-1 overflow-y-auto bg-slate-100 p-8 flex justify-center">
-        <div className="w-full max-w-3xl bg-white shadow-xl rounded-lg border border-slate-200 p-10 min-h-[480px] text-slate-700 text-sm leading-relaxed">
+        <div className="w-full max-w-[640px] bg-white shadow-xl rounded-lg border border-slate-200 p-10 min-h-[480px] text-slate-700 text-sm leading-relaxed">
           <p className="font-bold text-slate-900 mb-4">Static preview</p>
           <p>
             This is a prototype preview of <strong>{name}</strong>. In production, the received PDF would render here.

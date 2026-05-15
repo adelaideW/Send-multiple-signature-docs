@@ -2629,7 +2629,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
         role="presentation"
       >
         <div
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-[520px] border border-slate-100"
+          className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] border border-slate-200"
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-labelledby="create-tag-title"
@@ -2706,7 +2706,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
             role="presentation"
           >
             <div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-[520px] border border-slate-100 overflow-hidden"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] border border-slate-200 overflow-hidden"
               onClick={(e) => e.stopPropagation()}
               role="dialog"
             >
@@ -3195,7 +3195,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
           role="presentation"
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-100"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] border border-slate-200 p-6"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-labelledby="external-recipient-title"
@@ -3947,7 +3947,7 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
 
                 {signingOrderSummaryOpen && (
                   <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/30 p-4" onClick={() => setSigningOrderSummaryOpen(false)} role="presentation">
-                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-100" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="signing-order-title">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-[640px] w-full p-6 border border-slate-200" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="signing-order-title">
                       <h4 id="signing-order-title" className="font-bold text-lg text-slate-900 mb-4">Signing order</h4>
                       <ol className="space-y-3 list-decimal list-inside text-sm text-slate-700">
                         {signingOrderGroups.map((g, i) => (
