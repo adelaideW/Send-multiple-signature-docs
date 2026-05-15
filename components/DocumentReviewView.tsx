@@ -22,6 +22,8 @@ import {
   FileCheck,
   Lock,
   X,
+  PenTool,
+  Type,
 } from 'lucide-react';
 import type { EnvelopeStatus, DocumentSigningStatus } from './EnvelopesListView';
 import { EnvelopeMoreMenu, moreMenuVariantForEnvelope } from './EnvelopesListView';
@@ -58,6 +60,53 @@ interface DocumentReviewViewProps {
 
 const ACCENT_SIGN = '#FDB71C';
 
+type SignFieldHighlight = 'acknowledgment' | 'signature' | 'checkbox' | null;
+
+export interface PerDocSignFields {
+  acknowledgment: string;
+  signatureTyped: string;
+  signatureDrawDataUrl: string | null;
+  checkbox: boolean;
+  /** ISO timestamp captured once all required fields are satisfied (read-only signed date). */
+  signedDateLocked: string | null;
+}
+
+function defaultPerDocFields(): PerDocSignFields {
+  return {
+    acknowledgment: '',
+    signatureTyped: '',
+    signatureDrawDataUrl: null,
+    checkbox: false,
+    signedDateLocked: null,
+  };
+}
+
+function hasSignature(st: PerDocSignFields): boolean {
+  return !!(st.signatureTyped.trim() || st.signatureDrawDataUrl);
+}
+
+function firstMissingRequiredField(st: PerDocSignFields): Exclude<SignFieldHighlight, null> {
+  if (!st.acknowledgment.trim()) return 'acknowledgment';
+  if (!hasSignature(st)) return 'signature';
+  if (!st.checkbox) return 'checkbox';
+  return 'acknowledgment';
+}
+
+function allRequiredSatisfied(st: PerDocSignFields): boolean {
+  return st.acknowledgment.trim().length > 0 && hasSignature(st) && st.checkbox;
+}
+
+function formatSignedDate(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
 function needsSignerAction(doc: SignFlowDoc, envelopeStatus: EnvelopeStatus): boolean {
   if (envelopeStatus === 'voided' || envelopeStatus === 'draft') return false;
   if (doc.status === 'completed') return false;
@@ -76,14 +125,24 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
   const [listMenuOpen, setListMenuOpen] = useState(false);
   const [signMenuOpen, setSignMenuOpen] = useState(false);
   const [activeSignDocId, setActiveSignDocId] = useState<string | null>(null);
-  const [fieldValue, setFieldValue] = useState('');
+  const [perDocFields, setPerDocFields] = useState<Record<string, PerDocSignFields>>({});
   const [completedInSession, setCompletedInSession] = useState<Record<string, boolean>>({});
+  const [fieldHighlight, setFieldHighlight] = useState<SignFieldHighlight>(null);
+  const [signatureModalOpen, setSignatureModalOpen] = useState(false);
+  const [sigTab, setSigTab] = useState<'type' | 'draw'>('type');
+  const [sigModalTyped, setSigModalTyped] = useState('');
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingRef = useRef(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
   const listMenuBtnRef = useRef<HTMLButtonElement | null>(null);
   const signMenuBtnRef = useRef<HTMLButtonElement | null>(null);
+  const ackFieldRef = useRef<HTMLDivElement | null>(null);
+  const signatureFieldRef = useRef<HTMLDivElement | null>(null);
+  const checkboxFieldRef = useRef<HTMLDivElement | null>(null);
   const [listMenuPos, setListMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [signMenuPos, setSignMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const [preview, setPreview] = useState<{ name: string } | null>(null);
+  const [preview, setPreview] = useState<{ name: string; docId: string } | null>(null);
   const [docSnack, setDocSnack] = useState<string | null>(null);
   const [bulkSnack, setBulkSnack] = useState<{ phase: 'loading' | 'done'; count: number } | null>(null);
   const [sendReminderOpen, setSendReminderOpen] = useState(false);
@@ -104,6 +163,48 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
   const currentSignDoc = signableDocs[activeSignIndex] ?? null;
   const isLastSignDoc =
     signableDocs.length > 0 && activeSignIndex === signableDocs.length - 1;
+
+  const getFields = (docId: string): PerDocSignFields =>
+    perDocFields[docId] ?? defaultPerDocFields();
+
+  const patchDocFields = (docId: string, patch: Partial<PerDocSignFields>) => {
+    setPerDocFields((prev) => ({
+      ...prev,
+      [docId]: { ...(prev[docId] ?? defaultPerDocFields()), ...patch },
+    }));
+  };
+
+  const ackLive = currentSignDoc ? getFields(currentSignDoc.id).acknowledgment : '';
+  const sigTypedLive = currentSignDoc ? getFields(currentSignDoc.id).signatureTyped : '';
+  const sigDrawLive = currentSignDoc ? getFields(currentSignDoc.id).signatureDrawDataUrl : null;
+  const cbLive = currentSignDoc ? getFields(currentSignDoc.id).checkbox : false;
+
+  useEffect(() => {
+    if (!currentSignDoc) return;
+    setPerDocFields((prev) => {
+      const st = prev[currentSignDoc.id] ?? defaultPerDocFields();
+      const ok = allRequiredSatisfied(st);
+      if (!ok && st.signedDateLocked) {
+        return { ...prev, [currentSignDoc.id]: { ...st, signedDateLocked: null } };
+      }
+      if (ok && !st.signedDateLocked) {
+        return { ...prev, [currentSignDoc.id]: { ...st, signedDateLocked: new Date().toISOString() } };
+      }
+      return prev;
+    });
+  }, [currentSignDoc?.id, ackLive, sigTypedLive, sigDrawLive, cbLive]);
+
+  const scrollHighlight = (which: Exclude<SignFieldHighlight, null>) => {
+    const ref =
+      which === 'acknowledgment'
+        ? ackFieldRef
+        : which === 'signature'
+          ? signatureFieldRef
+          : checkboxFieldRef;
+    window.setTimeout(() => {
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 0);
+  };
 
   const placeMenu = (btn: HTMLButtonElement | null, setPos: (p: { top: number; left: number } | null) => void) => {
     if (!btn) return;
@@ -150,6 +251,7 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
       if (signMenuBtnRef.current?.contains(t)) return;
       if (document.getElementById('doc-review-list-more')?.contains(t)) return;
       if (document.getElementById('doc-review-sign-more')?.contains(t)) return;
+      if (document.getElementById('doc-review-signature-modal')?.contains(t)) return;
       setListMenuOpen(false);
       setSignMenuOpen(false);
     };
@@ -179,7 +281,7 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
 
   const openSignForDoc = (docId: string) => {
     setActiveSignDocId(docId);
-    setFieldValue('');
+    setFieldHighlight(null);
     setPhase('sign');
     setListMenuOpen(false);
   };
@@ -192,35 +294,186 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
     const ids = new Set<string>();
     signableDocs.forEach((d) => {
       if (completedInSession[d.id]) ids.add(d.id);
+      if (allRequiredSatisfied(getFields(d.id))) ids.add(d.id);
     });
-    if (fieldValue.trim() && currentSignDoc) ids.add(currentSignDoc.id);
     if (ids.size > 0) onSavePartial(flow.packetId, [...ids]);
     else onExit();
   };
 
-  const handleNext = () => {
-    if (!currentSignDoc || !fieldValue.trim()) return;
+  const handlePrimaryAction = () => {
+    if (!currentSignDoc) return;
+    const st = getFields(currentSignDoc.id);
+    if (!allRequiredSatisfied(st)) {
+      const miss = firstMissingRequiredField(st);
+      setFieldHighlight(miss);
+      scrollHighlight(miss);
+      return;
+    }
+
     const nextCompleted = { ...completedInSession, [currentSignDoc.id]: true };
     setCompletedInSession(nextCompleted);
-    setFieldValue('');
-    const nextIdx = activeSignIndex + 1;
-    if (nextIdx < signableDocs.length) {
-      setActiveSignDocId(signableDocs[nextIdx].id);
+    setFieldHighlight(null);
+
+    const finishedIds = signableDocs.filter((d) => nextCompleted[d.id]).map((d) => d.id);
+    if (activeSignIndex < signableDocs.length - 1) {
+      onSavePartial(flow.packetId, finishedIds);
+      setActiveSignDocId(signableDocs[activeSignIndex + 1].id);
+      return;
+    }
+    onCompleteAll(flow.packetId);
+  };
+
+  const primaryLabel = signableDocs.length > 1 && !isLastSignDoc ? 'Next' : 'Complete';
+
+  const ringFor = (key: Exclude<SignFieldHighlight, null>) =>
+    fieldHighlight === key ? 'ring-2 ring-[#7A005D] ring-offset-2 rounded-xl transition-shadow duration-300' : '';
+
+  const renderSignedSummary = (docId: string): React.ReactNode => {
+    const st = getFields(docId);
+    if (!completedInSession[docId] && !allRequiredSatisfied(st)) return null;
+    return (
+      <div className="space-y-3">
+        <p>
+          <span className="font-semibold text-slate-900">Acknowledgment: </span>
+          {st.acknowledgment || '—'}
+        </p>
+        <div>
+          <p className="font-semibold text-slate-900 mb-1">Signature</p>
+          {st.signatureDrawDataUrl ? (
+            <img src={st.signatureDrawDataUrl} alt="Signature" className="max-h-16 border border-slate-200 rounded bg-white" />
+          ) : (
+            <p className="font-serif italic text-xl text-slate-900">{st.signatureTyped || '—'}</p>
+          )}
+        </div>
+        <p>
+          <span className="font-semibold text-slate-900">Confirmation: </span>
+          {st.checkbox ? 'Checked — I agree' : '—'}
+        </p>
+        <p>
+          <span className="font-semibold text-slate-900">Signed date: </span>
+          {st.signedDateLocked ? formatSignedDate(st.signedDateLocked) : '—'}
+        </p>
+      </div>
+    );
+  };
+
+  const downloadSignedRecord = (docName: string, docId: string) => {
+    const st = getFields(docId);
+    const imgTag = st.signatureDrawDataUrl
+      ? `<p><strong>Signature</strong></p><img src="${st.signatureDrawDataUrl}" alt="Signature" style="max-height:80px;border:1px solid #e2e8f0;" />`
+      : `<p><strong>Signature</strong></p><p style="font-family:Georgia,serif;font-style:italic;font-size:22px;">${escapeHtml(st.signatureTyped)}</p>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${escapeHtml(docName)} — signed</title></head><body style="font-family:system-ui,sans-serif;padding:24px;max-width:640px;">
+<h1>${escapeHtml(docName)}</h1>
+<p><strong>Acknowledgment</strong></p><p>${escapeHtml(st.acknowledgment)}</p>
+${imgTag}
+<p><strong>Confirmation</strong></p><p>${st.checkbox ? 'Checked — I agree' : '—'}</p>
+<p><strong>Signed date</strong></p><p>${st.signedDateLocked ? formatSignedDate(st.signedDateLocked) : '—'}</p>
+</body></html>`;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${docName.replace(/[^\w\-]+/g, '_')}_signed.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setDocSnack('Signed document downloaded');
+  };
+
+  function escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  const openSignatureModal = () => {
+    if (!currentSignDoc) return;
+    const st = getFields(currentSignDoc.id);
+    setSigModalTyped(st.signatureTyped);
+    setSigTab(st.signatureDrawDataUrl ? 'draw' : 'type');
+    setSignatureModalOpen(true);
+  };
+
+  useLayoutEffect(() => {
+    if (!signatureModalOpen || sigTab !== 'draw') return;
+    const c = canvasRef.current;
+    const ctx = c?.getContext('2d');
+    if (ctx && c) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, c.width, c.height);
+    }
+  }, [signatureModalOpen, sigTab]);
+
+  const applySignatureFromModal = () => {
+    if (!currentSignDoc) return;
+    if (sigTab === 'type') {
+      patchDocFields(currentSignDoc.id, {
+        signatureTyped: sigModalTyped.trim(),
+        signatureDrawDataUrl: null,
+      });
+    } else {
+      const canvas = canvasRef.current;
+      const url = canvas && canvas.width > 0 ? canvas.toDataURL('image/png') : null;
+      const hasInk = url && url.length > 100;
+      patchDocFields(currentSignDoc.id, {
+        signatureDrawDataUrl: hasInk ? url : null,
+        signatureTyped: '',
+      });
+    }
+    setSignatureModalOpen(false);
+  };
+
+  const clearCanvas = () => {
+    const c = canvasRef.current;
+    const ctx = c?.getContext('2d');
+    if (ctx && c) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, c.width, c.height);
     }
   };
 
-  const handleComplete = () => {
-    if (!currentSignDoc || !fieldValue.trim()) return;
-    const finalCompleted = { ...completedInSession, [currentSignDoc.id]: true };
-    const allDone = signableDocs.every((d) => finalCompleted[d.id]);
-    if (allDone) {
-      onCompleteAll(flow.packetId);
-    } else {
-      onSavePartial(
-        flow.packetId,
-        signableDocs.filter((d) => finalCompleted[d.id]).map((d) => d.id)
-      );
+  const canvasXY = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const c = canvasRef.current;
+    if (!c) return { x: 0, y: 0 };
+    if ('touches' in e) {
+      const t = e.touches[0] ?? e.changedTouches[0];
+      if (!t) return { x: 0, y: 0 };
+      const r = c.getBoundingClientRect();
+      const scaleX = c.width / r.width;
+      const scaleY = c.height / r.height;
+      return { x: (t.clientX - r.left) * scaleX, y: (t.clientY - r.top) * scaleY };
     }
+    const me = e as React.MouseEvent<HTMLCanvasElement>;
+    const scaleX = c.width / c.clientWidth;
+    const scaleY = c.height / c.clientHeight;
+    return { x: me.nativeEvent.offsetX * scaleX, y: me.nativeEvent.offsetY * scaleY };
+  };
+
+  const startDraw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if ('touches' in e) e.preventDefault();
+    isDrawingRef.current = true;
+    lastPointRef.current = canvasXY(e);
+  };
+  const moveDraw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if ('touches' in e) e.preventDefault();
+    if (!isDrawingRef.current || !lastPointRef.current) return;
+    const c = canvasRef.current;
+    const ctx = c?.getContext('2d');
+    if (!ctx || !c) return;
+    const p = canvasXY(e);
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    lastPointRef.current = p;
+  };
+  const endDraw = () => {
+    isDrawingRef.current = false;
+    lastPointRef.current = null;
   };
 
   const listVariant = moreMenuVariantForEnvelope(flow.envelopeStatus);
@@ -335,7 +588,7 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                           type="button"
                           className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
                           aria-label="View"
-                          onClick={() => setPreview({ name: doc.name })}
+                          onClick={() => setPreview({ name: doc.name, docId: doc.id })}
                         >
                           <Eye size={18} />
                         </button>
@@ -343,7 +596,14 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                           type="button"
                           className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
                           aria-label="Download"
-                          onClick={() => setDocSnack('Document downloaded')}
+                          onClick={() => {
+                            const st = getFields(doc.id);
+                            if (completedInSession[doc.id] || allRequiredSatisfied(st)) {
+                              downloadSignedRecord(doc.name, doc.id);
+                            } else {
+                              setDocSnack('Document downloaded');
+                            }
+                          }}
                         >
                           <Download size={18} />
                         </button>
@@ -370,25 +630,13 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                 <LogOut size={14} />
                 Save and exit
               </button>
-              {signableDocs.length > 1 && !isLastSignDoc ? (
-                <button
-                  type="button"
-                  disabled={!fieldValue.trim()}
-                  onClick={handleNext}
-                  className="px-5 py-2 bg-[#7A005D] text-white rounded-[8px] text-xs font-bold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled={!fieldValue.trim()}
-                  onClick={handleComplete}
-                  className="px-5 py-2 bg-[#7A005D] text-white rounded-[8px] text-xs font-bold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Complete
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handlePrimaryAction}
+                className="px-5 py-2 bg-[#7A005D] text-white rounded-[8px] text-xs font-bold hover:opacity-90 shadow-sm"
+              >
+                {primaryLabel}
+              </button>
               <button
                 ref={signMenuBtnRef}
                 type="button"
@@ -413,24 +661,66 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
                     </span>
                     Placeholder agreement text for this prototype signing step.
                   </p>
-                  <p>Please complete the required field below to continue.</p>
-                  <div className="mt-8 flex flex-col space-y-4">
-                    <div className="flex items-end space-x-2">
-                      <div className="font-serif italic text-3xl opacity-80" style={{ transform: 'rotate(-5deg)' }}>
-                        sign
-                      </div>
-                      <div className="w-32 border-b border-slate-300" />
-                    </div>
-                  </div>
-                  <div className="mt-8">
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Required acknowledgment</label>
+                  <p>Please complete the required fields below to continue.</p>
+                  <p className="text-slate-600">Tap <strong>Next</strong> or <strong>Complete</strong> when you are ready — if anything is missing, we will highlight the next field you need.</p>
+
+                  <div ref={ackFieldRef} className={`mt-6 p-3 -m-3 ${ringFor('acknowledgment')}`}>
+                    <label className="block text-[11px] font-bold text-slate-900 uppercase mb-1">Required acknowledgment</label>
                     <input
                       type="text"
-                      value={fieldValue}
-                      onChange={(e) => setFieldValue(e.target.value)}
-                      placeholder="Type your initials to sign"
-                      className="w-full max-w-md border border-slate-200 rounded-[8px] px-3 py-2 outline-none focus:ring-2 focus:ring-[#7A005D]/25"
+                      value={getFields(currentSignDoc.id).acknowledgment}
+                      onChange={(e) => patchDocFields(currentSignDoc.id, { acknowledgment: e.target.value })}
+                      placeholder="Type your acknowledgment"
+                      className="w-full max-w-md border border-slate-200 rounded-[8px] px-3 py-2 outline-none focus:ring-2 focus:ring-[#7A005D]/25 text-slate-900"
                     />
+                  </div>
+
+                  <div ref={signatureFieldRef} className={`mt-6 p-3 -m-3 ${ringFor('signature')}`}>
+                    <label className="block text-[11px] font-bold text-slate-900 uppercase mb-2">Signature</label>
+                    <button
+                      type="button"
+                      onClick={openSignatureModal}
+                      className="w-full max-w-md border-2 border-dashed border-slate-300 rounded-xl px-4 py-6 text-left hover:border-[#7A005D]/50 hover:bg-slate-50/80 transition-colors"
+                    >
+                      {getFields(currentSignDoc.id).signatureDrawDataUrl ? (
+                        <img
+                          src={getFields(currentSignDoc.id).signatureDrawDataUrl!}
+                          alt="Your signature"
+                          className="max-h-20 object-contain"
+                        />
+                      ) : getFields(currentSignDoc.id).signatureTyped ? (
+                        <span className="font-serif italic text-3xl text-slate-900">{getFields(currentSignDoc.id).signatureTyped}</span>
+                      ) : (
+                        <span className="text-slate-500 text-sm font-medium">Click to sign — type your name or draw your signature</span>
+                      )}
+                    </button>
+                  </div>
+
+                  <div ref={checkboxFieldRef} className={`mt-6 p-3 -m-3 ${ringFor('checkbox')}`}>
+                    <label className="flex items-start gap-3 cursor-pointer max-w-md">
+                      <input
+                        type="checkbox"
+                        className="mt-1 w-4 h-4 rounded border-slate-300 text-[#7A005D] focus:ring-[#7A005D]"
+                        checked={getFields(currentSignDoc.id).checkbox}
+                        onChange={(e) => patchDocFields(currentSignDoc.id, { checkbox: e.target.checked })}
+                      />
+                      <span className="text-[13px] font-bold text-slate-900 leading-snug">
+                        I confirm the information above is accurate and I agree to proceed.
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="mt-8 max-w-md">
+                    <label className="block text-[11px] font-bold text-slate-900 uppercase mb-1">Signed date</label>
+                    <div
+                      className="w-full border border-slate-200 rounded-[8px] px-3 py-2 bg-slate-100 text-slate-900 font-medium cursor-default select-none"
+                      aria-readonly="true"
+                    >
+                      {getFields(currentSignDoc.id).signedDateLocked
+                        ? formatSignedDate(getFields(currentSignDoc.id).signedDateLocked!)
+                        : '—'}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">Filled automatically when all required fields above are complete.</p>
                   </div>
                 </div>
               </div>
@@ -493,7 +783,17 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
             <button
               type="button"
               className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50"
-              onClick={() => setSignMenuOpen(false)}
+              onClick={() => {
+                setSignMenuOpen(false);
+                if (currentSignDoc) {
+                  const st = getFields(currentSignDoc.id);
+                  if (completedInSession[currentSignDoc.id] || allRequiredSatisfied(st)) {
+                    downloadSignedRecord(currentSignDoc.name, currentSignDoc.id);
+                  } else {
+                    setDocSnack('Document downloaded');
+                  }
+                }
+              }}
             >
               <Download size={16} />
               Download
@@ -544,11 +844,118 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
           document.body
         )}
 
+      {signatureModalOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[500000] flex items-center justify-center bg-black/45 p-4"
+            onClick={() => setSignatureModalOpen(false)}
+            role="presentation"
+          >
+            <div
+              id="doc-review-signature-modal"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 p-6"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="sig-modal-title"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h2 id="sig-modal-title" className="text-lg font-bold text-slate-900 pr-2">
+                  Add your signature
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setSignatureModalOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+                  aria-label="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <p className="text-sm text-slate-600 mb-4">Type your name or draw your signature in the box below.</p>
+              <div className="flex gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setSigTab('type')}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors ${
+                    sigTab === 'type' ? 'bg-[#7A005D] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <Type size={16} /> Type
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSigTab('draw')}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-colors ${
+                    sigTab === 'draw' ? 'bg-[#7A005D] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <PenTool size={16} /> Draw
+                </button>
+              </div>
+              {sigTab === 'type' ? (
+                <input
+                  type="text"
+                  value={sigModalTyped}
+                  onChange={(e) => setSigModalTyped(e.target.value)}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-3 mb-4 text-slate-900 font-medium"
+                  placeholder="Type your full name"
+                  autoFocus
+                />
+              ) : (
+                <div className="mb-4">
+                  <canvas
+                    ref={canvasRef}
+                    width={560}
+                    height={200}
+                    className="w-full max-h-[200px] border border-slate-200 rounded-xl touch-none cursor-crosshair bg-white"
+                    onMouseDown={startDraw}
+                    onMouseMove={moveDraw}
+                    onMouseUp={endDraw}
+                    onMouseLeave={endDraw}
+                    onTouchStart={startDraw}
+                    onTouchMove={moveDraw}
+                    onTouchEnd={endDraw}
+                  />
+                  <button type="button" onClick={clearCanvas} className="mt-2 text-sm font-bold text-[#1D4ED8]">
+                    Clear drawing
+                  </button>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSignatureModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 font-bold text-sm text-slate-900 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={applySignatureFromModal}
+                  className="px-4 py-2.5 rounded-xl bg-[#7A005D] text-white font-bold text-sm hover:opacity-95"
+                >
+                  Apply signature
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
       {preview && (
         <DocumentPreviewModal
           name={preview.name}
           onClose={() => setPreview(null)}
-          onDownload={() => setDocSnack('Document downloaded')}
+          onDownload={() => {
+            const st = getFields(preview.docId);
+            if (completedInSession[preview.docId] || allRequiredSatisfied(st)) {
+              downloadSignedRecord(preview.name, preview.docId);
+            } else {
+              setDocSnack('Document downloaded');
+            }
+          }}
+          signedSummary={renderSignedSummary(preview.docId) ?? undefined}
           zIndexClass="z-[400000]"
         />
       )}

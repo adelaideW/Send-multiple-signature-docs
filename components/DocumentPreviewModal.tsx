@@ -6,6 +6,8 @@ export interface DocumentPreviewModalProps {
   onClose: () => void;
   /** Prototype: e.g. show snackbar from parent */
   onDownload?: () => void;
+  /** When the signer has finished this document, show captured signature / checkbox / date details. */
+  signedSummary?: React.ReactNode;
   zIndexClass?: string;
 }
 
@@ -16,6 +18,7 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   name,
   onClose,
   onDownload,
+  signedSummary,
   zIndexClass = 'z-[300000]',
 }) => {
   return (
@@ -52,6 +55,12 @@ const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           <p>
             This is a prototype preview of <strong>{name}</strong>. In production, the received PDF would render here.
           </p>
+          {signedSummary ? (
+            <div className="mt-8 pt-6 border-t border-slate-200 text-[13px] text-slate-800">
+              <p className="text-[11px] font-bold text-slate-900 uppercase tracking-wide mb-3">Signed copy record</p>
+              {signedSummary}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
