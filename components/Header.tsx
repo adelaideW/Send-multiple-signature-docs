@@ -23,7 +23,7 @@ const Header: React.FC<HeaderProps> = ({ onProfileClick, currentView = 'admin', 
   }, []);
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-20">
+    <header className="relative z-[100] h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
       <div className="w-1/3 shrink-0" aria-hidden />
 
       <div className="flex-1 max-w-2xl px-4">
@@ -86,7 +86,10 @@ const Header: React.FC<HeaderProps> = ({ onProfileClick, currentView = 'admin', 
           </button>
 
           {isViewMenuOpen && (
-            <div className="absolute top-full left-0 mt-1.5 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-50">
+            <div
+              className="absolute top-full left-0 mt-1.5 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-[110]"
+              role="menu"
+            >
               <button
                 type="button"
                 onClick={() => {
