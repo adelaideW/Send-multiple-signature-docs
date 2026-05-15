@@ -54,7 +54,16 @@ interface DocumentReviewViewProps {
   onExit: () => void;
   onGoHome?: () => void;
   onCompleteAll: (packetId: string) => void;
-  onSavePartial: (packetId: string, completedDocIds: string[]) => void;
+  /**
+   * Persist progress for partially signed docs. Pass `exitFlow: false` when
+   * advancing to the next document in a multi-doc packet so the host keeps
+   * the review overlay mounted.
+   */
+  onSavePartial: (
+    packetId: string,
+    completedDocIds: string[],
+    options?: { exitFlow?: boolean }
+  ) => void;
 }
 
 const ACCENT_SIGN = '#FDB71C';
@@ -296,7 +305,7 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
       if (completedInSession[d.id]) ids.add(d.id);
       if (allRequiredSatisfied(getFields(d.id))) ids.add(d.id);
     });
-    if (ids.size > 0) onSavePartial(flow.packetId, [...ids]);
+    if (ids.size > 0) onSavePartial(flow.packetId, [...ids], { exitFlow: true });
     else onExit();
   };
 
@@ -316,7 +325,7 @@ const DocumentReviewView: React.FC<DocumentReviewViewProps> = ({
 
     const finishedIds = signableDocs.filter((d) => nextCompleted[d.id]).map((d) => d.id);
     if (activeSignIndex < signableDocs.length - 1) {
-      onSavePartial(flow.packetId, finishedIds);
+      onSavePartial(flow.packetId, finishedIds, { exitFlow: false });
       setActiveSignDocId(signableDocs[activeSignIndex + 1].id);
       return;
     }

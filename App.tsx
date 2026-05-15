@@ -872,9 +872,14 @@ const App: React.FC = () => {
   );
 
   const handleSignPartial = useCallback(
-    (packetId: string, _completedDocIds: string[]) => {
+    (
+      packetId: string,
+      _completedDocIds: string[],
+      options?: { exitFlow?: boolean }
+    ) => {
       const ts = new Date().toISOString();
       const signerUserId = signFlow?.signerUserId;
+      const exitFlow = options?.exitFlow !== false;
       // Partial sign means the signer hasn't finished. We intentionally leave
       // document statuses and the recipient row alone — only the envelope's
       // lastModified is bumped and we re-derive its status (which will stay
@@ -890,6 +895,7 @@ const App: React.FC = () => {
           };
         })
       );
+      if (!exitFlow) return;
       setSignFlow(null);
       if (signerUserId === 'u-kale') {
         trimToProfile();
