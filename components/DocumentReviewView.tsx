@@ -945,27 +945,30 @@ ${imgTag}
 
               {/* Type (bottom) */}
               <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
+                <div className="mb-2">
                   <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Type</span>
-                  <button
-                    type="button"
-                    onClick={() => setSigModalTyped('')}
-                    disabled={!sigModalTyped.trim() || signatureCanvasHasInk}
-                    className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-30 disabled:pointer-events-none"
-                    title="Clear typed name"
-                    aria-label="Clear typed name"
-                  >
-                    <X size={18} strokeWidth={2} />
-                  </button>
                 </div>
-                <input
-                  type="text"
-                  value={sigModalTyped}
-                  onChange={(e) => setSigModalTyped(e.target.value)}
-                  disabled={signatureCanvasHasInk}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-3 text-slate-900 font-medium outline-none focus:ring-2 focus:ring-[#7A005D]/25 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
-                  placeholder="Type your full name"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={sigModalTyped}
+                    onChange={(e) => setSigModalTyped(e.target.value)}
+                    disabled={signatureCanvasHasInk}
+                    className="w-full border border-slate-200 rounded-xl pl-3 py-3 pr-12 text-slate-900 font-medium outline-none focus:ring-2 focus:ring-[#7A005D]/25 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
+                    placeholder="Type your full name"
+                  />
+                  {sigModalTyped.trim() && !signatureCanvasHasInk ? (
+                    <button
+                      type="button"
+                      onClick={() => setSigModalTyped('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white shadow-sm hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7A005D]/40 focus-visible:ring-offset-2"
+                      title="Clear typed name"
+                      aria-label="Clear typed name"
+                    >
+                      <X size={14} strokeWidth={2.5} />
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <div className="flex justify-end gap-2">
