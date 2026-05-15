@@ -31,7 +31,13 @@ import { PRIMARY_PURPLE } from '../constants';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
 import type { ProfileFolderNode } from '../utils/profileFolderUtils';
-import type { CompletedEnvelopeDoc } from './EnvelopesListView';
+import type {
+  CompletedEnvelopeDoc,
+  EnvelopeTableRow,
+  EnvelopeStatus,
+  DocumentSigningStatus,
+} from './EnvelopesListView';
+import { deriveDisplayEnvelopeStatus, deriveDisplayDocumentStatus } from './EnvelopesListView';
 
 interface EmployeeProfileProps {
   employee: Employee;
@@ -147,6 +153,8 @@ interface DocumentsSectionProps {
    * from the Action required list since there's nothing left to sign.
    */
   voidedEnvelopeIds?: ReadonlySet<string>;
+  /** Canonical envelopes from the Documents hub — drives Action required status labels when `envelopeId` matches. */
+  packetRows?: EnvelopeTableRow[];
   /**
    * Signed documents from completed envelopes that Kale was a recipient
    * of. Surfaced at the root of the Documents tab as loose files,
@@ -258,6 +266,48 @@ function statusDotClassForLabel(label: string, fallback: string): string {
       return 'bg-slate-500';
     default:
       return fallback;
+  }
+}
+
+function normalizeDocNameForMatch(name: string): string {
+  return name.replace(/\.pdf$/i, '').trim().toLowerCase();
+}
+
+function envelopeStatusToProfileLabel(s: EnvelopeStatus): string {
+  switch (s) {
+    case 'yet to sign':
+      return 'Yet to sign';
+    case 'in progress':
+      return 'In progress';
+    case 'correcting':
+      return 'Correcting';
+    case 'completed':
+      return 'Completed';
+    case 'draft':
+      return 'Draft';
+    case 'voided':
+      return 'Voided';
+    default:
+      return s;
+  }
+}
+
+function documentStatusToProfileLabel(s: DocumentSigningStatus): string {
+  switch (s) {
+    case 'yet to sign':
+      return 'Yet to sign';
+    case 'in progress':
+      return 'In progress';
+    case 'correcting':
+      return 'Correcting';
+    case 'completed':
+      return 'Completed';
+    case 'draft':
+      return 'Draft';
+    case 'voided':
+      return 'Voided';
+    default:
+      return s;
   }
 }
 
@@ -689,6 +739,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   completedEnvelopeIds,
   completedEnvelopeDocs,
   voidedEnvelopeIds,
+  packetRows,
 }) => {
   const signedEnvelopeIds = kaleSignedEnvelopeIds ?? new Set<string>();
   const actionRequiredPackets = useMemo<ActionPacketRow[]>(
@@ -1086,15 +1137,24 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                   // even though no signatures remain pending from her.
                   if (pending.length === 0 && !signedByKale) return null;
                   const open = expandedPackets[packet.id] ?? false;
-                  // Action required reflects Kale's personal signing share,
-                  // not the envelope's multi-recipient state. Once she has
-                  // signed everything she needed to on this envelope, show
-                  // "Completed" on both the envelope row and any pending
-                  // document rows — even if other recipients are still
-                  // working through theirs.
-                  const promoteToInProgress = (label: string) =>
-                    signedByKale ? 'Completed' : label;
-                  const displayPacketStatus = promoteToInProgress(packet.status);
+                  const envelopeRow = packet.envelopeId
+                    ? packetRows?.find((r) => r.id === packet.envelopeId)
+                    : undefined;
+                  const displayPacketStatus = envelopeRow
+                    ? envelopeStatusToProfileLabel(deriveDisplayEnvelopeStatus(envelopeRow))
+                    : packet.status;
+                  const rowLastModified = envelopeRow?.lastModified ?? packet.lastModified;
+                  const resolveChildStatus = (child: ActionChildRow): string => {
+                    if (!envelopeRow?.children?.length) return child.status;
+                    const key = normalizeDocNameForMatch(child.name);
+                    const docRow = envelopeRow.children.find(
+                      (c) => normalizeDocNameForMatch(c.name) === key,
+                    );
+                    if (!docRow) return child.status;
+                    return documentStatusToProfileLabel(
+                      deriveDisplayDocumentStatus(envelopeRow, docRow),
+                    );
+                  };
                   return (
                     <React.Fragment key={packet.id}>
                       <tr className="border-b border-slate-100 bg-white hover:bg-slate-50/60 transition-colors">
@@ -1134,7 +1194,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                           </div>
                         </td>
                         <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
-                          {formatProfileTs(packet.lastModified)}
+                          {formatProfileTs(rowLastModified)}
                         </td>
                         <td className="px-4 py-4 align-middle text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-2 flex-nowrap">
@@ -1169,7 +1229,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                       </tr>
                       {open &&
                         pending.map((child) => {
-                          const displayChildStatus = promoteToInProgress(child.status);
+                          const displayChildStatus = resolveChildStatus(child);
                           return (
                           <tr key={child.id} className="border-b border-slate-100 bg-slate-50/50 hover:bg-slate-50/90">
                             <td className="px-6 py-4 pl-14 align-middle">
@@ -1187,7 +1247,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                               </div>
                             </td>
                             <td className="px-4 py-4 text-slate-500 font-medium tabular-nums align-middle">
-                              {formatProfileTs(packet.lastModified)}
+                              {formatProfileTs(rowLastModified)}
                             </td>
                             <td className="px-4 py-4 align-middle text-right whitespace-nowrap">
                               <div className="flex items-center justify-end gap-1">

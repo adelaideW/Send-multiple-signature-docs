@@ -1144,6 +1144,7 @@ const App: React.FC = () => {
                     completedEnvelopeIds={completedEnvelopeIds}
                     voidedEnvelopeIds={voidedEnvelopeIds}
                     completedEnvelopeDocs={completedEnvelopeDocsForKale}
+                    packetRows={packetRows}
                   />
                 </div>
               </>
