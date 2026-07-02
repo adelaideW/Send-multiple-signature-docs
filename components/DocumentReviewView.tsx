@@ -47,6 +47,8 @@ export interface DocumentReviewFlow {
    * (e.g. hiding "Action required" entries on a person's profile).
    */
   signerUserId?: string;
+  /** True when signing was launched from Kale's employee profile Action required tab. */
+  returnToProfile?: boolean;
 }
 
 interface DocumentReviewViewProps {

@@ -1,4 +1,25 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useTemplateEditorV35Insert } from './useTemplateEditorV35Insert';
+import {
+  CHIP_ATTR,
+  CHIP_CLASS,
+  applyChipTone,
+  createRecipientFieldChipElement,
+  insertElementAtCaret,
+  captureEditorCaretRange,
+} from '../utils/templateRecipientChips';
+import { pruneUnusedRecipients, getRecipientIdsUsedInEditor } from '../utils/templateRecipientCleanup';
+import { EDITOR_DIRECTORY_USERS, isEditorInternalRecipientId } from '../utils/editorDirectoryUsers';
+import type { EditorRecipientEntry } from '../utils/templateRecipientVariableCatalog';
+import {
+  DEFAULT_EDITOR_RECIPIENTS,
+  embedRecipientRegistryInHtml,
+  resolveRecipientsForEditorHtml,
+  stripRecipientRegistryFromHtml,
+} from '../utils/templateRecipientPersistence';
+import type { RecipientTone } from './insertVariable/recipientFieldsData';
+import type { VariableItem } from './VariableDropdown';
 import {
   X,
   ChevronDown,
@@ -44,7 +65,6 @@ import {
 const RECIPIENT_FIELD_MIME = 'application/x-recipient-field-label';
 /** Carried alongside the field label on palette drags so the dropped chip knows which recipient to color itself for. */
 const RECIPIENT_FIELD_RID_MIME = 'application/x-recipient-field-rid';
-const CHIP_ATTR = 'recipient-field';
 
 /**
  * Color/style descriptor for a single recipient placeholder. We render chip
@@ -84,19 +104,12 @@ const RECIPIENT_TONE_PALETTE: RecipientTone[] = [
 /** Default tone for chips loaded from `initialBodyHtml` without a `data-recipient-id`. */
 const DEFAULT_RECIPIENT_TONE = RECIPIENT_TONE_PALETTE[0];
 
-/** Match recipient-field chips in side panel; text inherits line formatting. Background + border come from per-recipient inline styles. */
-const CHIP_CLASS =
-  'inline-flex items-center align-baseline mx-0.5 px-2 py-0.5 rounded-md text-inherit font-inherit leading-inherit border cursor-grab active:cursor-grabbing select-none';
-
-const MOCK_EMPLOYEES = [
-  { id: '1', name: 'Angel Hunter', dept: 'Engineering', avatar: 'https://i.pravatar.cc/40?u=angel-hunter' },
-  { id: '2', name: 'Angie Adams', dept: 'Marketing', avatar: 'https://i.pravatar.cc/40?u=angie-adams' },
-  { id: '3', name: 'Anna Taylor', dept: 'Accounting', avatar: 'https://i.pravatar.cc/40?u=anna-taylor' },
-  { id: '4', name: 'Anne Montgomery', dept: 'CEO', avatar: 'https://i.pravatar.cc/40?u=anne-montgomery' },
-  { id: '5', name: 'James Chen', dept: 'Design', avatar: 'https://i.pravatar.cc/40?u=james-chen' },
-  { id: '6', name: 'Maria Santos', dept: 'People Operations', avatar: 'https://i.pravatar.cc/40?u=maria-santos' },
-  { id: 'u-kale', name: 'Kale George', dept: 'People Operations', avatar: 'https://i.pravatar.cc/40?u=kale-george' },
-] as const;
+const MOCK_EMPLOYEES = EDITOR_DIRECTORY_USERS.map((u) => ({
+  id: u.id,
+  name: u.name,
+  dept: u.dept,
+  avatar: u.avatar,
+}));
 
 interface TemplateEditorProps {
   onExit: () => void;
@@ -112,35 +125,12 @@ interface TemplateEditorProps {
   initialBodyHtml?: string | null;
 }
 
-/**
- * Apply chip background/border to a node from its currently-stamped recipient
- * id. Kept as a top-level helper so it can be called both at creation time
- * and by `wireChipDragHandlers` when chips are reloaded from saved HTML.
- */
-function applyChipTone(chip: HTMLElement, tone: RecipientTone) {
-  chip.style.backgroundColor = tone.bg;
-  chip.style.borderColor = tone.border;
-}
-
-function createChipElement(label: string, recipientId: string, tone: RecipientTone): HTMLSpanElement {
-  const span = document.createElement('span');
-  span.setAttribute('data-chip', CHIP_ATTR);
-  span.setAttribute('data-label', label);
-  span.setAttribute('data-recipient-id', recipientId);
-  span.setAttribute('draggable', 'true');
-  span.setAttribute('tabindex', '0');
-  span.contentEditable = 'false';
-  span.className = CHIP_CLASS;
-  span.textContent = label;
-  applyChipTone(span, tone);
-  return span;
-}
-
 function editorHasMeaningfulContent(root: HTMLElement): boolean {
   const titleP = root.querySelector('p[data-title-line]');
   const titleText = (titleP?.textContent || '').replace(/\u00a0/g, ' ').trim();
   if (titleText.length > 0) return true;
   if (root.querySelectorAll(`span[data-chip="${CHIP_ATTR}"]`).length > 0) return true;
+  if (root.querySelectorAll('.variable-chip').length > 0) return true;
   for (const child of Array.from(root.children)) {
     if (child === titleP) continue;
     if ((child.textContent || '').replace(/\u00a0/g, ' ').trim().length > 0) return true;
@@ -183,10 +173,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     paletteIndex: number;
     kind: RecipientKind;
   };
-  const [recipients, setRecipients] = useState<RecipientEntry[]>([
-    { id: 'employee', label: 'Employee', sublabel: 'Placeholder recipient', paletteIndex: 0, kind: 'placeholder' },
-    { id: 'manager', label: "Employee's manager", sublabel: 'Placeholder recipient', paletteIndex: 1, kind: 'placeholder' },
-  ]);
+  const [recipients, setRecipients] = useState<RecipientEntry[]>(DEFAULT_EDITOR_RECIPIENTS);
   const [activeRecipientId, setActiveRecipientId] = useState<string>('employee');
   /** 'fields' shows the field palette tiles, 'recipients' shows the recipient list with delete/rename. */
   const [sidePanelView, setSidePanelView] = useState<'fields' | 'recipients'>('fields');
@@ -194,7 +181,16 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const [placeholderModalOpen, setPlaceholderModalOpen] = useState(false);
   const [placeholderLabel, setPlaceholderLabel] = useState('');
   const [editingRecipientId, setEditingRecipientId] = useState<string | null>(null);
+  /** When true, modal was opened from Custom recipient field insert (employee search or placeholder). */
+  const [customRecipientModalMode, setCustomRecipientModalMode] = useState(false);
+  const [modalRecipientKind, setModalRecipientKind] = useState<'employee' | 'placeholder'>('employee');
+  const [modalEmployeeSearch, setModalEmployeeSearch] = useState('');
+  const [modalSelectedEmployeeId, setModalSelectedEmployeeId] = useState<string | null>(null);
+  const [modalEmployeeListOpen, setModalEmployeeListOpen] = useState(false);
+  const [modalEmployeeListPos, setModalEmployeeListPos] = useState({ top: 0, left: 0, width: 0 });
+  const modalEmployeeSearchRef = useRef<HTMLDivElement>(null);
   const [contentCheck, setContentCheck] = useState(0);
+  const [insertVariableTrigger, setInsertVariableTrigger] = useState(0);
   const [unsavedExitModalOpen, setUnsavedExitModalOpen] = useState(false);
   // Edit-mode header Save splits into two destinations behind a
   // dropdown: "Save to instance" (one-off custom template attached to
@@ -207,6 +203,12 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const syncingTitleFromBar = useRef(false);
   const employeeMenuRef = useRef<HTMLDivElement>(null);
   const saveMenuRef = useRef<HTMLDivElement>(null);
+  /** When set, saving the placeholder modal also inserts this recipient field chip. */
+  const pendingCustomFieldRef = useRef<{
+    fieldLabel: string;
+    breakoutText: Text | null;
+    savedRange: Range | null;
+  } | null>(null);
 
   const focusEditor = () => {
     editorRef.current?.focus();
@@ -270,13 +272,29 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
    * Employee tone so they stay visible and consistent with prior renders.
    */
   const toneForRecipientId = useCallback(
-    (rid: string | null | undefined): RecipientTone => {
+    (rid: string | null | undefined, recipientList: RecipientEntry[] = recipients): RecipientTone => {
       if (!rid) return DEFAULT_RECIPIENT_TONE;
-      const entry = recipients.find((r) => r.id === rid);
+      const entry = recipientList.find((r) => r.id === rid);
       if (!entry) return DEFAULT_RECIPIENT_TONE;
       return RECIPIENT_TONE_PALETTE[entry.paletteIndex % RECIPIENT_TONE_PALETTE.length];
     },
-    [recipients]
+    [recipients],
+  );
+
+  const createChipElement = useCallback(
+    (
+      label: string,
+      recipientId: string,
+      tone: RecipientTone,
+      recipientList: RecipientEntry[] = recipients,
+    ) => {
+      const entry = recipientList.find((r) => r.id === recipientId);
+      return createRecipientFieldChipElement(label, recipientId, tone, {
+        paletteIndex: entry?.paletteIndex,
+        recipientLabel: entry?.id.startsWith('ext-') ? entry.label : undefined,
+      });
+    },
+    [recipients],
   );
 
   const activeRecipient = useMemo(
@@ -285,30 +303,114 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   );
   const activeTone = toneForRecipientId(activeRecipient?.id);
 
-  const wireChipDragHandlers = useCallback((root: HTMLElement) => {
-    root.querySelectorAll(`span[data-chip="${CHIP_ATTR}"]`).forEach((el) => {
-      const chip = el as HTMLElement;
-      chip.setAttribute('draggable', 'true');
-      chip.className = CHIP_CLASS;
-      // Backfill recipient id + repaint background so chips that came in
-      // from saved HTML pick up their per-recipient tone (and stay current
-      // if the user later adds or removes external recipients).
-      const rid = chip.getAttribute('data-recipient-id') ?? '';
-      if (!rid) chip.setAttribute('data-recipient-id', 'employee');
-      applyChipTone(chip, toneForRecipientId(chip.getAttribute('data-recipient-id')));
-      chip.ondragstart = (e: DragEvent) => {
-        chipMoveRef.current = chip;
-        e.dataTransfer!.effectAllowed = 'move';
-        e.dataTransfer!.setData('text/plain', 'chip-move');
-      };
-      chip.onkeydown = (ev: KeyboardEvent) => {
-        if (ev.key === 'Backspace' || ev.key === 'Delete') {
-          ev.preventDefault();
-          chip.remove();
+  const variableMenuRecipients = useMemo((): EditorRecipientEntry[] => {
+    const byId = new Map<string, EditorRecipientEntry>();
+    for (const r of recipients) {
+      byId.set(r.id, { id: r.id, label: r.label, kind: r.kind });
+    }
+    const ed = editorRef.current;
+    if (ed) {
+      for (const id of getRecipientIdsUsedInEditor(ed)) {
+        if (!isEditorInternalRecipientId(id) || byId.has(id)) continue;
+        const user = EDITOR_DIRECTORY_USERS.find((u) => u.id === id);
+        if (user) byId.set(id, { id: user.id, label: user.name, kind: 'internal' });
+      }
+    }
+    return Array.from(byId.values());
+  }, [recipients, contentCheck]);
+
+  const wireChipDragHandlers = useCallback(
+    (root: HTMLElement, recipientSnapshot?: RecipientEntry[]) => {
+      const list = recipientSnapshot ?? recipients;
+      root.querySelectorAll(`span[data-chip="${CHIP_ATTR}"]`).forEach((el) => {
+        const chip = el as HTMLElement;
+        chip.setAttribute('draggable', 'true');
+        chip.className = CHIP_CLASS;
+        const rid = chip.getAttribute('data-recipient-id') ?? '';
+        if (!rid) chip.setAttribute('data-recipient-id', 'employee');
+        const resolvedRid = chip.getAttribute('data-recipient-id') ?? 'employee';
+        applyChipTone(chip, toneForRecipientId(resolvedRid, list));
+        const entry = list.find((r) => r.id === resolvedRid);
+        if (entry) {
+          chip.setAttribute('data-palette-index', String(entry.paletteIndex));
+          if (entry.id.startsWith('ext-')) {
+            chip.setAttribute('data-recipient-label', entry.label);
+          }
         }
+        chip.ondragstart = (e: DragEvent) => {
+          chipMoveRef.current = chip;
+          e.dataTransfer!.effectAllowed = 'move';
+          e.dataTransfer!.setData('text/plain', 'chip-move');
+        };
+        chip.onkeydown = (ev: KeyboardEvent) => {
+          if (ev.key === 'Backspace' || ev.key === 'Delete') {
+            ev.preventDefault();
+            chip.remove();
+          }
+        };
+      });
+    },
+    [recipients, toneForRecipientId],
+  );
+
+  const v35Insert = useTemplateEditorV35Insert({
+    editorRef,
+    enabled: useRichCanvas,
+    insertTrigger: insertVariableTrigger,
+    employees: MOCK_EMPLOYEES,
+    recipients: variableMenuRecipients,
+    activeRecipientId,
+    toneForRecipientId,
+    onContentChange: () => setContentCheck((c) => c + 1),
+    onSelectPlaceholderRecipient: (recipientId) => {
+      setActiveRecipientId(recipientId);
+      if (!isEditorInternalRecipientId(recipientId)) return;
+      const user = EDITOR_DIRECTORY_USERS.find((u) => u.id === recipientId);
+      if (!user) return;
+      setRecipients((prev) => {
+        if (prev.some((r) => r.id === recipientId)) return prev;
+        const nextIndex = Math.max(-1, ...prev.map((r) => r.paletteIndex)) + 1;
+        return [
+          ...prev,
+          {
+            id: user.id,
+            label: user.name,
+            sublabel: user.dept,
+            paletteIndex: nextIndex,
+            kind: 'internal' as const,
+          },
+        ];
+      });
+    },
+    onRecipientFieldInserted: () => {
+      const ed = editorRef.current;
+      if (ed) wireChipDragHandlers(ed);
+    },
+    onDeferCustomFieldInsert: (item, breakoutText) => {
+      const ed = editorRef.current;
+      const savedRange =
+        breakoutText?.parentNode && ed?.contains(breakoutText)
+          ? null
+          : ed
+            ? captureEditorCaretRange(ed)
+            : null;
+      pendingCustomFieldRef.current = {
+        fieldLabel: item.insertLabel ?? item.label,
+        breakoutText,
+        savedRange,
       };
-    });
-  }, [toneForRecipientId]);
+      setPlaceholderLabel('');
+      setEditingRecipientId(null);
+      setCustomRecipientModalMode(true);
+      setModalRecipientKind('employee');
+      setModalEmployeeSearch('');
+      setModalSelectedEmployeeId(null);
+      setModalEmployeeListOpen(false);
+      setPlaceholderModalOpen(true);
+      setRecipientPanelOpen(true);
+      setSidePanelView('fields');
+    },
+  });
 
   useEffect(() => {
     if (initialTitle != null) setTemplateName(initialTitle.trim());
@@ -321,15 +423,24 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
   useEffect(() => {
     if (!useRichCanvas || !editorRef.current) return;
     const ed = editorRef.current;
+    let restoredRecipients: RecipientEntry[] = DEFAULT_EDITOR_RECIPIENTS;
+
     if (initialBodyHtml) {
-      if (initialBodyHtml.includes('data-title-line')) {
-        ed.innerHTML = initialBodyHtml;
+      const { displayHtml, recipients: resolvedRecipients } = resolveRecipientsForEditorHtml(
+        initialBodyHtml,
+        RECIPIENT_TONE_PALETTE,
+      );
+      restoredRecipients = resolvedRecipients;
+      setRecipients(resolvedRecipients);
+
+      if (displayHtml.includes('data-title-line')) {
+        ed.innerHTML = displayHtml;
       } else {
         const safe = (initialTitle ?? '')
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;');
-        ed.innerHTML = `<p data-title-line>${safe || '<br>'}</p>${initialBodyHtml}`;
+        ed.innerHTML = `<p data-title-line>${safe || '<br>'}</p>${displayHtml}`;
       }
     } else if (isCreate) {
       ed.innerHTML = '<p data-title-line><br></p>';
@@ -338,9 +449,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     const titleText = ed.querySelector('p[data-title-line]')?.textContent?.trim() ?? '';
     if (titleText) setTemplateName(titleText);
     else if (initialTitle?.trim()) setTemplateName(initialTitle.trim());
-    wireChipDragHandlers(ed);
+    wireChipDragHandlers(ed, restoredRecipients);
     setContentCheck((c) => c + 1);
-  }, [initialBodyHtml, initialTitle, isCreate, useRichCanvas]);
+  }, [initialBodyHtml, initialTitle, isCreate, useRichCanvas, wireChipDragHandlers]);
 
   /** Re-stamp chip drag handlers when tone mapping changes — without re-hydrating the editor HTML. */
   useEffect(() => {
@@ -478,36 +589,40 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     [activeRecipientId, toneForRecipientId, wireChipDragHandlers]
   );
 
-  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'Backspace' && e.key !== 'Delete') return;
-    const sel = window.getSelection();
-    if (!sel || !sel.isCollapsed) return;
-    const { anchorNode, anchorOffset } = sel;
-    if (!anchorNode || !editorRef.current?.contains(anchorNode)) return;
-
-    if (anchorNode.nodeType === Node.TEXT_NODE && anchorOffset === 0 && e.key === 'Backspace') {
-      const prev = anchorNode.previousSibling;
-      if (prev instanceof HTMLElement && prev.dataset.chip === CHIP_ATTR) {
-        e.preventDefault();
-        prev.remove();
-        setContentCheck((c) => c + 1);
-      }
-    }
-    if (anchorNode.nodeType === Node.ELEMENT_NODE) {
-      const el = anchorNode as HTMLElement;
-      const child = el.childNodes[anchorOffset - 1];
-      if (e.key === 'Backspace' && child instanceof HTMLElement && child.dataset.chip === CHIP_ATTR) {
-        e.preventDefault();
-        child.remove();
-        setContentCheck((c) => c + 1);
-      }
-    }
-  };
-
   const startPaletteDrag = (label: string) => (e: React.DragEvent) => {
     e.dataTransfer.setData(RECIPIENT_FIELD_MIME, label);
     e.dataTransfer.setData(RECIPIENT_FIELD_RID_MIME, activeRecipientId);
     e.dataTransfer.effectAllowed = 'copy';
+  };
+
+  const closePlaceholderModal = () => {
+    setPlaceholderModalOpen(false);
+    setEditingRecipientId(null);
+    setPlaceholderLabel('');
+    setCustomRecipientModalMode(false);
+    setModalRecipientKind('employee');
+    setModalEmployeeSearch('');
+    setModalSelectedEmployeeId(null);
+    setModalEmployeeListOpen(false);
+    pendingCustomFieldRef.current = null;
+  };
+
+  const insertPendingFieldForRecipient = (recipientId: string, tone: RecipientTone) => {
+    const pendingField = pendingCustomFieldRef.current;
+    if (!pendingField) return;
+    const ed = editorRef.current;
+    if (!ed) return;
+    const chip = createChipElement(pendingField.fieldLabel, recipientId, tone);
+    insertElementAtCaret(
+      ed,
+      chip,
+      pendingField.breakoutText,
+      () => {
+        wireChipDragHandlers(ed);
+        setContentCheck((c) => c + 1);
+      },
+      pendingField.savedRange,
+    );
   };
 
   /**
@@ -516,35 +631,82 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
    * stable so colors and chip ownership stay intact). Otherwise it
    * appends a fresh placeholder and makes it active so the next field
    * the user drops picks up its color.
+   *
+   * When opened from a Custom recipient field in the `/` menu, also inserts
+   * the pending field chip for the new placeholder.
    */
   const handleSavePlaceholderRecipient = () => {
     const label = placeholderLabel.trim();
-    if (!label) return;
+    const pendingField = pendingCustomFieldRef.current;
+
     if (editingRecipientId) {
+      if (!label) return;
       setRecipients((prev) =>
         prev.map((r) => (r.id === editingRecipientId ? { ...r, label } : r))
       );
-    } else {
-      setRecipients((prev) => {
-        const id = `ext-${Date.now().toString(36)}`;
-        // Use the next palette slot based on how many recipients have ever
-        // been created, picking from the highest existing paletteIndex so
-        // deletions don't recycle the same color for back-to-back adds.
-        const nextIndex = Math.max(-1, ...prev.map((r) => r.paletteIndex)) + 1;
-        const entry: RecipientEntry = {
-          id,
-          label,
-          sublabel: 'Placeholder recipient',
-          paletteIndex: nextIndex,
-          kind: 'placeholder',
-        };
-        setActiveRecipientId(id);
-        return [...prev, entry];
-      });
+      closePlaceholderModal();
+      setEmployeeMenuOpen(false);
+      setEmployeeSearch('');
+      return;
     }
-    setPlaceholderLabel('');
-    setEditingRecipientId(null);
-    setPlaceholderModalOpen(false);
+
+    if (customRecipientModalMode && modalRecipientKind === 'employee') {
+      const emp = MOCK_EMPLOYEES.find((e) => e.id === modalSelectedEmployeeId);
+      if (!emp) return;
+
+      const existing = recipients.find((r) => r.id === emp.id);
+      let tone: RecipientTone;
+      if (existing) {
+        tone = RECIPIENT_TONE_PALETTE[existing.paletteIndex % RECIPIENT_TONE_PALETTE.length];
+        setActiveRecipientId(existing.id);
+      } else {
+        const nextIndex = Math.max(-1, ...recipients.map((r) => r.paletteIndex)) + 1;
+        tone = RECIPIENT_TONE_PALETTE[nextIndex % RECIPIENT_TONE_PALETTE.length];
+        setRecipients((prev) => [
+          ...prev,
+          {
+            id: emp.id,
+            label: emp.name,
+            sublabel: emp.dept,
+            paletteIndex: nextIndex,
+            kind: 'internal' as const,
+          },
+        ]);
+        setActiveRecipientId(emp.id);
+      }
+
+      setRecipientPanelOpen(true);
+      setSidePanelView('fields');
+      insertPendingFieldForRecipient(emp.id, tone);
+      closePlaceholderModal();
+      setEmployeeMenuOpen(false);
+      setEmployeeSearch('');
+      return;
+    }
+
+    if (!label) return;
+
+    const id = `ext-${Date.now().toString(36)}`;
+    const nextIndex = Math.max(-1, ...recipients.map((r) => r.paletteIndex)) + 1;
+    const entry: RecipientEntry = {
+      id,
+      label,
+      sublabel: 'Placeholder recipient',
+      paletteIndex: nextIndex,
+      kind: 'placeholder',
+    };
+    const tone = RECIPIENT_TONE_PALETTE[nextIndex % RECIPIENT_TONE_PALETTE.length];
+
+    setRecipients((prev) => [...prev, entry]);
+    setActiveRecipientId(id);
+    setRecipientPanelOpen(true);
+    setSidePanelView('fields');
+
+    if (pendingField) {
+      insertPendingFieldForRecipient(id, tone);
+    }
+
+    closePlaceholderModal();
     setEmployeeMenuOpen(false);
     setEmployeeSearch('');
   };
@@ -608,6 +770,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     if (!target) return;
     setEditingRecipientId(id);
     setPlaceholderLabel(target.label);
+    setCustomRecipientModalMode(false);
     setPlaceholderModalOpen(true);
   };
 
@@ -619,7 +782,36 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       setTemplateName(readTitleFromEditor());
     }
     wireChipDragHandlers(ed);
+    v35Insert.onEditorInput();
     setContentCheck((c) => c + 1);
+  };
+
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (v35Insert.onEditorKeyDown(e)) return;
+
+    if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+    const sel = window.getSelection();
+    if (!sel || !sel.isCollapsed) return;
+    const { anchorNode, anchorOffset } = sel;
+    if (!anchorNode || !editorRef.current?.contains(anchorNode)) return;
+
+    if (anchorNode.nodeType === Node.TEXT_NODE && anchorOffset === 0 && e.key === 'Backspace') {
+      const prev = anchorNode.previousSibling;
+      if (prev instanceof HTMLElement && prev.dataset.chip === CHIP_ATTR) {
+        e.preventDefault();
+        prev.remove();
+        setContentCheck((c) => c + 1);
+      }
+    }
+    if (anchorNode.nodeType === Node.ELEMENT_NODE) {
+      const el = anchorNode as HTMLElement;
+      const child = el.childNodes[anchorOffset - 1];
+      if (e.key === 'Backspace' && child instanceof HTMLElement && child.dataset.chip === CHIP_ATTR) {
+        e.preventDefault();
+        child.remove();
+        setContentCheck((c) => c + 1);
+      }
+    }
   };
 
   const canSave = useMemo(() => {
@@ -643,7 +835,24 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         if (!el || !editorHasMeaningfulContent(el)) return;
       }
       const name = templateName.trim() || readTitleFromEditor().trim() || 'Untitled template';
-      const body = useRichCanvas && editorRef.current ? editorRef.current.innerHTML : '';
+      const ed = editorRef.current;
+      let recipientsForSave = recipients;
+      if (useRichCanvas && ed) {
+        recipientsForSave = pruneUnusedRecipients(recipients, ed);
+        if (recipientsForSave.length !== recipients.length) {
+          setRecipients(recipientsForSave);
+          if (!recipientsForSave.some((r) => r.id === activeRecipientId)) {
+            setActiveRecipientId(recipientsForSave[0]?.id ?? 'employee');
+          }
+        }
+      }
+      const body =
+        useRichCanvas && ed
+          ? embedRecipientRegistryInHtml(
+              stripRecipientRegistryFromHtml(ed.innerHTML),
+              recipientsForSave,
+            )
+          : '';
       const resolved = target === 'auto' ? (isCreate ? 'new' : 'update') : target;
       if (resolved === 'new' && onSaveNewTemplate) {
         onSaveNewTemplate(name, body);
@@ -657,7 +866,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         onExit();
       }
     },
-    [useRichCanvas, templateName, isCreate, onSaveNewTemplate, onUpdateTemplate, onExit]
+    [useRichCanvas, templateName, isCreate, onSaveNewTemplate, onUpdateTemplate, onExit, recipients, activeRecipientId]
   );
 
   const requestEditorExit = useCallback(() => {
@@ -681,6 +890,56 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
       )
     : [];
   const primaryMatchId = filteredEmployees[0]?.id ?? null;
+
+  const modalEmployeeQuery = modalEmployeeSearch.trim().toLowerCase();
+  const modalFilteredEmployees = modalEmployeeQuery
+    ? MOCK_EMPLOYEES.filter(
+        (e) =>
+          e.name.toLowerCase().includes(modalEmployeeQuery) ||
+          e.dept.toLowerCase().includes(modalEmployeeQuery),
+      )
+    : [...MOCK_EMPLOYEES];
+
+  const updateModalEmployeeListPosition = useCallback(() => {
+    const anchor = modalEmployeeSearchRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    setModalEmployeeListPos({
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!modalEmployeeListOpen || modalRecipientKind !== 'employee') return;
+    updateModalEmployeeListPosition();
+    const onReposition = () => updateModalEmployeeListPosition();
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+    return () => {
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [modalEmployeeListOpen, modalRecipientKind, modalEmployeeSearch, updateModalEmployeeListPosition]);
+
+  const modalSelectedEmployee = modalSelectedEmployeeId
+    ? MOCK_EMPLOYEES.find((e) => e.id === modalSelectedEmployeeId)
+    : null;
+
+  const canSavePlaceholderModal = useMemo(() => {
+    if (editingRecipientId) return placeholderLabel.trim().length > 0;
+    if (customRecipientModalMode && modalRecipientKind === 'employee') {
+      return modalSelectedEmployeeId !== null;
+    }
+    return placeholderLabel.trim().length > 0;
+  }, [
+    editingRecipientId,
+    placeholderLabel,
+    customRecipientModalMode,
+    modalRecipientKind,
+    modalSelectedEmployeeId,
+  ]);
 
   return (
     <div className="flex flex-col h-screen bg-white text-[#1e293b] font-sans overflow-hidden">
@@ -1048,7 +1307,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
             </button>
             <button
               type="button"
-              onClick={focusEditor}
+              onClick={() => {
+                focusEditor();
+                setInsertVariableTrigger((n) => n + 1);
+              }}
               className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[12px] font-bold text-slate-700 hover:bg-slate-50 shadow-sm shrink-0"
             >
               <Zap size={14} className="fill-slate-700 text-slate-700" />
@@ -1070,6 +1332,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   contentEditable
                   suppressContentEditableWarning
                   onInput={syncChipsAfterInput}
+                  onClick={v35Insert.onEditorClick}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleEditorDrop}
                   onKeyDown={handleEditorKeyDown}
@@ -1185,6 +1448,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                           onClick={() => {
                             setEditingRecipientId(null);
                             setPlaceholderLabel('');
+                            setCustomRecipientModalMode(false);
                             setPlaceholderModalOpen(true);
                           }}
                         >
@@ -1224,6 +1488,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
                           onClick={() => {
                             setEditingRecipientId(null);
                             setPlaceholderLabel(employeeSearch.trim());
+                            setCustomRecipientModalMode(false);
                             setPlaceholderModalOpen(true);
                           }}
                         >
@@ -1449,13 +1714,12 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
         </div>
       )}
 
+      {v35Insert.overlays}
+
       {placeholderModalOpen && (
         <div
           className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4"
-          onClick={() => {
-            setPlaceholderModalOpen(false);
-            setEditingRecipientId(null);
-          }}
+          onClick={() => closePlaceholderModal()}
           role="presentation"
         >
           <div
@@ -1467,51 +1731,140 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           >
             <div className="flex justify-between items-start gap-3 mb-3">
               <h2 id="add-placeholder-title" className="text-lg font-bold text-slate-900 pr-2">
-                {editingRecipientId ? 'Rename placeholder recipient' : 'Add placeholder recipient'}
+                {editingRecipientId
+                  ? 'Rename placeholder recipient'
+                  : customRecipientModalMode
+                    ? 'Add recipient'
+                    : 'Add placeholder recipient'}
               </h2>
               <button
                 type="button"
                 className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0"
-                onClick={() => {
-                  setPlaceholderModalOpen(false);
-                  setEditingRecipientId(null);
-                }}
+                onClick={() => closePlaceholderModal()}
                 aria-label="Close"
               >
                 <X size={20} />
               </button>
             </div>
             <p className="text-sm text-slate-700 leading-relaxed mb-5">
-              Use a placeholder for people with a relationship to the employee a document is sent to.
-              Each recipient&apos;s name and email address will be collected when the document is sent.
+              {editingRecipientId ? (
+                <>Update the label shown for this placeholder recipient in the document.</>
+              ) : customRecipientModalMode && modalRecipientKind === 'employee' ? (
+                <>Search for someone in your organization to assign this recipient field.</>
+              ) : (
+                <>
+                  Use a placeholder for people with a relationship to the employee a document is sent to.
+                  Each recipient&apos;s name and email address will be collected when the document is sent.
+                </>
+              )}
             </p>
-            <div className="mb-6">
-              <label htmlFor="placeholder-label-input" className="block text-sm font-bold text-slate-900 mb-1.5">
-                Placeholder label<span className="text-red-500">*</span>
-              </label>
-              <input
-                id="placeholder-label-input"
-                type="text"
-                value={placeholderLabel}
-                onChange={(e) => setPlaceholderLabel(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && placeholderLabel.trim()) {
-                    e.preventDefault();
-                    handleSavePlaceholderRecipient();
-                  }
-                }}
-                placeholder="Placeholder label"
-                autoFocus
-                className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-500"
-              />
-            </div>
+
+            {customRecipientModalMode && !editingRecipientId ? (
+              <>
+                <div className="mb-5">
+                  <label htmlFor="modal-recipient-kind" className="block text-sm font-bold text-slate-900 mb-1.5">
+                    Recipient type
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="modal-recipient-kind"
+                      value={modalRecipientKind}
+                      onChange={(e) => {
+                        const kind = e.target.value as 'employee' | 'placeholder';
+                        setModalRecipientKind(kind);
+                        setModalSelectedEmployeeId(null);
+                        setPlaceholderLabel('');
+                        setModalEmployeeListOpen(false);
+                      }}
+                      className="w-full appearance-none border border-slate-300 rounded-xl px-3 py-2.5 pr-10 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-500 bg-white"
+                    >
+                      <option value="employee">Employee</option>
+                      <option value="placeholder">Placeholder recipient</option>
+                    </select>
+                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                {modalRecipientKind === 'employee' ? (
+                  <div className="mb-6">
+                    <label htmlFor="modal-employee-search" className="block text-sm font-bold text-slate-900 mb-1.5">
+                      Search employees<span className="text-red-500">*</span>
+                    </label>
+                    <div ref={modalEmployeeSearchRef} className="relative">
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      <input
+                        id="modal-employee-search"
+                        type="text"
+                        value={modalEmployeeSearch}
+                        onChange={(e) => {
+                          setModalEmployeeSearch(e.target.value);
+                          setModalEmployeeListOpen(true);
+                        }}
+                        onFocus={() => setModalEmployeeListOpen(true)}
+                        placeholder="Search by name or department"
+                        autoFocus
+                        className="w-full border border-slate-300 rounded-xl py-2.5 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-500"
+                      />
+                    </div>
+                    {modalSelectedEmployee ? (
+                      <p className="mt-2 text-sm text-slate-600">
+                        Selected:{' '}
+                        <span className="font-semibold text-slate-900">{modalSelectedEmployee.name}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mb-6">
+                    <label htmlFor="placeholder-label-input" className="block text-sm font-bold text-slate-900 mb-1.5">
+                      Placeholder label<span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="placeholder-label-input"
+                      type="text"
+                      value={placeholderLabel}
+                      onChange={(e) => setPlaceholderLabel(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && canSavePlaceholderModal) {
+                          e.preventDefault();
+                          handleSavePlaceholderRecipient();
+                        }
+                      }}
+                      placeholder="Placeholder label"
+                      autoFocus
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-500"
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="mb-6">
+                <label htmlFor="placeholder-label-input" className="block text-sm font-bold text-slate-900 mb-1.5">
+                  Placeholder label<span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="placeholder-label-input"
+                  type="text"
+                  value={placeholderLabel}
+                  onChange={(e) => setPlaceholderLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && canSavePlaceholderModal) {
+                      e.preventDefault();
+                      handleSavePlaceholderRecipient();
+                    }
+                  }}
+                  placeholder="Placeholder label"
+                  autoFocus
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-500"
+                />
+              </div>
+            )}
             <div className="flex items-center justify-end">
               <button
                 type="button"
-                disabled={!placeholderLabel.trim()}
+                disabled={!canSavePlaceholderModal}
                 onClick={handleSavePlaceholderRecipient}
                 className={`px-4 py-2.5 rounded-xl text-sm font-bold ${
-                  placeholderLabel.trim()
+                  canSavePlaceholderModal
                     ? 'bg-[#7A005D] text-white hover:opacity-95'
                     : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 }`}
@@ -1522,6 +1875,70 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
           </div>
         </div>
       )}
+
+      {placeholderModalOpen &&
+        modalEmployeeListOpen &&
+        modalRecipientKind === 'employee' &&
+        customRecipientModalMode &&
+        !editingRecipientId &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-[2100]"
+              aria-hidden
+              onMouseDown={() => setModalEmployeeListOpen(false)}
+            />
+            <div
+              className="fixed z-[2101] bg-white border border-slate-200 rounded-xl shadow-2xl max-h-52 overflow-y-auto"
+              style={{
+                top: modalEmployeeListPos.top,
+                left: modalEmployeeListPos.left,
+                width: modalEmployeeListPos.width,
+              }}
+              role="listbox"
+              aria-label="Employee search results"
+            >
+              {modalFilteredEmployees.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-slate-500 text-center">No matches</div>
+              ) : (
+                modalFilteredEmployees.map((emp) => {
+                  const selected = modalSelectedEmployeeId === emp.id;
+                  return (
+                    <button
+                      key={emp.id}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setModalSelectedEmployeeId(emp.id);
+                        setModalEmployeeSearch(emp.name);
+                        setModalEmployeeListOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                        selected ? 'bg-[#7A005D]/5' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <img
+                        src={emp.avatar}
+                        alt=""
+                        className="w-9 h-9 rounded-full object-cover shrink-0 bg-slate-100"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold text-slate-900 truncate">{emp.name}</div>
+                        <div className="text-xs text-slate-500 truncate">{emp.dept}</div>
+                      </div>
+                      {selected ? (
+                        <Check size={18} className="text-[#7A005D] shrink-0" strokeWidth={2.5} />
+                      ) : null}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 };

@@ -46,6 +46,13 @@
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
         background: #555;
       }
+      .variable-chip.chip-selected {
+        outline: 2px solid rgba(122, 0, 93, 0.35);
+        outline-offset: 1px;
+      }
+      .variable-chip.chip-selected[data-needs-recipient="true"] {
+        outline-color: rgba(217, 119, 6, 0.45);
+      }
     </style>
 </head>
 <body class="bg-[#F9FAFB] text-slate-900">

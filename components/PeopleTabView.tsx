@@ -87,6 +87,8 @@ interface PeopleTabViewProps {
   onMakeCorrectionEnvelope?: (packetId: string) => void;
   onSignDocumentPacket?: (packetId: string) => void;
   onResendEnvelope?: (packetId: string) => void;
+  /** Admin-only: mark every recipient + document + packet as completed. */
+  onMarkAllAsCompleted?: (packetId: string) => void;
   completedEnvelopeDocs?: CompletedEnvelopeDoc[];
   hubTab?: string;
   onHubTabChange?: (tab: string) => void;
@@ -112,6 +114,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
   onMakeCorrectionEnvelope,
   onSignDocumentPacket,
   onResendEnvelope,
+  onMarkAllAsCompleted,
   completedEnvelopeDocs,
   hubTab: hubTabProp,
   onHubTabChange,
@@ -374,6 +377,7 @@ const PeopleTabView: React.FC<PeopleTabViewProps> = ({
                 onMakeCorrection={onMakeCorrectionEnvelope}
                 onSignEnvelope={onSignDocumentPacket}
                 onResendEnvelope={onResendEnvelope}
+                onMarkAllAsCompleted={onMarkAllAsCompleted}
                 completedEnvelopeDocs={completedEnvelopeDocs}
               />
             </div>

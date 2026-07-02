@@ -1,6 +1,4 @@
-
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useEffect } from 'react';
 import {
   ChevronLeft,
   Search,
@@ -19,12 +17,14 @@ import {
 } from 'lucide-react';
 import type { EnvelopeStatus, DocumentSigningStatus, EnvelopeRecipientRow } from './EnvelopesListView';
 import {
-  EnvelopeMoreMenu,
   moreMenuVariantForEnvelope,
   signingRecipientsForProgress,
   normalizeRecipientRowForDisplay,
+  recipientIsAccountHolder,
 } from './EnvelopesListView';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
+import { EnvelopeMoreMenuPortal } from './EnvelopeMoreMenuPortal';
+import { buildEnvelopeMoreMenuActions, isEnvelopeCompleted } from '../utils/envelopeMoreMenuActions';
 import SendReminderModal from './SendReminderModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
 
@@ -140,6 +140,10 @@ interface EnvelopeDetailsViewProps {
   onMakeCorrection?: () => void;
   /** Fires when the user picks "Void" — owner flips the envelope + child docs to `voided`. */
   onVoid?: () => void;
+  /** Fires when the user picks "Mark all as completed" from the details More menu. */
+  onMarkAllAsCompleted?: (packetId: string) => void;
+  /** When true, admin-only items (e.g. Mark all as completed) appear in the ⋯ menu. */
+  isAdminView?: boolean;
 }
 
 const btnOutline =
@@ -165,6 +169,8 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
   onResend,
   onMakeCorrection,
   onVoid,
+  onMarkAllAsCompleted,
+  isAdminView = true,
 }) => {
   const badge = headerBadgeForStatus(packetStatus);
   const effectiveRecipients = recipients && recipients.length > 0 ? recipients : DEFAULT_RECIPIENTS;
@@ -206,12 +212,13 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
   const signersRequired = signingRecipientsForProgress(recipientsNormalized);
   const everySignerDone =
     signersRequired.length > 0 && signersRequired.every((r) => r.status === 'Completed');
-  const noMoreSigning = everyDocCompleted || everySignerDone;
+  const accountHolderDone = recipientsNormalized.some(
+    (r) => recipientIsAccountHolder(r) && r.status === 'Completed',
+  );
+  const noMoreSigning = everyDocCompleted || everySignerDone || accountHolderDone;
   const canSign = showSign && adminIsSigner && !noMoreSigning;
 
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const moreBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
   const [preview, setPreview] = useState<{ name: string } | null>(null);
   const [docSnack, setDocSnack] = useState<string | null>(null);
   const [bulkSnack, setBulkSnack] = useState<{ phase: 'loading' | 'done'; count: number } | null>(null);
@@ -225,6 +232,17 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
     }, 1200);
   };
 
+  const moreMenuActions = buildEnvelopeMoreMenuActions({
+    packetId: _packetId,
+    isAdmin: isAdminView,
+    packetCompleted: isEnvelopeCompleted(packetStatus),
+    onMarkAllAsCompleted,
+    onMakeCorrection: onMakeCorrection ? () => onMakeCorrection() : undefined,
+    onVoidEnvelope: onVoid ? () => onVoid() : undefined,
+    onDownload: runBulkDownload,
+    onSendReminder: () => setSendReminderOpen(true),
+  });
+
   useEffect(() => {
     if (!docSnack) return;
     const t = window.setTimeout(() => setDocSnack(null), SNACKBAR_AUTO_DISMISS_MS);
@@ -237,49 +255,18 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
     return () => clearTimeout(t);
   }, [bulkSnack]);
 
-  useLayoutEffect(() => {
-    if (!moreOpen) {
-      setMenuPos(null);
-      return;
-    }
-    const place = () => {
-      const btn = moreBtnRef.current;
-      if (!btn) return;
-      const r = btn.getBoundingClientRect();
-      const mw = 260;
-      const left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8));
-      setMenuPos({ top: r.bottom + 8, left });
-    };
-    place();
-    window.addEventListener('scroll', place, true);
-    window.addEventListener('resize', place);
-    return () => {
-      window.removeEventListener('scroll', place, true);
-      window.removeEventListener('resize', place);
-    };
-  }, [moreOpen]);
-
-  useEffect(() => {
-    if (!moreOpen) return;
-    const down = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (moreBtnRef.current?.contains(t)) return;
-      const root = document.getElementById('envelope-details-more-root');
-      if (root?.contains(t)) return;
-      setMoreOpen(false);
-    };
-    document.addEventListener('mousedown', down);
-    return () => document.removeEventListener('mousedown', down);
-  }, [moreOpen]);
+  const moreOpen = moreAnchor !== null;
 
   const moreBtn = (
     <button
-      ref={moreBtnRef}
       type="button"
       className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
       aria-label="More actions"
       aria-expanded={moreOpen}
-      onClick={() => setMoreOpen((v) => !v)}
+      onClick={(e) => {
+        const el = e.currentTarget;
+        setMoreAnchor((prev) => (prev === el ? null : el));
+      }}
     >
       <MoreVertical size={18} strokeWidth={2} />
     </button>
@@ -567,26 +554,14 @@ const EnvelopeDetailsView: React.FC<EnvelopeDetailsViewProps> = ({
         </div>
       </div>
 
-      {moreOpen &&
-        menuPos &&
-        createPortal(
-          <div
-            id="envelope-details-more-root"
-            className="fixed rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
-            style={{ top: menuPos.top, left: menuPos.left, zIndex: 2147483647 }}
-            role="presentation"
-          >
-            <EnvelopeMoreMenu
-              variant={moreMenuVariantForEnvelope(packetStatus)}
-              onClose={() => setMoreOpen(false)}
-              onDownload={runBulkDownload}
-              onSendReminder={() => setSendReminderOpen(true)}
-              onMakeCorrection={onMakeCorrection}
-              onVoid={onVoid}
-            />
-          </div>,
-          document.body
-        )}
+      <EnvelopeMoreMenuPortal
+        open={moreOpen}
+        onClose={() => setMoreAnchor(null)}
+        anchorEl={moreAnchor}
+        variant={moreMenuVariantForEnvelope(packetStatus)}
+        rootId="envelope-details-more-root"
+        actions={moreMenuActions}
+      />
 
       {preview && (
         <DocumentPreviewModal

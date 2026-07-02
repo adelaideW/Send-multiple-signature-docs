@@ -30,6 +30,9 @@ import { Employee } from '../types';
 import { PRIMARY_PURPLE } from '../constants';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
+import SendReminderModal from './SendReminderModal';
+import { EnvelopeMoreMenuPortal } from './EnvelopeMoreMenuPortal';
+import { buildEnvelopeMoreMenuActions, isEnvelopeCompleted, profilePacketMoreMenuVariant } from '../utils/envelopeMoreMenuActions';
 import type { ProfileFolderNode } from '../utils/profileFolderUtils';
 import type {
   CompletedEnvelopeDoc,
@@ -130,6 +133,10 @@ interface DocumentsSectionProps {
    * load the right docs into the review surface.
    */
   onReviewDocument?: (envelopeId: string) => void;
+  /** Marks every recipient/doc complete and switches to the profile Documents tab. */
+  onMarkAllAsCompleted?: (envelopeId: string) => void;
+  onMakeCorrectionEnvelope?: (envelopeId: string) => void;
+  onVoidEnvelope?: (envelopeId: string) => void;
   viewByDocuments: boolean;
   setViewByDocuments: (val: boolean) => void;
   profileFolderRoot?: ProfileFolderNode;
@@ -144,8 +151,8 @@ interface DocumentsSectionProps {
   kaleSignedEnvelopeIds?: ReadonlySet<string>;
   /**
    * Envelope ids whose status is "completed" (every recipient is done).
-   * Completed envelopes are dropped from the Action required list so the
-   * row doesn't linger after the work is finished.
+   * Completed envelopes move to the Documents tab; they no longer appear
+   * on Action required.
    */
   completedEnvelopeIds?: ReadonlySet<string>;
   /**
@@ -238,9 +245,11 @@ const ACTION_REQUIRED_PACKETS: ActionPacketRow[] = [
 const countPendingKaleSignatures = (
   packets: ActionPacketRow[],
   signedEnvelopeIds: ReadonlySet<string> = new Set(),
+  completedEnvelopeIds: ReadonlySet<string> = new Set(),
 ): number =>
   packets.reduce((n, p) => {
     if (p.envelopeId && signedEnvelopeIds.has(p.envelopeId)) return n;
+    if (p.envelopeId && completedEnvelopeIds.has(p.envelopeId)) return n;
     return n + p.children.filter((c) => c.needsKaleSignature).length;
   }, 0);
 
@@ -730,6 +739,9 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   onSend,
   onOpenEnvelope,
   onReviewDocument,
+  onMarkAllAsCompleted,
+  onMakeCorrectionEnvelope,
+  onVoidEnvelope,
   viewByDocuments,
   setViewByDocuments,
   profileFolderRoot,
@@ -742,20 +754,24 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
   packetRows,
 }) => {
   const signedEnvelopeIds = kaleSignedEnvelopeIds ?? new Set<string>();
+  const [actionMoreMenu, setActionMoreMenu] = useState<{
+    packetId: string;
+    anchor: HTMLElement;
+  } | null>(null);
+  const [profileSendReminderOpen, setProfileSendReminderOpen] = useState(false);
   const actionRequiredPackets = useMemo<ActionPacketRow[]>(
     () => {
       const merged = [...(extraActionRequiredPackets ?? []), ...ACTION_REQUIRED_PACKETS];
       // Newest envelope first, regardless of status. Ties keep original order
       // (in-session sent rows already arrive ahead of the seeded ones).
-      // Drop any envelope that's already fully completed — the work is
-      // done and the doc has moved to the Documents tab as a loose row.
-      // Also drop voided envelopes since there's nothing left to sign.
+      // Drop voided and completed envelopes — completed packets live on the
+      // Documents tab as loose signed files.
       const isCompleted = (envelopeId?: string) =>
         !!envelopeId && !!completedEnvelopeIds && completedEnvelopeIds.has(envelopeId);
       const isVoided = (envelopeId?: string) =>
         !!envelopeId && !!voidedEnvelopeIds && voidedEnvelopeIds.has(envelopeId);
       return merged
-        .filter((p) => !isCompleted(p.envelopeId) && !isVoided(p.envelopeId))
+        .filter((p) => !isVoided(p.envelopeId) && !isCompleted(p.envelopeId))
         .map((p, i) => ({ p, i }))
         .sort((a, b) => {
           const r = packetLastModifiedTs(b.p) - packetLastModifiedTs(a.p);
@@ -766,8 +782,20 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
     [extraActionRequiredPackets, completedEnvelopeIds, voidedEnvelopeIds]
   );
   const actionRequiredBadge = useMemo(
-    () => countPendingKaleSignatures(actionRequiredPackets, signedEnvelopeIds),
-    [actionRequiredPackets, signedEnvelopeIds]
+    () =>
+      countPendingKaleSignatures(
+        actionRequiredPackets,
+        signedEnvelopeIds,
+        completedEnvelopeIds ?? new Set(),
+      ),
+    [actionRequiredPackets, signedEnvelopeIds, completedEnvelopeIds]
+  );
+  const openActionMorePacket = useMemo(
+    () =>
+      actionMoreMenu
+        ? actionRequiredPackets.find((p) => p.id === actionMoreMenu.packetId) ?? null
+        : null,
+    [actionRequiredPackets, actionMoreMenu],
   );
   const profileTab: ProfileDocTab = viewByDocuments ? 'documents' : 'action_required';
   const setProfileTab = useCallback(
@@ -1132,9 +1160,6 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                 {actionRequiredPackets.map((packet) => {
                   const signedByKale = !!packet.envelopeId && signedEnvelopeIds.has(packet.envelopeId);
                   const pending = packet.children.filter((c) => c.needsKaleSignature);
-                  // Keep packets visible after Kale signs (so she can still see
-                  // the envelope's other recipients work through their docs),
-                  // even though no signatures remain pending from her.
                   if (pending.length === 0 && !signedByKale) return null;
                   const open = expandedPackets[packet.id] ?? false;
                   const envelopeRow = packet.envelopeId
@@ -1143,6 +1168,8 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                   const displayPacketStatus = envelopeRow
                     ? envelopeStatusToProfileLabel(deriveDisplayEnvelopeStatus(envelopeRow))
                     : packet.status;
+                  const canSignPacket = !signedByKale && displayPacketStatus !== 'Completed';
+                  const childrenToShow = pending;
                   const rowLastModified = envelopeRow?.lastModified ?? packet.lastModified;
                   const resolveChildStatus = (child: ActionChildRow): string => {
                     if (!envelopeRow?.children?.length) return child.status;
@@ -1206,7 +1233,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                               <Eye size={14} />
                               View
                             </button>
-                            {!signedByKale && (
+                            {canSignPacket && (
                               <button
                                 type="button"
                                 onClick={() => onReviewDocument?.(packet.envelopeId ?? packet.id)}
@@ -1219,8 +1246,15 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                             )}
                             <button
                               type="button"
-                              className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg"
-                              aria-label="More"
+                              className="p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px]"
+                              aria-label="More actions"
+                              aria-expanded={actionMoreMenu?.packetId === packet.id}
+                              onClick={(e) => {
+                                const el = e.currentTarget;
+                                setActionMoreMenu((prev) =>
+                                  prev?.packetId === packet.id ? null : { packetId: packet.id, anchor: el },
+                                );
+                              }}
                             >
                               <MoreVertical size={16} />
                             </button>
@@ -1228,7 +1262,7 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
                         </td>
                       </tr>
                       {open &&
-                        pending.map((child) => {
+                        childrenToShow.map((child) => {
                           const displayChildStatus = resolveChildStatus(child);
                           return (
                           <tr key={child.id} className="border-b border-slate-100 bg-slate-50/50 hover:bg-slate-50/90">
@@ -1417,6 +1451,31 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
           zIndexClass="z-[450000]"
         />
       )}
+      {openActionMorePacket && actionMoreMenu && (
+        <EnvelopeMoreMenuPortal
+          open
+          onClose={() => setActionMoreMenu(null)}
+          anchorEl={actionMoreMenu.anchor}
+          variant={profilePacketMoreMenuVariant(openActionMorePacket, packetRows)}
+          rootId="profile-action-more-root"
+          actions={buildEnvelopeMoreMenuActions({
+            packetId: openActionMorePacket.envelopeId ?? openActionMorePacket.id,
+            isAdmin: viewMode === 'admin',
+            packetCompleted: (() => {
+              const envelopeRow = openActionMorePacket.envelopeId
+                ? packetRows?.find((r) => r.id === openActionMorePacket.envelopeId)
+                : undefined;
+              if (envelopeRow) return isEnvelopeCompleted(deriveDisplayEnvelopeStatus(envelopeRow));
+              return isEnvelopeCompleted(openActionMorePacket.status);
+            })(),
+            onMarkAllAsCompleted: onMarkAllAsCompleted,
+            onMakeCorrection: onMakeCorrectionEnvelope,
+            onVoidEnvelope: onVoidEnvelope,
+            onDownload: () => setProfileDocSnack('Documents downloaded'),
+            onSendReminder: () => setProfileSendReminderOpen(true),
+          })}
+        />
+      )}
       {profileDocSnack && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[460000] pointer-events-none px-4 w-full max-w-md">
           <div className="pointer-events-auto bg-[#C6F6F1] border border-[#A5F3E9] rounded-lg shadow-lg flex items-center px-4 py-3 gap-3">
@@ -1432,6 +1491,11 @@ export const EmployeeDocumentsSection: React.FC<DocumentsSectionProps> = ({
           </div>
         </div>
       )}
+      <SendReminderModal
+        open={profileSendReminderOpen}
+        onClose={() => setProfileSendReminderOpen(false)}
+        onConfirm={() => setProfileDocSnack('Reminder sent')}
+      />
     </div>
   );
 };

@@ -1,5 +1,4 @@
-import React, { useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
   Search,
   Filter,
@@ -22,9 +21,12 @@ import {
   Trash2,
   XCircle,
   X,
+  FileCheck,
 } from 'lucide-react';
 import { PRIMARY_PURPLE } from '../constants';
 import { SNACKBAR_AUTO_DISMISS_MS } from '../constants/snackbar';
+import { EnvelopeMoreMenuPortal } from './EnvelopeMoreMenuPortal';
+import { buildEnvelopeMoreMenuActions } from '../utils/envelopeMoreMenuActions';
 import SendReminderModal from './SendReminderModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
 
@@ -165,6 +167,47 @@ export function deriveDisplayDocumentStatus(
 
 export function deriveDisplayEnvelopeStatus(row: EnvelopeTableRow): EnvelopeStatus {
   return deriveEnvelopeStatusFromContents(row.status, row.recipients, row.children);
+}
+
+/** Prototype account holder — the admin who signs from the Documents hub. */
+export const ACCOUNT_HOLDER_USER_ID = 'u-kale';
+
+const ACCOUNT_HOLDER_ALIASES = new Set(['Kale George', 'kale.george@acme.com']);
+
+/** Whether a recipient row belongs to the account holder (Kale). */
+export function recipientIsAccountHolder(
+  r: EnvelopeRecipientRow,
+  accountHolderUserId: string = ACCOUNT_HOLDER_USER_ID,
+): boolean {
+  if (r.userId === accountHolderUserId) return true;
+  if (r.name === 'Kale George') return true;
+  if (r.email?.toLowerCase() === 'kale.george@acme.com') return true;
+  return ACCOUNT_HOLDER_ALIASES.has(r.name) || ACCOUNT_HOLDER_ALIASES.has(r.email ?? '');
+}
+
+/** True when Kale (or the given account holder) has already finished signing. */
+export function accountHolderSignerFinished(
+  row: EnvelopeTableRow,
+  accountHolderUserId: string = ACCOUNT_HOLDER_USER_ID,
+): boolean {
+  const holder = row.recipients?.find((r) => recipientIsAccountHolder(r, accountHolderUserId));
+  if (!holder) return false;
+  return holder.status === 'Completed';
+}
+
+/** Whether the account holder should still see a Sign action on this envelope. */
+export function canAccountHolderSignEnvelope(row: EnvelopeTableRow): boolean {
+  const displayStatus = deriveDisplayEnvelopeStatus(row);
+  if (
+    displayStatus === 'completed' ||
+    displayStatus === 'voided' ||
+    displayStatus === 'draft' ||
+    displayStatus === 'correcting'
+  ) {
+    return false;
+  }
+  if (!row.adminIsSigner) return false;
+  return !accountHolderSignerFinished(row);
 }
 
 /**
@@ -309,6 +352,32 @@ const MOCK_ENVELOPES: EnvelopeTableRow[] = [
     children: [
       { id: 'e6d1', name: 'Revised offer letter', status: 'correcting', lastModified: '2026-04-20T22:10:00.000Z' },
     ],
+    recipients: [
+      {
+        id: 'e6r1',
+        userId: 'u1',
+        order: 1,
+        name: 'David Gonzales',
+        email: 'david.g@acme.com',
+        initials: 'DG',
+        status: 'Completed',
+        action: 'To sign',
+        sentOn: '4/18/2026 9:00 AM',
+        completedOn: '4/19/2026 2:15 PM',
+      },
+      {
+        id: 'e6r2',
+        userId: 'u-kale',
+        order: 2,
+        name: 'Kale George',
+        email: 'kale.george@acme.com',
+        initials: 'KG',
+        status: 'Yet to sign',
+        action: 'To sign',
+        sentOn: '4/18/2026 9:00 AM',
+        completedOn: '—',
+      },
+    ],
   },
   {
     id: 'e7',
@@ -433,6 +502,8 @@ interface EnvelopeMoreMenuProps {
   onRemove?: () => void;
   /** Fired when the user picks "Void" — owner flips the envelope + all child docs to `voided`. */
   onVoid?: () => void;
+  /** Admin-only: mark every recipient + document + packet as completed. */
+  onMarkAllAsCompleted?: () => void;
 }
 
 export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
@@ -443,6 +514,7 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
   onMakeCorrection,
   onRemove,
   onVoid,
+  onMarkAllAsCompleted,
 }) => {
   const itemClass = 'w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-800 hover:bg-slate-50';
   const dangerItemClass = `w-full flex items-center gap-3 px-4 py-2.5 text-left text-[13px] font-semibold hover:bg-slate-50`;
@@ -457,14 +529,26 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
     onVoid?.();
     onClose();
   };
+  const markAllCompleted = () => {
+    onMarkAllAsCompleted?.();
+    onClose();
+  };
+  const markAllCompletedItem =
+    onMarkAllAsCompleted && variant !== 'completed_voided' ? (
+    <button type="button" className={itemClass} role="menuitem" onClick={markAllCompleted}>
+      <IconWrap><FileCheck size={16} strokeWidth={2} /></IconWrap>
+      Mark all as completed
+    </button>
+  ) : null;
 
   if (variant === 'yet_to_sign') {
     return (
-      <div className="py-1 min-w-[220px]" role="menu">
+      <div className="py-1 min-w-[240px]" role="menu">
         <button type="button" className={itemClass} role="menuitem" onClick={dl}>
           <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
           Download
         </button>
+        {markAllCompletedItem}
         <button type="button" className={itemClass} role="menuitem" onClick={onClose}>
           <IconWrap><UserRound size={16} strokeWidth={2} /></IconWrap>
           Reassign
@@ -507,11 +591,12 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
 
   if (variant === 'in_progress') {
     return (
-      <div className="py-1 min-w-[200px]" role="menu">
+      <div className="py-1 min-w-[240px]" role="menu">
         <button type="button" className={itemClass} role="menuitem" onClick={dl}>
           <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
           Download
         </button>
+        {markAllCompletedItem}
         <button
           type="button"
           className={itemClass}
@@ -551,11 +636,12 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
 
   if (variant === 'draft') {
     return (
-      <div className="py-1 min-w-[180px]" role="menu">
+      <div className="py-1 min-w-[240px]" role="menu">
         <button type="button" className={itemClass} role="menuitem" onClick={dl}>
           <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
           Download
         </button>
+        {markAllCompletedItem}
         <button type="button" className={dangerItemClass} style={{ color: DANGER }} role="menuitem" onClick={remove}>
           <IconWrap danger><Trash2 size={16} strokeWidth={2} style={{ color: DANGER }} /></IconWrap>
           Remove
@@ -566,7 +652,8 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
 
   if (variant === 'correcting') {
     return (
-      <div className="py-1 min-w-[180px]" role="menu">
+      <div className="py-1 min-w-[240px]" role="menu">
+        {markAllCompletedItem}
         <button type="button" className={itemClass} role="menuitem" onClick={voidEnvelope}>
           <IconWrap><XCircle size={16} strokeWidth={2} /></IconWrap>
           Void
@@ -581,11 +668,12 @@ export const EnvelopeMoreMenu: React.FC<EnvelopeMoreMenuProps> = ({
 
   /* completed / voided */
   return (
-    <div className="py-1 min-w-[180px]" role="menu">
+    <div className="py-1 min-w-[240px]" role="menu">
       <button type="button" className={itemClass} role="menuitem" onClick={dl}>
         <IconWrap><Download size={16} strokeWidth={2} /></IconWrap>
         Download
       </button>
+      {markAllCompletedItem}
       <button type="button" className={dangerItemClass} style={{ color: DANGER }} role="menuitem" onClick={remove}>
         <IconWrap danger><Trash2 size={16} strokeWidth={2} style={{ color: DANGER }} /></IconWrap>
         Remove
@@ -605,6 +693,8 @@ interface EnvelopesListViewProps {
   onMakeCorrection?: (packetId: string) => void;
   onSignEnvelope?: (packetId: string) => void;
   onResendEnvelope?: (packetId: string) => void;
+  /** Admin-only: mark every recipient + document + packet as completed. */
+  onMarkAllAsCompleted?: (packetId: string) => void;
   /**
    * Documents from fully-completed envelopes that should also be shown
    * as standalone rows below the envelope list. The component still
@@ -620,7 +710,7 @@ const btnOrange =
 const btnResend =
   'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-bold text-white bg-[#7A005D] hover:opacity-95 shadow-sm shrink-0 whitespace-nowrap';
 const moreIconBtn =
-  'p-1.5 text-slate-900 hover:bg-slate-100 rounded-lg shrink-0';
+  'p-1.5 text-slate-900 hover:bg-slate-100 rounded-[8px] shrink-0';
 
 const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
   rows: rowsProp,
@@ -631,6 +721,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
   onMakeCorrection,
   onSignEnvelope,
   onResendEnvelope,
+  onMarkAllAsCompleted,
   completedEnvelopeDocs = [],
 }) => {
   const [fallbackRows, setFallbackRows] = useState<EnvelopeTableRow[]>(() => structuredClone(MOCK_ENVELOPES));
@@ -667,9 +758,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
       setExpanded({ [latestRowId]: true });
     }
   }, [latestRowId]);
-  const [openMoreId, setOpenMoreId] = useState<string | null>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const moreTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [moreMenu, setMoreMenu] = useState<{ rowId: string; anchor: HTMLElement } | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ name: string } | null>(null);
   const [docSnack, setDocSnack] = useState<string | null>(null);
   const [bulkSnack, setBulkSnack] = useState<{ phase: 'loading' | 'done'; count: number } | null>(null);
@@ -696,41 +785,6 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
     const t = window.setTimeout(() => setBulkSnack(null), SNACKBAR_AUTO_DISMISS_MS);
     return () => clearTimeout(t);
   }, [bulkSnack]);
-
-  useLayoutEffect(() => {
-    if (!openMoreId) {
-      setMenuPos(null);
-      return;
-    }
-    const btn = moreTriggerRefs.current[openMoreId];
-    if (!btn) return;
-    const place = () => {
-      const r = btn.getBoundingClientRect();
-      const mw = 260;
-      const left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8));
-      setMenuPos({ top: r.bottom + 8, left });
-    };
-    place();
-    window.addEventListener('scroll', place, true);
-    window.addEventListener('resize', place);
-    return () => {
-      window.removeEventListener('scroll', place, true);
-      window.removeEventListener('resize', place);
-    };
-  }, [openMoreId]);
-
-  useEffect(() => {
-    if (!openMoreId) return;
-    const down = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (moreTriggerRefs.current[openMoreId]?.contains(t)) return;
-      const root = document.getElementById('envelope-more-menu-root');
-      if (root?.contains(t)) return;
-      setOpenMoreId(null);
-    };
-    document.addEventListener('mousedown', down);
-    return () => document.removeEventListener('mousedown', down);
-  }, [openMoreId]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -805,12 +859,13 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
     const moreBtn = (
       <button
         type="button"
-        ref={(el) => {
-          moreTriggerRefs.current[row.id] = el;
-        }}
         className={moreIconBtn}
         aria-label="More actions"
-        onClick={() => setOpenMoreId((id) => (id === row.id ? null : row.id))}
+        aria-expanded={moreMenu?.rowId === row.id}
+        onClick={(e) => {
+          const el = e.currentTarget;
+          setMoreMenu((prev) => (prev?.rowId === row.id ? null : { rowId: row.id, anchor: el }));
+        }}
       >
         <MoreVertical size={18} strokeWidth={2} />
       </button>
@@ -865,7 +920,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
     }
 
     if (displayStatus === 'yet to sign') {
-      if (adminIsSigner) {
+      if (adminIsSigner && canAccountHolderSignEnvelope(row)) {
         return (
           <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
             {viewBtn}
@@ -885,7 +940,7 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
       );
     }
 
-    if (adminIsSigner) {
+    if (adminIsSigner && canAccountHolderSignEnvelope(row)) {
       return (
         <div className="inline-flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap">
           {viewBtn}
@@ -1175,70 +1230,62 @@ const EnvelopesListView: React.FC<EnvelopesListViewProps> = ({
         )}
       </div>
 
-      {openMoreId &&
-        menuPos &&
-        (() => {
-          const openRow = rows.find((r) => r.id === openMoreId);
-          if (!openRow) return null;
-          return createPortal(
-            <div
-              id="envelope-more-menu-root"
-              className="fixed rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden"
-              style={{
-                top: menuPos.top,
-                left: menuPos.left,
-                zIndex: 2147483647,
-              }}
-              role="presentation"
-            >
-              <EnvelopeMoreMenu
-                variant={moreMenuVariantForEnvelope(deriveDisplayEnvelopeStatus(openRow))}
-                onClose={() => setOpenMoreId(null)}
-                onDownload={() => runBulkDownload(openRow)}
-                onSendReminder={() => setSendReminderOpen(true)}
-                onMakeCorrection={() => onMakeCorrection?.(openRow.id)}
-                onRemove={() => {
-                  const next = rows.filter((r) => r.id !== openRow.id);
-                  if (rowsProp) {
-                    onRowsChange?.(next);
-                  } else {
-                    setFallbackRows(next);
-                  }
-                  setExpanded((prev) => {
-                    const copy = { ...prev };
-                    delete copy[openRow.id];
-                    return copy;
-                  });
-                  setDocSnack('Envelope removed');
-                }}
-                onVoid={() => {
-                  // Void the whole envelope: parent flips to `voided` and
-                  // every child document inherits the same status so the
-                  // hub/details views show "Voided" across the board.
-                  const next = rows.map<EnvelopeTableRow>((r) =>
-                    r.id === openRow.id
-                      ? {
-                          ...r,
+      {moreMenu && (() => {
+        const openRow = rows.find((r) => r.id === moreMenu.rowId);
+        if (!openRow) return null;
+        return (
+          <EnvelopeMoreMenuPortal
+            open
+            onClose={() => setMoreMenu(null)}
+            anchorEl={moreMenu.anchor}
+            variant={moreMenuVariantForEnvelope(deriveDisplayEnvelopeStatus(openRow))}
+            rootId="envelope-more-menu-root"
+            actions={buildEnvelopeMoreMenuActions({
+              packetId: openRow.id,
+              isAdmin: !!onMarkAllAsCompleted,
+              packetCompleted: deriveDisplayEnvelopeStatus(openRow) === 'completed',
+              onMarkAllAsCompleted,
+              onMakeCorrection,
+              onDownload: () => runBulkDownload(openRow),
+              onSendReminder: () => setSendReminderOpen(true),
+              onRemove: () => {
+                const next = rows.filter((r) => r.id !== openRow.id);
+                if (rowsProp) {
+                  onRowsChange?.(next);
+                } else {
+                  setFallbackRows(next);
+                }
+                setExpanded((prev) => {
+                  const copy = { ...prev };
+                  delete copy[openRow.id];
+                  return copy;
+                });
+                setDocSnack('Envelope removed');
+              },
+              onVoidEnvelope: () => {
+                const next = rows.map<EnvelopeTableRow>((r) =>
+                  r.id === openRow.id
+                    ? {
+                        ...r,
+                        status: 'voided',
+                        children: (r.children ?? []).map((c) => ({
+                          ...c,
                           status: 'voided',
-                          children: (r.children ?? []).map((c) => ({
-                            ...c,
-                            status: 'voided',
-                          })),
-                        }
-                      : r
-                  );
-                  if (rowsProp) {
-                    onRowsChange?.(next);
-                  } else {
-                    setFallbackRows(next);
-                  }
-                  setDocSnack('Envelope voided');
-                }}
-              />
-            </div>,
-            document.body
-          );
-        })()}
+                        })),
+                      }
+                    : r,
+                );
+                if (rowsProp) {
+                  onRowsChange?.(next);
+                } else {
+                  setFallbackRows(next);
+                }
+                setDocSnack('Envelope voided');
+              },
+            })}
+          />
+        );
+      })()}
       {previewDoc && (
         <DocumentPreviewModal
           name={previewDoc.name}

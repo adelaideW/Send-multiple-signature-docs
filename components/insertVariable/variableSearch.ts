@@ -1,0 +1,71 @@
+import { VARIABLE_DROPDOWN_ROOT, type VariableMenuNode } from '../variablesCatalog';
+import type { VariableItem } from '../VariableDropdown';
+
+type LeafWithPath = { node: VariableMenuNode; breadcrumbs: string[] };
+
+function hasChildren(n: VariableMenuNode): boolean {
+  return !!n.children && n.children.length > 0;
+}
+
+function flattenLeaves(nodes: VariableMenuNode[], breadcrumbs: string[] = [], acc: LeafWithPath[]): void {
+  for (const n of nodes) {
+    if (hasChildren(n)) {
+      flattenLeaves(n.children!, [...breadcrumbs, n.label], acc);
+    } else {
+      acc.push({ node: n, breadcrumbs });
+    }
+  }
+}
+
+function toVariableItemFromNode(n: VariableMenuNode, breadcrumbs: string[]): VariableItem {
+  const child = hasChildren(n);
+  const pathParts = [...breadcrumbs, n.label];
+  const path = pathParts.join(' > ');
+  const searchText = [...pathParts, ...(n.searchKeywords ?? [])].join(' ').toLowerCase();
+  return {
+    id: n.id,
+    label: n.label,
+    category: breadcrumbs.join(' › ') || 'Variable',
+    path,
+    hasChildren: child,
+    insertLabel: child ? undefined : n.label,
+    searchText,
+    recipientType: n.recipientType,
+    fieldType: n.fieldType,
+    needsRecipient: n.needsRecipient,
+    placeholderRecipientId: n.placeholderRecipientId,
+  };
+}
+
+function flattenLeavesForRoot(root: VariableMenuNode[], acc: LeafWithPath[], breadcrumbs: string[] = []): void {
+  for (const n of root) {
+    if (hasChildren(n)) {
+      flattenLeavesForRoot(n.children!, acc, [...breadcrumbs, n.label]);
+    } else {
+      acc.push({ node: n, breadcrumbs });
+    }
+  }
+}
+
+export function searchVariableItems(query: string, root: VariableMenuNode[] = VARIABLE_DROPDOWN_ROOT): VariableItem[] {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+
+  const acc: LeafWithPath[] = [];
+  flattenLeavesForRoot(root, acc);
+
+  return acc
+    .map(({ node, breadcrumbs }) => toVariableItemFromNode(node, breadcrumbs))
+    .filter((item) => tokens.every((token) => item.searchText.includes(token)))
+    .map((item) => ({
+      ...item,
+      label: item.category ? `${item.category} › ${item.label}` : item.label,
+    }));
+}
+
+export function matchesSearchTokens(text: string, query: string): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const hay = text.toLowerCase();
+  return tokens.every((token) => hay.includes(token));
+}

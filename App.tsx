@@ -11,6 +11,7 @@ import DocumentReviewView from './components/DocumentReviewView';
 import PeopleTabView, { type SendDocumentPerson } from './components/PeopleTabView';
 import GeminiAssistant from './components/GeminiAssistant';
 import { MOCK_EMPLOYEE, ENVELOPE_NAME_MAX_LENGTH } from './constants';
+import { isDocumentEditingBlockedInCorrection, isCorrectionEnvelopeUnchanged, serializeEnvelopeStateForComparison } from './utils/envelopeCorrection';
 import { SNACKBAR_AUTO_DISMISS_MS } from './constants/snackbar';
 import type { UploadedFileItem } from './types';
 import type { EnvelopeTableRow, EnvelopeDocumentRow, DocumentSigningStatus, EnvelopeStatus, EnvelopeRecipientRow, CompletedEnvelopeDoc } from './components/EnvelopesListView';
@@ -21,11 +22,41 @@ import {
   deriveDisplayDocumentStatus,
   normalizeRecipientRowForDisplay,
   signingRecipientsForProgress,
+  accountHolderSignerFinished,
+  ACCOUNT_HOLDER_USER_ID,
+  recipientIsAccountHolder,
 } from './components/EnvelopesListView';
 import type { DocumentReviewFlow } from './components/DocumentReviewView';
 import { createInitialProfileFolderRoot, type ProfileFolderNode } from './utils/profileFolderUtils';
 
 type ViewType = 'profile' | 'envelope' | 'template_editor' | 'envelope_details' | 'document_review' | 'people_tab';
+
+type StartSignFlowOptions = {
+  signerUserId?: string;
+  returnToProfile?: boolean;
+};
+
+/** Resolve the active signer — always Kale when the admin account is signing. */
+function resolveSignerUserId(
+  row: EnvelopeTableRow,
+  signerUserId: string | undefined,
+): string | undefined {
+  if (signerUserId) return signerUserId;
+  if (row.adminIsSigner) return ACCOUNT_HOLDER_USER_ID;
+  return undefined;
+}
+
+function markRecipientRowCompleted(
+  r: EnvelopeRecipientRow,
+  completedOn: string,
+): EnvelopeRecipientRow {
+  return {
+    ...r,
+    status: 'Completed' as const,
+    completedOn,
+    action: r.action === 'To sign' ? ('—' as const) : r.action,
+  };
+}
 
 /** Deep-link anchor for Documents hub → Profile Folders tab (`#profile-folders`). */
 const PROFILE_FOLDERS_HASH = 'profile-folders';
@@ -346,12 +377,16 @@ const App: React.FC = () => {
   const [correctionSavedSnackOpen, setCorrectionSavedSnackOpen] = useState(false);
   const [creatorCorrectingFlow, setCreatorCorrectingFlow] = useState(false);
   const [signFlow, setSignFlow] = useState<DocumentReviewFlow | null>(null);
+  const signFlowRef = useRef<DocumentReviewFlow | null>(null);
+  signFlowRef.current = signFlow;
   const [pdfPlacementSeed, setPdfPlacementSeed] = useState(false);
   const [profileToolsCollapsed, setProfileToolsCollapsed] = useState(true);
   const [profileFolderRoot, setProfileFolderRoot] = useState<ProfileFolderNode>(() => createInitialProfileFolderRoot());
   const [currentView, setCurrentView] = useState<'admin' | 'employee'>('admin');
   const envelopeEntryRef = useRef<ViewType>('people_tab');
   const editingPacketIdRef = useRef<string | null>(null);
+  /** Serialized envelope snapshot when Make correction opens — used to skip save snackbar if unchanged. */
+  const correctionBaselineRef = useRef<string | null>(null);
 
   // Persistent Envelope Creation State
   const [envelopeState, setEnvelopeState] = useState<EnvelopeState>(INITIAL_ENVELOPE_STATE);
@@ -398,7 +433,8 @@ const App: React.FC = () => {
   /**
    * Track which envelopes have reached the "completed" status — every
    * required signer is done and every document is `completed`. Used to
-   * filter completed envelopes out of Kale's Action required tab.
+   * hide the Sign button and badge counts on Kale's Action required tab.
+   * Completed packets move to the profile Documents tab.
    */
   const completedEnvelopeIds = useMemo<Set<string>>(() => {
     const out = new Set<string>();
@@ -488,12 +524,28 @@ const App: React.FC = () => {
 
   const handleSaveAndExitEnvelope = useCallback(() => {
     const st = envelopeState;
-    const displayTitle = computeDraftDisplayTitle(st);
-    const children = childrenFromEnvelopeState(st);
     const editId = editingPacketIdRef.current;
-    const rowId = editId ?? `draft-${Date.now()}`;
     const prevRow = editId ? packetRows.find((r) => r.id === editId) : undefined;
     const keepCorrecting = prevRow?.status === 'correcting';
+    const correctionUnchanged =
+      keepCorrecting && isCorrectionEnvelopeUnchanged(correctionBaselineRef.current, st);
+
+    if (correctionUnchanged) {
+      editingPacketIdRef.current = null;
+      correctionBaselineRef.current = null;
+      setCreatorCorrectingFlow(false);
+      setPdfPlacementSeed(false);
+      setViewHistory((prev) => {
+        const i = prev.lastIndexOf('envelope');
+        if (i < 0) return prev;
+        return [...prev.slice(0, i), envelopeEntryRef.current];
+      });
+      return;
+    }
+
+    const displayTitle = computeDraftDisplayTitle(st);
+    const children = childrenFromEnvelopeState(st);
+    const rowId = editId ?? `draft-${Date.now()}`;
     const row: EnvelopeTableRow = {
       id: rowId,
       name: displayTitle,
@@ -513,6 +565,7 @@ const App: React.FC = () => {
     });
     setDraftSavedPacketId(rowId);
     editingPacketIdRef.current = null;
+    correctionBaselineRef.current = null;
     setCreatorCorrectingFlow(false);
     setPdfPlacementSeed(false);
     setViewHistory((prev) => {
@@ -641,6 +694,7 @@ const App: React.FC = () => {
       applyResendToInProgress(editId!, name);
       recordKaleActionRequiredIfRecipient(name, envelopeState, editId!);
       editingPacketIdRef.current = null;
+      correctionBaselineRef.current = null;
       setCreatorCorrectingFlow(false);
       setEnvelopeState(INITIAL_ENVELOPE_STATE);
       setViewHistory((prev) => {
@@ -664,6 +718,7 @@ const App: React.FC = () => {
     setShowSuccessToast(true);
     setEnvelopeState(INITIAL_ENVELOPE_STATE);
     editingPacketIdRef.current = null;
+    correctionBaselineRef.current = null;
     setCreatorCorrectingFlow(false);
     setViewHistory((prev) => {
       const envelopeIndex = prev.indexOf('envelope');
@@ -702,20 +757,31 @@ const App: React.FC = () => {
   }, [draftSavedPacketId, navigateTo]);
 
   const startSignFlow = useCallback(
-    (packetId: string, signerUserId?: string) => {
+    (packetId: string, options?: StartSignFlowOptions | string) => {
+      const opts: StartSignFlowOptions =
+        typeof options === 'string'
+          ? { signerUserId: options, returnToProfile: true }
+          : (options ?? {});
+      const { signerUserId: explicitSigner, returnToProfile = false } = opts;
       const row = packetRows.find((r) => r.id === packetId);
       if (!row) return;
+      const displayStatus = deriveDisplayEnvelopeStatus(row);
+      if (displayStatus === 'completed' || displayStatus === 'voided') return;
+      const effectiveSignerUserId = resolveSignerUserId(row, explicitSigner);
+      if (!effectiveSignerUserId) return;
+      if (accountHolderSignerFinished(row) && effectiveSignerUserId === ACCOUNT_HOLDER_USER_ID) return;
       setSignFlow({
         packetId: row.id,
         packetName: row.name,
-        envelopeStatus: deriveDisplayEnvelopeStatus(row),
+        envelopeStatus: displayStatus,
         docs: (row.children ?? []).map((c) => ({
           id: c.id,
           name: c.name,
           status:
             row.status === 'voided' ? ('voided' as DocumentSigningStatus) : deriveDisplayDocumentStatus(row, c),
         })),
-        signerUserId,
+        signerUserId: effectiveSignerUserId,
+        returnToProfile,
       });
       navigateTo('document_review');
     },
@@ -762,23 +828,84 @@ const App: React.FC = () => {
       recipients: EnvelopeRecipientRow[] | undefined,
       signerUserId: string | undefined,
       completedOn: string,
+      row?: EnvelopeTableRow,
     ): EnvelopeRecipientRow[] | undefined => {
-      if (!recipients || recipients.length === 0 || !signerUserId) return recipients;
+      if (!signerUserId) return recipients;
+
+      if (!recipients || recipients.length === 0) {
+        if (signerUserId === ACCOUNT_HOLDER_USER_ID && row?.adminIsSigner) {
+          return [
+            {
+              id: 'implicit-kale-signer',
+              userId: ACCOUNT_HOLDER_USER_ID,
+              order: 1,
+              name: 'Kale George',
+              email: 'kale.george@acme.com',
+              initials: 'KG',
+              status: 'Completed',
+              action: '—',
+              sentOn: completedOn,
+              completedOn,
+            },
+          ];
+        }
+        return recipients;
+      }
+
       let matched = false;
       const next = recipients.map((r) => {
-        if (r.userId !== signerUserId) return r;
+        const isTarget =
+          r.userId === signerUserId ||
+          (signerUserId === ACCOUNT_HOLDER_USER_ID && recipientIsAccountHolder(r));
+        if (!isTarget) return r;
         matched = true;
-        return {
-          ...r,
-          status: 'Completed' as const,
-          completedOn,
-          action: r.action === 'To sign' ? ('—' as const) : r.action,
-        };
+        return markRecipientRowCompleted(r, completedOn);
       });
       return matched ? next : recipients;
     },
     []
   );
+
+  const markAllRecipientsCompleted = useCallback(
+    (recipients: EnvelopeRecipientRow[] | undefined, completedOn: string): EnvelopeRecipientRow[] | undefined => {
+      if (!recipients?.length) return recipients;
+      return recipients.map((r) => ({
+        ...r,
+        status: 'Completed' as const,
+        completedOn,
+        action: r.action === 'To sign' || r.action === 'To view' ? ('—' as const) : r.action,
+      }));
+    },
+    [],
+  );
+
+  const goToProfileDocumentsTab = useCallback(() => {
+    setViewByDocuments(true);
+    setViewHistory((prev) => {
+      const i = prev.lastIndexOf('profile');
+      if (i >= 0) return prev.slice(0, i + 1);
+      const j = prev.indexOf('people_tab');
+      if (j >= 0) return [...prev.slice(0, j + 1), 'profile'];
+      return ['people_tab', 'profile'];
+    });
+  }, []);
+
+  const handleVoidEnvelope = useCallback((packetId: string) => {
+    setPacketRows((prev) =>
+      prev.map((r) =>
+        r.id === packetId
+          ? {
+              ...r,
+              status: 'voided' as EnvelopeStatus,
+              children: (r.children ?? []).map((c) => ({
+                ...c,
+                status: 'voided' as DocumentSigningStatus,
+              })),
+            }
+          : r,
+      ),
+    );
+  }, []);
 
   /**
    * Record that Kale has personally finished signing the given envelope. The
@@ -795,26 +922,79 @@ const App: React.FC = () => {
     });
   }, []);
 
+  /**
+   * Admin shortcut: mark every recipient, document, and packet completed,
+   * then land on Kale's profile Documents tab.
+   */
+  const handleMarkAllAsCompleted = useCallback(
+    (packetId: string) => {
+      const ts = new Date().toISOString();
+      const completedOn = formatRecipientSentOn(new Date());
+
+      setPacketRows((prev) =>
+        prev.map((r) => {
+          if (r.id !== packetId) return r;
+          const recipients = markAllRecipientsCompleted(r.recipients, completedOn);
+          const children = r.children?.map((c) => {
+            if (c.status === 'draft') return c;
+            return { ...c, status: 'completed' as DocumentSigningStatus, lastModified: ts };
+          });
+          return {
+            ...r,
+            status: 'completed' as EnvelopeStatus,
+            lastModified: ts,
+            children,
+            recipients,
+          };
+        }),
+      );
+
+      markKaleSignedForPacket(packetId);
+      setSelectedPacketId((cur) => (cur === packetId ? null : cur));
+      goToProfileDocumentsTab();
+    },
+    [markAllRecipientsCompleted, markKaleSignedForPacket, goToProfileDocumentsTab],
+  );
+
   const handleSignComplete = useCallback(
     (packetId: string) => {
       const ts = new Date().toISOString();
       const completedOn = formatRecipientSentOn(new Date());
-      const signerUserId = signFlow?.signerUserId;
+      const flowSignerId = signFlowRef.current?.signerUserId;
+      let kaleCompletedPacket = false;
       setPacketRows((prev) =>
         prev.map((r) => {
           if (r.id !== packetId) return r;
-          // Flip the signing recipient first; documents stay in their current
-          // state until every "To sign" recipient is done. This avoids the
-          // doc-level "Completed" dot appearing while the envelope is still
-          // waiting on other signers.
-          const recipients = markRecipientCompleted(r.recipients, signerUserId, completedOn);
+          const effectiveSignerUserId = resolveSignerUserId(r, flowSignerId);
+          if (effectiveSignerUserId === ACCOUNT_HOLDER_USER_ID) kaleCompletedPacket = true;
+          const recipients = markRecipientCompleted(
+            r.recipients,
+            effectiveSignerUserId,
+            completedOn,
+            r,
+          );
           const signers = signingRecipientsForProgress(recipients);
-          const allSignersDone =
+          let allSignersDone =
             signers.length > 0 && signers.every((rcp) => rcp.status === 'Completed');
-          // Once any signer has completed but others haven't, surface the doc
-          // as "in progress" so the table reads cleanly between "yet to sign"
-          // (untouched) and "completed" (every signer done). draft/voided
-          // documents are left alone.
+          if (
+            !allSignersDone &&
+            effectiveSignerUserId === ACCOUNT_HOLDER_USER_ID &&
+            r.adminIsSigner &&
+            accountHolderSignerFinished({ ...r, recipients })
+          ) {
+            const othersPending = signers.filter(
+              (s) => !recipientIsAccountHolder(s) && s.status !== 'Completed',
+            );
+            if (othersPending.length === 0) allSignersDone = true;
+          }
+          if (
+            !allSignersDone &&
+            signers.length === 0 &&
+            effectiveSignerUserId === ACCOUNT_HOLDER_USER_ID &&
+            r.adminIsSigner
+          ) {
+            allSignersDone = true;
+          }
           const children = r.children?.map((c) => {
             if (c.status === 'voided' || c.status === 'draft') return c;
             if (allSignersDone) {
@@ -834,14 +1014,12 @@ const App: React.FC = () => {
           };
         })
       );
-      if (signerUserId === 'u-kale') {
+      if (kaleCompletedPacket) {
         markKaleSignedForPacket(packetId);
       }
+      const returnToProfile = signFlowRef.current?.returnToProfile ?? false;
       setSignFlow(null);
-      // When Kale signs from her profile, drop her back on the profile
-      // (Action required is still her current tab). All other sign
-      // flows return to the Documents tab as before.
-      if (signerUserId === 'u-kale') {
+      if (returnToProfile) {
         trimToProfile();
       } else {
         syncDocumentsHubTab('Documents');
@@ -849,7 +1027,6 @@ const App: React.FC = () => {
       }
     },
     [
-      signFlow,
       markRecipientCompleted,
       markKaleSignedForPacket,
       trimToPeopleTab,
@@ -865,7 +1042,6 @@ const App: React.FC = () => {
       options?: { exitFlow?: boolean }
     ) => {
       const ts = new Date().toISOString();
-      const signerUserId = signFlow?.signerUserId;
       const exitFlow = options?.exitFlow !== false;
       // Partial sign means the signer hasn't finished. We intentionally leave
       // document statuses and the recipient row alone — only the envelope's
@@ -883,15 +1059,16 @@ const App: React.FC = () => {
         })
       );
       if (!exitFlow) return;
+      const returnToProfile = signFlowRef.current?.returnToProfile ?? false;
       setSignFlow(null);
-      if (signerUserId === 'u-kale') {
+      if (returnToProfile) {
         trimToProfile();
       } else {
         syncDocumentsHubTab('Documents');
         trimToPeopleTab();
       }
     },
-    [signFlow, trimToPeopleTab, trimToProfile, syncDocumentsHubTab]
+    [trimToPeopleTab, trimToProfile, syncDocumentsHubTab]
   );
 
   const prefillStateFromDraftRow = (row: EnvelopeTableRow): EnvelopeState => {
@@ -996,7 +1173,9 @@ const App: React.FC = () => {
         setPdfPlacementSeed(false);
         setCreatorCorrectingFlow(false);
       } else if (row.status === 'correcting') {
-        setEnvelopeState(prefillStateFromCorrectingRow(row));
+        const prefilled = prefillStateFromEnvelopeForCorrection(row);
+        setEnvelopeState(prefilled);
+        correctionBaselineRef.current = serializeEnvelopeStateForComparison(prefilled);
         setPdfPlacementSeed(false);
         setCreatorCorrectingFlow(true);
       } else {
@@ -1021,7 +1200,9 @@ const App: React.FC = () => {
       const row = packetRows.find((r) => r.id === packetId);
       if (!row) return;
       editingPacketIdRef.current = packetId;
-      setEnvelopeState(prefillStateFromEnvelopeForCorrection(row));
+      const prefilled = prefillStateFromEnvelopeForCorrection(row);
+      setEnvelopeState(prefilled);
+      correctionBaselineRef.current = serializeEnvelopeStateForComparison(prefilled);
       setPdfPlacementSeed(false);
       setCreatorCorrectingFlow(true);
       const fromView: ViewType =
@@ -1087,11 +1268,14 @@ const App: React.FC = () => {
           onViewDocumentPacket={handleOpenEnvelopeDetails}
           onEditDocumentPacket={handleEditEnvelope}
           onMakeCorrectionEnvelope={handleMakeCorrection}
-          onSignDocumentPacket={startSignFlow}
+          onSignDocumentPacket={(packetId) =>
+            startSignFlow(packetId, { signerUserId: ACCOUNT_HOLDER_USER_ID })
+          }
           onResendEnvelope={(packetId) => {
             applyResendToInProgress(packetId);
             setShowSuccessToast(true);
           }}
+          onMarkAllAsCompleted={currentView === 'admin' ? handleMarkAllAsCompleted : undefined}
           hubTab={documentsHubTab}
           onHubTabChange={syncDocumentsHubTab}
           profileFolderRoot={profileFolderRoot}
@@ -1135,6 +1319,9 @@ const App: React.FC = () => {
                     }}
                     onOpenEnvelope={(envelopeId) => handleOpenEnvelopeDetails(envelopeId)}
                     onReviewDocument={(envelopeId) => startSignFlow(envelopeId, 'u-kale')}
+                    onMarkAllAsCompleted={currentView === 'admin' ? handleMarkAllAsCompleted : undefined}
+                    onMakeCorrectionEnvelope={handleMakeCorrection}
+                    onVoidEnvelope={handleVoidEnvelope}
                     viewByDocuments={viewByDocuments}
                     setViewByDocuments={setViewByDocuments}
                     profileFolderRoot={profileFolderRoot}
@@ -1189,32 +1376,20 @@ const App: React.FC = () => {
             recipients={selectedPacket.recipients?.map(normalizeRecipientRowForDisplay)}
             isVoided={selectedPacket.status === 'voided'}
             onExit={handleExitEnvelopeDetails}
-            onSign={() => startSignFlow(selectedPacket.id)}
+            onSign={() =>
+              startSignFlow(selectedPacket.id, { signerUserId: ACCOUNT_HOLDER_USER_ID })
+            }
             onEdit={() => handleEditEnvelope(selectedPacket.id)}
             onMakeCorrection={() => handleMakeCorrection(selectedPacket.id)}
             onResend={() => {
               applyResendToInProgress(selectedPacket.id, selectedPacket.name);
               setShowSuccessToast(true);
             }}
-            onVoid={() => {
-              // Flip the parent envelope and every child document to
-              // `voided` so the hub, details view, and Kale's profile
-              // all read "Voided" consistently and signing is gated off.
-              setPacketRows((prev) =>
-                prev.map((r) =>
-                  r.id === selectedPacket.id
-                    ? {
-                        ...r,
-                        status: 'voided' as EnvelopeStatus,
-                        children: (r.children ?? []).map((c) => ({
-                          ...c,
-                          status: 'voided' as DocumentSigningStatus,
-                        })),
-                      }
-                    : r
-                )
-              );
-            }}
+            onVoid={() => handleVoidEnvelope(selectedPacket.id)}
+            onMarkAllAsCompleted={
+              currentView === 'admin' ? handleMarkAllAsCompleted : undefined
+            }
+            isAdminView={currentView === 'admin'}
           />
         </div>
       )}
@@ -1227,6 +1402,15 @@ const App: React.FC = () => {
             onSaveAndExit={handleSaveAndExitEnvelope}
             correctingFlow={creatorCorrectingFlow}
             onEditDocument={(detail) => {
+              if (
+                isDocumentEditingBlockedInCorrection(
+                  creatorCorrectingFlow,
+                  envelopeState.lockedRecipientUserIds,
+                  envelopeState.recipients,
+                )
+              ) {
+                return;
+              }
               setTemplateEditorSeed(detail ?? null);
               setTemplateEditorMode('edit');
               setTemplateEditorIntent('one_off');

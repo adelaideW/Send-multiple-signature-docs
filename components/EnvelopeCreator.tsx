@@ -52,6 +52,16 @@ import {
 } from 'lucide-react';
 import type { UploadedFileItem } from '../types';
 import { PROFILE_DOCUMENT_FOLDER_LOCATIONS, ENVELOPE_NAME_MAX_LENGTH } from '../constants';
+import {
+  extractInternalRecipientIdsFromTemplates,
+  isEditorInternalRecipientId,
+  mergeRecipientsForInternalTemplateFields,
+  resolveEditorDirectoryUser,
+} from '../utils/editorDirectoryUsers';
+import {
+  DOCUMENT_EDIT_BLOCKED_IN_CORRECTION_MESSAGE,
+  isDocumentEditingBlockedInCorrection,
+} from '../utils/envelopeCorrection';
 
 interface EnvelopeCreatorProps {
   onExit: () => void;
@@ -998,6 +1008,11 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
   const LOCKED_TOOLTIP =
     'This recipient has already signed and can\u2019t be removed or reordered.';
 
+  const documentEditingBlocked = useMemo(
+    () => isDocumentEditingBlockedInCorrection(correctingFlow, lockedRecipientUserIds, recipients),
+    [correctingFlow, lockedRecipientUserIds, recipients],
+  );
+
   const updateState = (updates: any) => {
     onUpdateState?.({
       selectedTemplates,
@@ -1023,6 +1038,26 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
       ...updates
     });
   };
+
+  /** When custom templates bind fields to specific employees, pre-fill recipient rows. */
+  useEffect(() => {
+    const internalIds = extractInternalRecipientIdsFromTemplates(selectedTemplates, customTemplates);
+    if (internalIds.length === 0) return;
+    const merged = mergeRecipientsForInternalTemplateFields(
+      internalIds,
+      recipients,
+      signingOrderEnabled,
+      signingOrderGroups,
+    );
+    if (merged.mutated) {
+      updateState({
+        recipients: merged.recipients,
+        signingOrderGroups: merged.signingOrderGroups,
+      });
+    }
+    // Only re-sync when template selection/content changes — not on every recipient edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTemplates, customTemplates]);
 
   const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false);
   const [isTagsMenuOpen, setIsTagsMenuOpen] = useState(false);
@@ -1752,7 +1787,13 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
         let m: RegExpExecArray | null;
         while ((m = re.exec(body)) !== null) {
           const rid = m[1];
-          if (slotRecipients.some((r) => r.id === rid)) {
+          if (isEditorInternalRecipientId(rid)) {
+            const directoryUser = resolveEditorDirectoryUser(rid);
+            if (directoryUser) {
+              const slot = slotRecipients.find((r) => r.user?.id === directoryUser.id);
+              if (slot) withFields.add(slot.id);
+            }
+          } else if (slotRecipients.some((r) => r.id === rid)) {
             withFields.add(rid);
           } else if (
             (rid === 'employee' || rid === 'manager' || rid.startsWith('ext-')) &&
@@ -4502,10 +4543,29 @@ const EnvelopeCreator: React.FC<EnvelopeCreatorProps> = ({
               )}
               <div className="relative group max-w-[850px] mx-auto w-full">
                 {!isUploadMode && (
-                  <div className="absolute inset-0 bg-slate-900/5 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-start pt-32 z-20 pointer-events-none group-hover:pointer-events-auto backdrop-blur-[0.5px]">
-                    <button type="button" onClick={() => onEditDocument?.(buildTemplateEditSnapshot())} className="bg-white text-slate-900 font-bold px-6 py-3 rounded-xl shadow-2xl border border-slate-200 flex items-center space-x-3 hover:scale-105 transition-all">
-                      <Pencil size={18} className="text-slate-600" /><span>Edit document</span>
-                    </button>
+                  <div
+                    className={`absolute inset-0 bg-slate-900/5 transition-opacity flex flex-col items-center justify-start pt-32 z-20 pointer-events-none backdrop-blur-[0.5px] ${
+                      documentEditingBlocked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto'
+                    }`}
+                  >
+                    {documentEditingBlocked ? (
+                      <div
+                        className="bg-white text-slate-700 font-medium px-6 py-3 rounded-xl shadow-2xl border border-slate-200 flex items-start gap-3 max-w-md text-sm pointer-events-none"
+                        role="status"
+                      >
+                        <Lock size={18} className="text-slate-500 shrink-0 mt-0.5" />
+                        <span>{DOCUMENT_EDIT_BLOCKED_IN_CORRECTION_MESSAGE}</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onEditDocument?.(buildTemplateEditSnapshot())}
+                        className="bg-white text-slate-900 font-bold px-6 py-3 rounded-xl shadow-2xl border border-slate-200 flex items-center space-x-3 hover:scale-105 transition-all pointer-events-auto"
+                      >
+                        <Pencil size={18} className="text-slate-600" />
+                        <span>Edit document</span>
+                      </button>
+                    )}
                   </div>
                 )}
                 <div className="bg-white border border-slate-100 shadow-xl min-h-[1100px] p-24 text-[15px] leading-relaxed text-slate-800">
