@@ -209,6 +209,12 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     breakoutText: Text | null;
     savedRange: Range | null;
   } | null>(null);
+  /** Prevents re-applying initialBodyHtml when recipients/handlers change mid-session. */
+  const editorHydratedSessionRef = useRef<{
+    body: string | null;
+    title: string | undefined;
+    create: boolean;
+  } | null>(null);
 
   const focusEditor = () => {
     editorRef.current?.focus();
@@ -422,6 +428,22 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
 
   useEffect(() => {
     if (!useRichCanvas || !editorRef.current) return;
+    const session = {
+      body: initialBodyHtml ?? null,
+      title: initialTitle,
+      create: isCreate,
+    };
+    const prev = editorHydratedSessionRef.current;
+    if (
+      prev &&
+      prev.body === session.body &&
+      prev.title === session.title &&
+      prev.create === session.create
+    ) {
+      return;
+    }
+    editorHydratedSessionRef.current = session;
+
     const ed = editorRef.current;
     let restoredRecipients: RecipientEntry[] = DEFAULT_EDITOR_RECIPIENTS;
 
@@ -451,7 +473,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
     else if (initialTitle?.trim()) setTemplateName(initialTitle.trim());
     wireChipDragHandlers(ed, restoredRecipients);
     setContentCheck((c) => c + 1);
-  }, [initialBodyHtml, initialTitle, isCreate, useRichCanvas, wireChipDragHandlers]);
+    // wireChipDragHandlers intentionally omitted — session guard runs once; separate effect re-wires chips.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialBodyHtml, initialTitle, isCreate, useRichCanvas]);
 
   /** Re-stamp chip drag handlers when tone mapping changes — without re-hydrating the editor HTML. */
   useEffect(() => {
