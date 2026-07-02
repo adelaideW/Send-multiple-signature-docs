@@ -100,6 +100,8 @@ export function useTemplateEditorV35Insert({
   const breakoutTextRef = useRef<Text | null>(null);
   const searchSelectAllRef = useRef(false);
   const emptyBackspaceCountRef = useRef(0);
+  /** Last known caret inside the editor — used when toolbar clicks steal focus. */
+  const lastCaretRangeRef = useRef<Range | null>(null);
 
   const employeeDirectory = useMemo<EmployeeRecord[]>(
     () => employees.map((e) => ({ id: e.id, name: e.name, avatarUrl: e.avatar })),
@@ -120,14 +122,38 @@ export function useTemplateEditorV35Insert({
     onContentChange?.();
   }, [onContentChange]);
 
+  const captureCaretRange = useCallback(() => {
+    const ed = editorRef.current;
+    if (!ed) return null;
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return lastCaretRangeRef.current;
+    const range = sel.getRangeAt(0);
+    if (!ed.contains(range.commonAncestorContainer)) return lastCaretRangeRef.current;
+    const collapsed = range.cloneRange();
+    collapsed.collapse(true);
+    lastCaretRangeRef.current = collapsed;
+    return collapsed;
+  }, [editorRef]);
+
+  const restoreSavedCaret = useCallback(() => {
+    const ed = editorRef.current;
+    const saved = lastCaretRangeRef.current;
+    if (!ed || !saved || !ed.contains(saved.startContainer)) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    sel.addRange(saved.cloneRange());
+  }, [editorRef]);
+
   const computeCaretAnchor = useCallback(
-    () => computeCaretAnchorRect(editorRef.current),
+    () => computeCaretAnchorRect(editorRef.current, lastCaretRangeRef.current),
     [editorRef],
   );
 
   const updateInsertMenuPosition = useCallback(() => {
+    captureCaretRange();
     setSlashMenuPos(computeCaretAnchor());
-  }, [computeCaretAnchor]);
+  }, [captureCaretRange, computeCaretAnchor]);
 
   const closeRecipientPicker = useCallback(() => {
     recipientChipRef.current = null;
@@ -221,8 +247,9 @@ export function useTemplateEditorV35Insert({
   }, []);
 
   const openCombinedMenuAtCaret = useCallback(() => {
+    captureCaretRange();
     removeSlashBeforeCaret();
-    setSlashMenuPos(computeCaretAnchor());
+    captureCaretRange();
     setShowSlashMenu(true);
     setCombinedMenuView('root');
     setSearchQuery('');
@@ -230,7 +257,11 @@ export function useTemplateEditorV35Insert({
     setSlashActiveIndex(0);
     setSearchActiveIndex(0);
     emptyBackspaceCountRef.current = 0;
-  }, [computeCaretAnchor, removeSlashBeforeCaret]);
+    requestAnimationFrame(() => {
+      captureCaretRange();
+      setSlashMenuPos(computeCaretAnchor());
+    });
+  }, [captureCaretRange, computeCaretAnchor, removeSlashBeforeCaret]);
 
   const drillIntoCombinedVariables = useCallback(() => {
     setCombinedMenuView('variablesDrillIn');
@@ -410,16 +441,41 @@ export function useTemplateEditorV35Insert({
   useLayoutEffect(() => {
     if (!enabled || !insertTrigger || insertTrigger <= 0 || !editorRef.current) return;
     editorRef.current.focus();
+    restoreSavedCaret();
     breakoutTextRef.current = null;
     emptyBackspaceCountRef.current = 0;
-    setSlashMenuPos(computeCaretAnchor());
     setShowSlashMenu(true);
     setCombinedMenuView('root');
     setSearchQuery('');
     setActiveIndex(0);
     setSlashActiveIndex(0);
     setSearchActiveIndex(0);
-  }, [insertTrigger, enabled, editorRef, computeCaretAnchor]);
+    requestAnimationFrame(() => {
+      restoreSavedCaret();
+      captureCaretRange();
+      setSlashMenuPos(computeCaretAnchor());
+    });
+  }, [
+    insertTrigger,
+    enabled,
+    editorRef,
+    computeCaretAnchor,
+    restoreSavedCaret,
+    captureCaretRange,
+  ]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const ed = editorRef.current;
+    if (!ed) return;
+
+    const onSelectionChange = () => {
+      captureCaretRange();
+    };
+
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => document.removeEventListener('selectionchange', onSelectionChange);
+  }, [enabled, editorRef, captureCaretRange]);
 
   useEffect(() => {
     setSearchActiveIndex(0);

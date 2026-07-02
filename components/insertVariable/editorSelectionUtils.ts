@@ -24,18 +24,23 @@ const DROPDOWN_MAX_W = 620;
 const VIEWPORT_PAD = 8;
 const LINE_FALLBACK = 22;
 
-/** Fixed-position anchor for variable / slash menus — always below the caret line. */
-export function computeCaretAnchorRect(editorEl: HTMLElement | null): { top: number; left: number } {
-  if (!editorEl) return { top: 0, left: VIEWPORT_PAD };
+function clampLeft(leftPx: number): number {
+  return Math.max(VIEWPORT_PAD, Math.min(leftPx, window.innerWidth - DROPDOWN_MAX_W - VIEWPORT_PAD));
+}
 
-  const sel = window.getSelection();
-  if (!sel?.rangeCount) return { top: 0, left: VIEWPORT_PAD };
-
-  const range = sel.getRangeAt(0);
-  if (!editorEl.contains(range.commonAncestorContainer)) {
-    return { top: 0, left: VIEWPORT_PAD };
+function rectToAnchor(rect: DOMRect | null, editorEl: HTMLElement): { top: number; left: number } {
+  if (rect && (rect.height || rect.width)) {
+    return { top: rect.bottom + CARET_GAP, left: clampLeft(rect.left) };
   }
 
+  const editorRect = editorEl.getBoundingClientRect();
+  return {
+    top: editorRect.top + LINE_FALLBACK + CARET_GAP,
+    left: clampLeft(editorRect.left + VIEWPORT_PAD),
+  };
+}
+
+function collapsedRangeRect(range: Range, editorEl: HTMLElement): DOMRect | null {
   const collapsed = range.cloneRange();
   collapsed.collapse(true);
 
@@ -66,19 +71,67 @@ export function computeCaretAnchorRect(editorEl: HTMLElement | null): { top: num
     if (probeRect.height || probeRect.width) rect = probeRect;
   }
 
-  let topPx: number;
-  let leftPx: number;
-
-  if (rect && (rect.height || rect.width)) {
-    topPx = rect.bottom + CARET_GAP;
-    leftPx = rect.left;
-  } else {
-    const editorRect = editorEl.getBoundingClientRect();
-    topPx = editorRect.top + LINE_FALLBACK + CARET_GAP;
-    leftPx = editorRect.left + VIEWPORT_PAD;
+  if ((!rect || (rect.height === 0 && rect.width === 0)) && sc.nodeType === Node.ELEMENT_NODE) {
+    const el = sc as Element;
+    const child =
+      el.childNodes[collapsed.startOffset] ?? el.childNodes[collapsed.startOffset - 1];
+    if (child) {
+      const childRect =
+        child instanceof Element
+          ? child.getBoundingClientRect()
+          : (() => {
+              const r = document.createRange();
+              r.selectNodeContents(child);
+              return r.getBoundingClientRect();
+            })();
+      if (childRect.height || childRect.width) rect = childRect;
+    }
   }
 
-  leftPx = Math.max(VIEWPORT_PAD, Math.min(leftPx, window.innerWidth - DROPDOWN_MAX_W - VIEWPORT_PAD));
+  if ((!rect || (rect.height === 0 && rect.width === 0)) && editorEl.contains(collapsed.startContainer)) {
+    const marker = document.createElement('span');
+    marker.textContent = '\u200b';
+    marker.setAttribute('data-caret-probe', 'true');
+    try {
+      collapsed.insertNode(marker);
+      const markerRect = marker.getBoundingClientRect();
+      if (markerRect.height || markerRect.width) rect = markerRect;
+    } finally {
+      marker.remove();
+    }
+  }
 
-  return { top: topPx, left: leftPx };
+  return rect;
+}
+
+function collapsedRangeInEditor(editorEl: HTMLElement): Range | null {
+  const sel = window.getSelection();
+  if (!sel?.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  if (!editorEl.contains(range.commonAncestorContainer)) return null;
+  const collapsed = range.cloneRange();
+  collapsed.collapse(true);
+  return collapsed;
+}
+
+/** Fixed-position anchor for variable / slash menus — always below the caret line. */
+export function computeCaretAnchorRect(
+  editorEl: HTMLElement | null,
+  fallbackRange?: Range | null,
+): { top: number; left: number } {
+  if (!editorEl) return { top: 0, left: VIEWPORT_PAD };
+
+  let range = collapsedRangeInEditor(editorEl);
+  if (!range && fallbackRange && editorEl.contains(fallbackRange.startContainer)) {
+    range = fallbackRange.cloneRange();
+    range.collapse(true);
+  }
+
+  if (!range) {
+    range = document.createRange();
+    range.selectNodeContents(editorEl);
+    range.collapse(false);
+  }
+
+  return rectToAnchor(collapsedRangeRect(range, editorEl), editorEl);
 }

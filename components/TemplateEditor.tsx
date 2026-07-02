@@ -1331,7 +1331,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => {
+              onMouseDown={(e) => {
+                e.preventDefault();
                 focusEditor();
                 setInsertVariableTrigger((n) => n + 1);
               }}
